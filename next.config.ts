@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
       has: [
         { type: "host" as const, value: host.replaceAll(".", "\\.") },
       ],
+      // Vercel Cron treats a redirect as final, so /api/health would never run.
+      missing: [{ type: "header" as const, key: "x-vercel-cron-schedule" }],
       destination: `${CANONICAL_ORIGIN}/:path*`,
       permanent: true,
     }));

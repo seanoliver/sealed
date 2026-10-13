@@ -28,6 +28,21 @@ async function sendFailureAlert(): Promise<void> {
   }
 }
 
+const PING_TIMEOUT_MS = 10_000;
+
+export const maxDuration = 60;
+
+function pingWithTimeout(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(Object.assign(new Error("ping timed out"), { code: "TIMEOUT" })),
+      PING_TIMEOUT_MS,
+    );
+  });
+  return Promise.race([pingDatabase(), timeout]).finally(() => clearTimeout(timer));
+}
+
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -41,7 +56,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    await pingDatabase();
+    await pingWithTimeout();
   } catch (err) {
     logDbError("[hc] [health]", err, { includeMessage: false });
     await sendFailureAlert();

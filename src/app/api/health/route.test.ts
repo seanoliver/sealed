@@ -35,6 +35,7 @@ describe("GET /api/health", () => {
   beforeEach(() => {
     vi.stubEnv("CRON_SECRET", SECRET);
     vi.stubEnv("HEALTH_ALERT_EMAIL", "ops@test.dev");
+    vi.stubEnv("APP_ENV", "production");
   });
 
   afterEach(() => {
@@ -110,6 +111,7 @@ describe("GET /api/health", () => {
     const item = vi.mocked(sendNotification).mock.calls[0][0];
     expect(item.to).toBe("ops@test.dev");
     expect(item.subject).toContain("Database health check failed");
+    expect(item.subject).toContain("(production)");
     expect(`${item.subject}${item.html}${item.text}`).not.toContain("hunter2");
   });
 
@@ -130,5 +132,23 @@ describe("GET /api/health", () => {
 
     const res = await get(authorized);
     expect(res.status).toBe(503);
+  });
+
+  it("returns 503 and alerts when the database never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(pingDatabase).mockReturnValueOnce(new Promise<void>(() => {}));
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const pending = get(authorized);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const res = await pending;
+
+      expect(res.status).toBe(503);
+      expect(sendNotification).toHaveBeenCalledOnce();
+      expect(error.mock.calls.flat().join(" ")).toContain("TIMEOUT");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
