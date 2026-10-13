@@ -63,14 +63,11 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* next/form: submits as GET to /dashboard?q=… via client-side
-          navigation (no full reload); still a plain GET form without JS. */}
       <Form action="/dashboard" className="mt-6 flex gap-2">
         <label htmlFor="q" className="sr-only">
           Search contacts
         </label>
-        {/* Keyed on the query so back/forward (which reuses this subtree)
-            resets the uncontrolled input to the URL's ?q= value. */}
+        {/* Remounts on back/forward so the box matches ?q=. */}
         <input
           key={query}
           id="q"
