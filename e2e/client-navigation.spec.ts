@@ -19,6 +19,7 @@ async function expectNoFullReload(): Promise<void> {
 }
 
 test.beforeAll(async ({ browser }) => {
+  test.setTimeout(120_000);
   page = await browser.newPage();
   await signupAndLogin(page, ownerEmail);
   const ownerId = await getUserIdByEmail(ownerEmail);
@@ -27,8 +28,16 @@ test.beforeAll(async ({ browser }) => {
     slug: uniqueSlug("spa-book"),
     displayName: "Spa Owner",
   });
-  await seedContact({ bookId, fullName: "Ada Lovelace" });
-  const graceId = await seedContact({ bookId, fullName: "Grace Hopper" });
+  await seedContact({
+    bookId,
+    fullName: "Ada Lovelace",
+    email: "ada@example.test",
+  });
+  const graceId = await seedContact({
+    bookId,
+    fullName: "Grace Hopper",
+    email: "grace@example.test",
+  });
   // Compile every visited route up front; a cold dev compile outlasts toHaveURL.
   for (const route of [
     "/dashboard",
@@ -59,7 +68,9 @@ test("search, back/forward and in-app links never reload the document", async ()
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
   await expect(table.getByRole("link", { name: "Grace Hopper" })).toBeVisible();
-  await expect(table.getByRole("link", { name: "Ada Lovelace" })).toHaveCount(0);
+  await expect(table.getByRole("link", { name: "Ada Lovelace" })).toHaveCount(
+    0,
+  );
   await expectNoFullReload();
 
   await page.goBack();
@@ -71,7 +82,10 @@ test("search, back/forward and in-app links never reload the document", async ()
   await page.goForward();
   await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
   await expect(search).toHaveValue("grace");
-  await expect(table.getByRole("link", { name: "Ada Lovelace" })).toHaveCount(0);
+  await expect(table.getByRole("link", { name: "Grace Hopper" })).toBeVisible();
+  await expect(table.getByRole("link", { name: "Ada Lovelace" })).toHaveCount(
+    0,
+  );
   await expectNoFullReload();
 
   await search.fill("ada");
@@ -80,11 +94,14 @@ test("search, back/forward and in-app links never reload the document", async ()
   await page.goBack();
   await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
   await expect(search).toHaveValue("grace");
+  await expect(table.getByRole("link", { name: "Grace Hopper" })).toBeVisible();
   await expectNoFullReload();
 
   await table.getByRole("link", { name: "Grace Hopper" }).click();
   await expect(page).toHaveURL(/\/dashboard\/contacts\/[0-9a-f-]+$/);
-  await expect(page.getByRole("heading", { name: "Grace Hopper" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Grace Hopper" }),
+  ).toBeVisible();
   await expectNoFullReload();
 
   const nav = page.getByRole("navigation");
@@ -94,7 +111,9 @@ test("search, back/forward and in-app links never reload the document", async ()
 
   await nav.getByRole("link", { name: "Review" }).click();
   await expect(page).toHaveURL(/\/dashboard\/review$/);
-  await expect(page.getByRole("heading", { name: "Review submissions" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Review submissions" }),
+  ).toBeVisible();
   await expectNoFullReload();
 
   await nav.getByRole("link", { name: "Contacts" }).click();
@@ -115,7 +134,9 @@ test("search, back/forward and in-app links never reload the document", async ()
 
   await nav.getByRole("link", { name: "Contacts" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Your address book" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your address book" }),
+  ).toBeVisible();
   await expect(search).toHaveValue("");
   await expectNoFullReload();
 });
@@ -130,4 +151,32 @@ test("a search closes an open send confirmation", async () => {
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
   await expect(dialog).toHaveCount(0);
+});
+
+test("a search with the same number of results also closes the confirmation", async () => {
+  await page.goto("/dashboard?q=ada");
+  await page.getByRole("button", { name: "Send to all shown" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("the 1 contact shown");
+
+  await page.getByLabel("Search contacts").fill("grace");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
+  await expect(dialog).toHaveCount(0);
+});
+
+test("a search clears selections", async () => {
+  await page.goto("/dashboard");
+  await page.getByLabel("Select Grace Hopper").check();
+  await expect(
+    page.getByRole("button", { name: "Request addresses (1)" }),
+  ).toBeVisible();
+
+  await page.getByLabel("Search contacts").fill("grace");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
+  await expect(page.getByLabel("Select Grace Hopper")).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Request addresses", exact: true }),
+  ).toBeVisible();
 });
