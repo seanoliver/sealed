@@ -136,8 +136,18 @@ Required production Vercel variables:
 - `EMAIL_FROM`
 - real `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
 - real `TURNSTILE_SECRET_KEY`
+- `CRON_SECRET` (random, at least 16 characters)
+- `HEALTH_ALERT_EMAIL` (recommended)
 
-`EMAIL_DRY_RUN` must be absent in production. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
+`EMAIL_DRY_RUN` must be absent in production.
+
+### Scheduled health check
+
+`vercel.json` schedules a daily Vercel Cron call to `GET /api/health`, which runs `select 1` against the database. It returns `200 {"ok":true}` or `503 {"ok":false}` and never includes error details. Vercel attaches `Authorization: Bearer $CRON_SECRET` to cron invocations; without `CRON_SECRET` the route answers `500` to every request. On a database failure it emails `HEALTH_ALERT_EMAIL` if set and logs the Postgres or driver error code under `[hc] [health]`.
+
+The check keeps the Supabase Free project from being paused for inactivity, which happens after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
+
+Cron jobs run only on a project's production deployment, and `vercel.json` applies to both Vercel projects. Set `CRON_SECRET` in the staging project too, or its daily run returns `500`. Runs appear under **Settings → Cron Jobs → View Logs** in each project. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
 
 ### Production configuration status
 

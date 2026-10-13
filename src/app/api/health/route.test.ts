@@ -1,0 +1,143 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { pingDatabase } from "@/lib/db/health";
+import { sendNotification } from "@/lib/email/resend";
+import { GET } from "./route";
+
+// Real probe by default (hits the local Supabase stack, like the other
+// integration tests); individual tests force a failure with a one-off
+// rejection.
+vi.mock("@/lib/db/health", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db/health")>();
+  return { pingDatabase: vi.fn(actual.pingDatabase) };
+});
+
+vi.mock("@/lib/email/resend", () => ({
+  sendNotification: vi.fn(async () => {}),
+}));
+
+const SECRET = "health-route-test-secret-0123456789";
+const URL_ = "http://localhost:3000/api/health";
+
+function get(headers: Record<string, string> = {}): Promise<Response> {
+  return GET(new Request(URL_, { headers }));
+}
+
+const authorized = { authorization: `Bearer ${SECRET}` };
+
+/**
+ * Shaped like a real connection failure: drizzle wraps the driver error,
+ * whose string `code` and message embed connection details that must never
+ * escape into the response, logs, or alert.
+ */
+function leakyDbError(): Error {
+  const err = Object.assign(
+    new Error(
+      'connect ECONNREFUSED db.internal:5432 (password authentication failed for user "app_hunter2")',
+    ),
+    { code: "ECONNREFUSED" },
+  );
+  return new Error("Failed query: select 1", { cause: err });
+}
+
+describe("GET /api/health", () => {
+  beforeEach(() => {
+    vi.stubEnv("CRON_SECRET", SECRET);
+    vi.stubEnv("HEALTH_ALERT_EMAIL", "ops@test.dev");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.mocked(pingDatabase).mockClear();
+    vi.mocked(sendNotification).mockClear();
+  });
+
+  it("rejects a request without an Authorization header with 401", async () => {
+    const res = await get();
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(pingDatabase).not.toHaveBeenCalled();
+  });
+
+  it("rejects a wrong secret with 401", async () => {
+    for (const authorization of [
+      "Bearer wrong-secret",
+      SECRET, // missing the Bearer prefix
+      `Bearer ${SECRET}x`,
+      "Bearer ",
+    ]) {
+      const res = await get({ authorization });
+      expect(res.status).toBe(401);
+    }
+    expect(pingDatabase).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 500 when CRON_SECRET is unset", async () => {
+    vi.stubEnv("CRON_SECRET", "");
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Even "Bearer " (the empty-secret header) must not authenticate.
+    const res = await get({ authorization: "Bearer " });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(error).toHaveBeenCalledOnce();
+    expect(pingDatabase).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 { ok: true } when the database query succeeds", async () => {
+    const res = await get(authorized);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(pingDatabase).toHaveBeenCalledOnce();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 { ok: false } with no error details when the query fails", async () => {
+    vi.mocked(pingDatabase).mockRejectedValueOnce(leakyDbError());
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await get(authorized);
+    expect(res.status).toBe(503);
+    const body = await res.text();
+    expect(JSON.parse(body)).toEqual({ ok: false });
+
+    // Neither the response nor the logs carry the connection string.
+    const logged = error.mock.calls.flat().join(" ");
+    expect(logged).toContain("[hc] [health]");
+    expect(logged).toContain("ECONNREFUSED"); // the code survives
+    expect(logged).not.toContain("connect ECONNREFUSED"); // the message does not
+    expect(`${body} ${logged}`).not.toContain("hunter2");
+    expect(`${body} ${logged}`).not.toContain("db.internal");
+  });
+
+  it("attempts an alert email on failure without error details", async () => {
+    vi.mocked(pingDatabase).mockRejectedValueOnce(leakyDbError());
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await get(authorized);
+
+    expect(sendNotification).toHaveBeenCalledOnce();
+    const item = vi.mocked(sendNotification).mock.calls[0][0];
+    expect(item.to).toBe("ops@test.dev");
+    expect(item.subject).toContain("Database health check failed");
+    expect(`${item.subject}${item.html}${item.text}`).not.toContain("hunter2");
+  });
+
+  it("skips the alert silently when HEALTH_ALERT_EMAIL is unset", async () => {
+    vi.stubEnv("HEALTH_ALERT_EMAIL", "");
+    vi.mocked(pingDatabase).mockRejectedValueOnce(leakyDbError());
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await get(authorized);
+    expect(res.status).toBe(503);
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("still returns 503 when the alert itself fails", async () => {
+    vi.mocked(pingDatabase).mockRejectedValueOnce(leakyDbError());
+    vi.mocked(sendNotification).mockRejectedValueOnce(new Error("boom"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await get(authorized);
+    expect(res.status).toBe(503);
+  });
+});
