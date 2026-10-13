@@ -6,12 +6,14 @@ Sealed runs in three isolated environments. `APP_ENV` is the application-level e
 
 | Concern | Local | Staging | Production |
 |---|---|---|---|
-| Application | `http://localhost:3000` | `sealed-staging` Vercel project, including every PR preview | `address-book` Vercel project |
-| Supabase | CLI stack | `sealed-staging` (`fmjbjkcuyqopoubbylme`) | `address-book` (`ivwrvilpjhqhmlzwgyot`) |
+| Application | `http://localhost:3000` | `sealed-staging` Vercel project, including every PR preview | `sealed` Vercel project |
+| Supabase | CLI stack | `sealed-staging` (`fmjbjkcuyqopoubbylme`) | `sealed` (`ivwrvilpjhqhmlzwgyot`) |
 | Database data | Disposable local fixtures | Synthetic test data only | Real owner/contact data |
 | Email | Mailpit and dry-run logs | Dry-run logs until a restricted staging sender is configured | Resend production sender |
 | Turnstile | Cloudflare test keys | Cloudflare test keys initially | Real production widget |
 | Google OAuth | Dedicated local client | Dedicated staging client | Dedicated production client |
+
+Both Vercel projects belong to the `cabin-9` team (`team_zbOQcoGZ8Edz3hYHUC0mHa3t`), and both Supabase projects to the personal Supabase organization (Pro plan).
 
 The two hosted Supabase projects must never share credentials, users, or database data. Never copy production contact data into staging.
 
@@ -145,7 +147,7 @@ Required production Vercel variables:
 
 `vercel.json` schedules a daily Vercel Cron call to `GET /api/health`, which runs `select 1` against the database. It returns `200 {"ok":true}` or `503 {"ok":false}` and never includes error details. Vercel attaches `Authorization: Bearer $CRON_SECRET` to cron invocations; without `CRON_SECRET` the route answers `500` to every request. On a database failure it emails `HEALTH_ALERT_EMAIL` if set and logs the Postgres or driver error code under `[hc] [health]`.
 
-The check keeps the Supabase Free project from being paused for inactivity, which happens after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
+Both Supabase projects are on the Pro plan, which is not paused for inactivity, so the check serves as an outage alarm. On the Free plan it would also keep a project from being paused after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
 
 Cron jobs run only on a project's production deployment, and `vercel.json` applies to both Vercel projects. Set `CRON_SECRET` in the staging project too, or its daily run returns `500`. Runs appear under **Settings → Cron Jobs → View Logs** in each project.
 

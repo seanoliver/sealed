@@ -3,7 +3,7 @@
 **Status:** Stale — staging is verified; production remains unverified until its first end-to-end workflow release
 **Last verified:** `156da36` on 2026-08-09 in staging
 **Owner:** Maintainers
-**Related:** [Environment topology](../ENVIRONMENTS.md), [PR #9](https://github.com/seanoliver/address-book/pull/9), [Vercel environment deletion incident](../bugs/2026-08-09-vercel-env-target-removal-deletes-shared-record.md)
+**Related:** [Environment topology](../ENVIRONMENTS.md), [PR #9](https://github.com/seanoliver/sealed/pull/9), [Vercel environment deletion incident](../bugs/2026-08-09-vercel-env-target-removal-deletes-shared-record.md)
 
 ## Purpose
 
