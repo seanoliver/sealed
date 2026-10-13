@@ -70,20 +70,22 @@ Export the two credential variables before restarting Supabase. An ignored `.env
 
 ## Retired staging
 
-Until 2026-10-13 a hosted staging environment (`sealed-staging` Vercel project, `sealed-staging` Supabase project `fmjbjkcuyqopoubbylme`) received every merge and every PR preview, and production was released by hand after staging verification. With no real users yet, it was retired to match the simpler flow used by Sean's other projects. The Supabase project is paused, not deleted, and the Vercel project is disconnected from Git. Restore both before bringing staging back, and reintroduce a staging workflow and runbook steps.
+Until 2026-10-13 a hosted staging environment (`sealed-staging` Vercel project, `sealed-staging` Supabase project `fmjbjkcuyqopoubbylme`) received every merge and every PR preview, and production was released by hand after staging verification. With no real users yet, it was retired to match the simpler flow used by Sean's other projects. The Supabase project is paused, not deleted, and the Vercel project is disconnected from Git. Restore both before bringing staging back, and reintroduce a staging workflow and runbook steps. The GitHub `Staging` environment and its secret are deleted.
 
 ## Production
 
-The `sealed` Vercel project is connected to GitHub and deploys every push to `main`. Two settings keep it from building anything else:
+Every push to `main` deploys to production, with no manual step. After **CI** passes on `main`, `.github/workflows/deploy-production.yml`:
 
-- `vercel.json` sets `git.deploymentEnabled` to `main` only.
-- The project's **Ignored Build Step** skips any commit not on `main` (`[ "$VERCEL_GIT_COMMIT_REF" != "main" ]`).
+1. checks out the commit CI tested, and skips if `main` has moved on (the newer commit's run deploys instead),
+2. applies committed migrations with `supabase db push`,
+3. checks that production's migration versions match the repository's (`scripts/ci/migration-drift.sh`),
+4. builds and deploys that commit on Vercel.
 
-Both can be overridden by a branch's own `vercel.json`, so they prevent accidental previews rather than enforce a boundary. The boundary is that every production variable is scoped to the Production target and the project's Production Branch is `main`: a preview build would get no database URL or secrets and would fail at startup. Keep the Preview and Development targets empty.
+A migration therefore runs immediately before the code that needs it goes live, never ahead of review. The workflow can also be dispatched by hand to redeploy the head of `main`.
 
-The `Production` GitHub environment has no required reviewers. GitHub does not support them on private repositories below Enterprise, and the repository has a single maintainer; this was a deliberate choice on 2026-10-13.
+The `sealed` Vercel project is not connected to GitHub, so it has no PR previews and deploys only through this workflow. Production variables are scoped to the Production target.
 
-Migrations are not part of the deploy. A PR that adds one is merged by the **Migrate production** workflow, which applies its migrations and then merges it (see [Migration policy](#migration-policy)).
+The `Production` GitHub environment allows only `main` and has no required reviewers. GitHub does not support required reviewers on private repositories below Enterprise, and the repository has a single maintainer; this was a deliberate choice on 2026-10-13.
 
 Required GitHub Production secret:
 
@@ -91,7 +93,7 @@ Required GitHub Production secret:
 PRODUCTION_DATABASE_URL
 ```
 
-This migration URL connects as the Supabase database owner. It is available to the **Migrate production** and **Check production migrations** jobs, which may run only from `main` (the `Production` environment's branch policy). Migrate production checks out the head of the PR it is given, so it can apply that PR's migrations before merging it. It must use the IPv4 session pooler on port 5432 for GitHub-hosted runners; the transaction pooler on port 6543 can retain the CLI's prepared statements across clients and fail retries with `SQLSTATE 42P05`. It is distinct from Vercel's runtime `DATABASE_URL`, which must connect as the restricted `app_server` role.
+This migration URL connects as the Supabase database owner and is available only to the deploy job, which runs only on `main` (the `Production` environment's branch policy). It must use the IPv4 session pooler on port 5432 for GitHub-hosted runners; the transaction pooler on port 6543 can retain the CLI's prepared statements across clients and fail retries with `SQLSTATE 42P05`. It is distinct from Vercel's runtime `DATABASE_URL`, which must connect as the restricted `app_server` role.
 
 Required production Vercel variables:
 
@@ -125,11 +127,9 @@ Production project variables and the GitHub migration credential are configured.
 ## Migration policy
 
 - CI tests every migration against a disposable local stack.
-- A PR that adds a migration is merged by **Migrate production** (`pr` = its number), never from the GitHub UI. The workflow requires GitHub to report the PR ready to merge (up to date with `main`, all required checks green), confirms the five CI checks came from GitHub Actions, applies the migrations, confirms production then has exactly the PR's migrations, and squash-merges that exact commit. Nothing can change between migrating and merging.
-- If the merge step fails after migrating, re-run the workflow for the same PR; applying migrations again is a no-op.
-- Create migrations with `supabase migration new <name>` so versions are timestamps. Hand-numbered versions from two branches can collide, and the CLI skips a version production already has without checking its contents.
-- Every migration must be backward-compatible with the code currently on `main`, because it runs before that code is replaced. Use expand/migrate/contract steps across PRs for anything destructive.
-- After every push to `main` and once a day, **Check production migrations** compares the repository's migration versions with production's and fails if any are missing or extra. It catches a migration PR merged from the UI or an out-of-band change to production.
+- Migrations reach production only after merge, in the deploy workflow, immediately before the code that uses them. PRs never touch the production database.
+- Every migration must be backward-compatible with the code currently live, because it runs a few minutes before that code is replaced. Use expand/migrate/contract steps across PRs for anything destructive.
+- Create migrations with `supabase migration new <name>` so versions are timestamps; hand-numbered versions from two branches can collide.
 - Never edit a migration after it has been applied to production; add a new one.
 - Database rollback is not automatic; write corrective forward migrations.
 
@@ -137,7 +137,7 @@ Production project variables and the GitHub migration credential are configured.
 
 - `.env.local` is ignored and contains local-only credentials.
 - Vercel owns runtime application secrets.
-- The GitHub `Production` environment owns the migration secret.
+- The GitHub `Production` environment owns the migration and Vercel deploy secrets.
 - Google Cloud owns OAuth client secrets.
 - Supabase project keys are environment-specific.
 - Never expose database URLs, Resend keys, Turnstile secrets, Supabase secret/service-role keys, or OAuth secrets to the browser.
@@ -159,7 +159,6 @@ The repeatable release procedure and failure recovery are in [the environment pr
 
 - Vercel environment variables: <https://vercel.com/docs/environment-variables>
 - Vercel Git deployments: <https://vercel.com/docs/git>
-- Vercel Git configuration (`deploymentEnabled`): <https://vercel.com/docs/project-configuration/git-configuration>
 - Supabase local development: <https://supabase.com/docs/guides/local-development>
 - Supabase redirect URLs and wildcards: <https://supabase.com/docs/guides/auth/redirect-urls>
 - Supabase Google Auth: <https://supabase.com/docs/guides/auth/social-login/auth-google>

@@ -1,0 +1,89 @@
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Migrate and deploy production
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: Production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - name: Skip unless this is the newest commit on main
+        id: latest
+        shell: bash
+        run: |
+          sha=$(git rev-parse HEAD)
+          git fetch --quiet origin main
+          if [ "$sha" = "$(git rev-parse origin/main)" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$sha is no longer the head of main; the newer commit's run deploys instead."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: pnpm/action-setup@v4
+        if: steps.latest.outputs.deploy == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.latest.outputs.deploy == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: supabase/setup-cli@v1
+        if: steps.latest.outputs.deploy == 'true'
+        with:
+          version: 2.109.1
+      - name: Install Vercel CLI
+        if: steps.latest.outputs.deploy == 'true'
+        run: pnpm add --global vercel@49.1.2
+      - name: Apply committed migrations to production
+        if: steps.latest.outputs.deploy == 'true'
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "PRODUCTION_DATABASE_URL is not configured"; exit 1; }
+          # The transaction pooler (6543) retains prepared statements across
+          # clients; Supabase CLI migration retries then fail with SQLSTATE 42P05.
+          url="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
+          [[ "$url" == *".pooler.supabase.com:5432/"* ]] || {
+            echo "PRODUCTION_DATABASE_URL must use the Supabase session pooler"; exit 1;
+          }
+          supabase db push --db-url "$url" --include-all --yes
+          versions=$(psql "$url" -Atc "select version from supabase_migrations.schema_migrations")
+          scripts/ci/migration-drift.sh supabase/migrations <<<"$versions"
+      - name: Build and deploy on Vercel
+        if: steps.latest.outputs.deploy == 'true'
+        id: deploy
+        shell: bash
+        run: |
+          deploy_sha=$(git rev-parse HEAD)
+          url=$(vercel deploy --prod --yes \
+            --meta "githubCommitSha=$deploy_sha" \
+            --meta "githubCommitRef=main" \
+            --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}

@@ -5,11 +5,5 @@
       "path": "/api/health",
       "schedule": "0 12 * * *"
     }
-  ],
-  "git": {
-    "deploymentEnabled": {
-      "**": false,
-      "main": true
-    }
-  }
+  ]
 }

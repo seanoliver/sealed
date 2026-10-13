@@ -48,7 +48,7 @@ No old secret was copied from staging or local.
 
 ## Recurrence guardrail
 
-- Keep every production Vercel variable scoped to the Production target only. Since 2026-10-13 the production project is Git-connected and builds only `main` (see `docs/ENVIRONMENTS.md`), so an empty Preview target is what keeps a stray preview from receiving production credentials.
+- Keep the production Vercel project disconnected from Git; previews belong only to the staging project.
 - Do not use `vercel env rm <name> <target>` to edit a live multi-target variable record without a recoverable source value.
 - Prefer separate records/projects, or use the dashboard to review the final target set.
 - Immediately run `vercel env ls` after any target change and before triggering a deployment.
