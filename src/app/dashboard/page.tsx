@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
@@ -62,12 +63,13 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* GET form: search stays a server round-trip, no client JS needed. */}
-      <form action="/dashboard" method="get" className="mt-6 flex gap-2">
+      <Form action="/dashboard" className="mt-6 flex gap-2">
         <label htmlFor="q" className="sr-only">
           Search contacts
         </label>
+        {/* Remounts on back/forward so the box matches ?q=. */}
         <input
+          key={query}
           id="q"
           name="q"
           type="search"
@@ -81,7 +83,7 @@ export default async function DashboardPage({
         >
           Search
         </button>
-      </form>
+      </Form>
 
       {rows.length === 0 ? (
         query ? (
@@ -114,7 +116,8 @@ export default async function DashboardPage({
           </p>
         )
       ) : (
-        <ContactsTable rows={rows} />
+        // Remount per search, or an open "Send to all shown" keeps the old rows.
+        <ContactsTable key={query} rows={rows} />
       )}
     </main>
   );

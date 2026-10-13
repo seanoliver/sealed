@@ -293,4 +293,5 @@ test("search filters the list and clears back to all contacts", async () => {
 
   await page.getByRole("link", { name: "Clear search" }).click();
   await expect(rows).toHaveCount(4);
+  await expect(page.locator("#q")).toHaveValue("");
 });
