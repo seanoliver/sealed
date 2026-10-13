@@ -3,9 +3,6 @@ import { pingDatabase } from "@/lib/db/health";
 import { sendNotification } from "@/lib/email/resend";
 import { GET } from "./route";
 
-// Real probe by default (hits the local Supabase stack, like the other
-// integration tests); individual tests force a failure with a one-off
-// rejection.
 vi.mock("@/lib/db/health", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db/health")>();
   return { pingDatabase: vi.fn(actual.pingDatabase) };
@@ -24,11 +21,6 @@ function get(headers: Record<string, string> = {}): Promise<Response> {
 
 const authorized = { authorization: `Bearer ${SECRET}` };
 
-/**
- * Shaped like a real connection failure: drizzle wraps the driver error,
- * whose string `code` and message embed connection details that must never
- * escape into the response, logs, or alert.
- */
 function leakyDbError(): Error {
   const err = Object.assign(
     new Error(
@@ -62,7 +54,7 @@ describe("GET /api/health", () => {
   it("rejects a wrong secret with 401", async () => {
     for (const authorization of [
       "Bearer wrong-secret",
-      SECRET, // missing the Bearer prefix
+      SECRET,
       `Bearer ${SECRET}x`,
       "Bearer ",
     ]) {
@@ -100,11 +92,10 @@ describe("GET /api/health", () => {
     const body = await res.text();
     expect(JSON.parse(body)).toEqual({ ok: false });
 
-    // Neither the response nor the logs carry the connection string.
     const logged = error.mock.calls.flat().join(" ");
     expect(logged).toContain("[hc] [health]");
-    expect(logged).toContain("ECONNREFUSED"); // the code survives
-    expect(logged).not.toContain("connect ECONNREFUSED"); // the message does not
+    expect(logged).toContain("ECONNREFUSED");
+    expect(logged).not.toContain("connect ECONNREFUSED");
     expect(`${body} ${logged}`).not.toContain("hunter2");
     expect(`${body} ${logged}`).not.toContain("db.internal");
   });

@@ -5,15 +5,7 @@ import { sendNotification } from "@/lib/email/resend";
 import { healthCheckFailedEmail } from "@/lib/email/templates";
 import { logDbError } from "@/lib/log";
 
-/**
- * Scheduled database health check, invoked daily by Vercel Cron (see
- * vercel.json). Keeps the Supabase project active and alerts on failure.
- *
- * Auth: Vercel sends `Authorization: Bearer $CRON_SECRET` on cron
- * invocations. Responses never carry error details.
- */
-
-/** Constant-time comparison. Hashing first equalizes the lengths. */
+/** Hash first: timingSafeEqual throws when the lengths differ. */
 function secretMatches(provided: string, expected: string): boolean {
   const a = createHash("sha256").update(provided).digest();
   const b = createHash("sha256").update(expected).digest();
@@ -28,10 +20,8 @@ async function sendFailureAlert(): Promise<void> {
       environment: appEnvironment(),
       checkedAt: new Date(),
     });
-    // sendNotification swallows and logs its own send failures.
     await sendNotification({ to, ...content });
   } catch (err) {
-    // Best effort: an alerting failure must not change the response.
     console.error(
       `[hc] [health] alert failed: ${err instanceof Error ? err.name : typeof err}`,
     );
@@ -41,7 +31,6 @@ async function sendFailureAlert(): Promise<void> {
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
-    // Fail closed and loud: an unset secret must never mean "open".
     console.error("[hc] [health] CRON_SECRET is not set");
     return Response.json({ ok: false }, { status: 500 });
   }
@@ -54,7 +43,6 @@ export async function GET(req: Request) {
   try {
     await pingDatabase();
   } catch (err) {
-    // Code only: connection-failure messages embed hosts, ports, and roles.
     logDbError("[hc] [health]", err, { includeMessage: false });
     await sendFailureAlert();
     return Response.json({ ok: false }, { status: 503 });

@@ -16,10 +16,8 @@ import "server-only";
  * limits mirroring the SQL CHECKs before it reaches the DB — keeps those
  * errors unreachable in practice; keep it that way.
  *
- * Pass `includeMessage: false` where connection-level failures are the
- * expected case (e.g. the health check): those messages name hosts, ports,
- * and roles ("connect ECONNREFUSED 10.0.0.5:5432", "password authentication
- * failed for user ..."), so only the code is logged.
+ * Pass `includeMessage: false` where connection failures are expected:
+ * their messages name hosts, ports and roles.
  */
 export function logDbError(
   tag: string,

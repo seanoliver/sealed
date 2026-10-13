@@ -107,12 +107,7 @@ export interface HealthCheckFailedEmailInput {
   checkedAt: Date;
 }
 
-/**
- * Operator alert for a failed scheduled database health check. Deliberately
- * contains NO error details (no message, code, or connection info), only
- * the fact that the check failed, where, and when. Diagnosis happens in the
- * Vercel runtime logs (search "[hc] [health]").
- */
+/** No error details here: driver messages carry connection info. */
 export function healthCheckFailedEmail({
   environment,
   checkedAt,

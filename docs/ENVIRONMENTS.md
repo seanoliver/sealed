@@ -139,7 +139,7 @@ Required production Vercel variables:
 - `CRON_SECRET` (random, at least 16 characters)
 - `HEALTH_ALERT_EMAIL` (recommended)
 
-`EMAIL_DRY_RUN` must be absent in production.
+`EMAIL_DRY_RUN` must be absent in production. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
 
 ### Scheduled health check
 
@@ -147,7 +147,7 @@ Required production Vercel variables:
 
 The check keeps the Supabase Free project from being paused for inactivity, which happens after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
 
-Cron jobs run only on a project's production deployment, and `vercel.json` applies to both Vercel projects. Set `CRON_SECRET` in the staging project too, or its daily run returns `500`. Runs appear under **Settings → Cron Jobs → View Logs** in each project. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
+Cron jobs run only on a project's production deployment, and `vercel.json` applies to both Vercel projects. Set `CRON_SECRET` in the staging project too, or its daily run returns `500`. Runs appear under **Settings → Cron Jobs → View Logs** in each project.
 
 ### Production configuration status
 
