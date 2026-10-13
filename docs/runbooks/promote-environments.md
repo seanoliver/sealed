@@ -56,9 +56,15 @@ The migration used the transaction pooler on port 6543. The workflow normalizes 
 
 ### Migration fails on SQL or times out waiting for a lock
 
-A lock timeout means a long query or transaction held the table; rerun the workflow once traffic is quiet. Otherwise the deploy does not happen, so the previous code keeps running against the unchanged schema (each migration file applies atomically). Fix forward with a new PR that corrects the migration. If an earlier file in the same push applied, add a corrective migration rather than editing the applied file.
+A lock timeout means a long query or transaction held the table; rerun the workflow once traffic is quiet. Otherwise the deploy does not happen, so the previous code keeps running against the unchanged schema (each migration file applies atomically unless it contains a statement that cannot run in a transaction, such as `create index concurrently`). Fix forward with a new PR that corrects the migration. If an earlier file in the same push applied, add a corrective migration rather than editing the applied file.
+
+### `db push` reports "Remote migration versions not found in local migrations directory"
+
+Production has a migration version the repository lacks, usually one applied by hand. The deploy does not happen. Restore the missing file in a PR, or mark the version reverted with `supabase migration repair --status reverted <version> --db-url <session-pooler URL>` after undoing its schema change. Do not delete rows from `supabase_migrations.schema_migrations` directly.
 
 ### The migration check fails
+
+This is a backstop: `db push` normally stops on the cases above first.
 
 Production's migration versions differ from the repository's, and the deploy does not happen. "Not applied" means `db push` skipped a version, usually because two migrations share one; rename the newer one with `supabase migration new`. "Applied to production but not in the repository" means a migration was run by hand or the repository lost one; restore the file or mark the version reverted with `supabase migration repair --status reverted <version> --db-url <session-pooler URL>`. Do not delete rows from `supabase_migrations.schema_migrations` directly.
 

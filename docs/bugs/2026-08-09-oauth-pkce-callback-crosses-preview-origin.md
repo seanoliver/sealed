@@ -40,7 +40,7 @@ Magic-link and public-link generation still use canonical `APP_URL`; they do not
 
 ## Recurrence guardrail
 
-Keep `e2e/oauth-origin.spec.ts` in the E2E suite. Any auth-page refactor, including moving server actions between files, must preserve `currentRequestOrigin()` for OAuth redirects. Supabase staging must also retain its preview-domain redirect wildcard.
+Keep `e2e/oauth-origin.spec.ts` in the E2E suite. Any auth-page refactor, including moving server actions between files, must preserve `currentRequestOrigin()` for OAuth redirects. While hosted staging existed (until 2026-10-13), Supabase staging also had to retain its preview-domain redirect wildcard; restore it if staging and PR previews come back.
 
 ## Follow-ups
 
