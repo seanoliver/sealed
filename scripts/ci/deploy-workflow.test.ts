@@ -13,9 +13,26 @@ describe("deploy-production.yml", () => {
     expect(workflow).toMatch(/^\s+workflow_dispatch:$/m);
   });
 
-  it("deploys only after a successful CI run for a push", () => {
-    expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
-    expect(workflow).toContain("github.event.workflow_run.event == 'push'");
+  it("deploys only by hand or after a successful CI run for a push", () => {
+    expect(workflow).toContain(
+      "if: >-\n" +
+        "      github.event_name == 'workflow_dispatch' ||\n" +
+        "      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')\n",
+    );
+  });
+
+  it("refuses a missing or non-pooler database URL and masks it before migrating", () => {
+    const push = workflow.indexOf("supabase db push");
+    for (const line of [
+      'test -n "$DATABASE_URL" || {',
+      'echo "::add-mask::$url"',
+      'echo "::add-mask::${password%%@*}"',
+      '[[ "$url" == *".pooler.supabase.com:5432/"* ]] || {',
+    ]) {
+      const at = workflow.indexOf(line);
+      expect(at, line).toBeGreaterThan(-1);
+      expect(at, line).toBeLessThan(push);
+    }
   });
 
   it("uses the Production environment and checks out main", () => {
@@ -32,6 +49,17 @@ describe("deploy-production.yml", () => {
     expect(versions).toBeGreaterThan(push);
     expect(drift).toBeGreaterThan(versions);
     expect(deploy).toBeGreaterThan(drift);
+  });
+
+  it("installs the Vercel CLI after migrating and without install scripts", () => {
+    const install = workflow.indexOf("npm install --global --ignore-scripts vercel@");
+    expect(install).toBeGreaterThan(workflow.indexOf("supabase db push"));
+    expect(install).toBeLessThan(workflow.indexOf("vercel deploy --prod"));
+    expect(workflow.match(/npm install/g)).toHaveLength(1);
+  });
+
+  it("does not leave the GitHub token in the checkout", () => {
+    expect(workflow).toMatch(/ref: main\n\s+persist-credentials: false/);
   });
 
   it("pins every action to a commit", () => {

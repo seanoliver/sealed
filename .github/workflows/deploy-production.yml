@@ -31,21 +31,23 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
+          persist-credentials: false
       - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: 2.109.1
-      - name: Install Vercel CLI
-        run: npm install --global vercel@49.1.2
       - name: Apply committed migrations to production
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "10"
         run: |
           test -n "$DATABASE_URL" || { echo "PRODUCTION_DATABASE_URL is not configured"; exit 1; }
           # The transaction pooler (6543) retains prepared statements across
           # clients; Supabase CLI migration retries then fail with SQLSTATE 42P05.
           url="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
+          password="${url#*://*:}"
           echo "::add-mask::$url"
+          echo "::add-mask::${password%%@*}"
           [[ "$url" == *".pooler.supabase.com:5432/"* ]] || {
             echo "PRODUCTION_DATABASE_URL must use the Supabase session pooler"; exit 1;
           }
@@ -53,6 +55,8 @@ jobs:
           supabase db push --db-url "$url" --include-all --yes
           versions=$(psql "$url" -Atc "select version from supabase_migrations.schema_migrations")
           scripts/ci/migration-drift.sh supabase/migrations <<<"$versions"
+      - name: Install Vercel CLI
+        run: npm install --global --ignore-scripts vercel@49.1.2
       - name: Build and deploy on Vercel
         id: deploy
         shell: bash
@@ -67,3 +71,5 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      - name: Smoke-check sealed.page
+        run: curl -fsS --retry 5 --retry-all-errors --retry-delay 5 -o /dev/null https://sealed.page/login

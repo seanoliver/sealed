@@ -14,7 +14,7 @@ Get a merged change live on sealed.page, with any database migration applied imm
 - GitHub `Production` contains `PRODUCTION_DATABASE_URL` and `VERCEL_TOKEN`, plus the `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` variables, and allows only `main`.
 - The migration URL uses Supabase's IPv4 **session pooler** on port 5432 with `sslmode=require`. GitHub-hosted runners cannot reach the project's IPv6-only direct endpoint, and the transaction pooler on port 6543 is incompatible with the migration CLI's prepared statements.
 - The `sealed` Vercel project stays disconnected from Git, and every production variable is scoped to the Production target.
-- Migrations are backward-compatible with the code that is live when they run, and start with `set local lock_timeout = '5s';`. Production has no automatic schema rollback.
+- Migrations are backward-compatible with the code that is live when they run, and start with `set lock_timeout = '5s';`. Production has no automatic schema rollback.
 - Do not run `supabase config push` from the localhost-oriented `supabase/config.toml`; hosted Auth configuration is managed separately.
 
 ## Procedure
@@ -29,6 +29,8 @@ Get a merged change live on sealed.page, with any database migration applied imm
    ```
 
 4. Confirm the production deployment is Ready and reports the merge commit, then run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
+
+If the newest commit's CI on `main` fails on a flaky test, nothing deploys until CI is re-run or another commit lands; re-run CI, or dispatch the workflow below.
 
 To redeploy the head of `main` without a new commit, dispatch the workflow: <https://github.com/seanoliver/sealed/actions/workflows/deploy-production.yml> → **Run workflow**, or `gh workflow run deploy-production.yml`.
 
