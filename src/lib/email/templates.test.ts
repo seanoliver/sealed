@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { addressRequestEmail, submissionNotificationEmail } from "./templates";
+import {
+  addressRequestEmail,
+  healthCheckFailedEmail,
+  submissionNotificationEmail,
+} from "./templates";
 
 const addressRequest = {
   ownerName: "Sean O",
@@ -89,5 +93,31 @@ describe("submissionNotificationEmail", () => {
       expect(part).not.toContain("undefined");
       expect(part).not.toMatch(/\$\{/);
     }
+  });
+});
+
+describe("healthCheckFailedEmail", () => {
+  const alert = {
+    environment: "production",
+    checkedAt: new Date("2026-10-13T12:00:00.000Z"),
+  };
+
+  it("identifies Sealed, the environment, and the time in every representation", () => {
+    const { subject, html, text } = healthCheckFailedEmail(alert);
+    expect(subject).toBe("Database health check failed (production) · Sealed");
+    for (const part of [html, text]) {
+      expect(part).toContain("Sealed");
+      expect(part).toContain("production");
+      expect(part).toContain("2026-10-13T12:00:00.000Z");
+    }
+  });
+
+  it("strips control characters and escapes the environment label", () => {
+    const { subject, html } = healthCheckFailedEmail({
+      ...alert,
+      environment: "<b>x</b>\r\nBcc: a@b.c",
+    });
+    expect(subject).not.toMatch(/[\r\n]/);
+    expect(html).not.toContain("<b>x</b>");
   });
 });

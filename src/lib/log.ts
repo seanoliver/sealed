@@ -15,8 +15,15 @@ import "server-only";
  * input). The validate-first convention — every write is zod-parsed with
  * limits mirroring the SQL CHECKs before it reaches the DB — keeps those
  * errors unreachable in practice; keep it that way.
+ *
+ * Pass `includeMessage: false` where connection failures are expected:
+ * their messages name hosts, ports and roles.
  */
-export function logDbError(tag: string, err: unknown): void {
+export function logDbError(
+  tag: string,
+  err: unknown,
+  { includeMessage = true }: { includeMessage?: boolean } = {},
+): void {
   let code: string | undefined;
   let constraint: string | undefined;
   let message: string | undefined;
@@ -30,7 +37,7 @@ export function logDbError(tag: string, err: unknown): void {
       code = e.code;
       constraint =
         typeof e.constraint_name === "string" ? e.constraint_name : undefined;
-      message = e.message;
+      message = includeMessage ? e.message : undefined;
     }
     cur = cur.cause;
   }

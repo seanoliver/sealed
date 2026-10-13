@@ -101,3 +101,37 @@ Review it: ${reviewUrl}
 
   return { subject, html, text };
 }
+
+export interface HealthCheckFailedEmailInput {
+  environment: string;
+  checkedAt: Date;
+}
+
+/** No error details here: driver messages carry connection info. */
+export function healthCheckFailedEmail({
+  environment,
+  checkedAt,
+}: HealthCheckFailedEmailInput): EmailContent {
+  const safeEnvironment = environment.replace(/\p{Cc}+/gu, " ").trim();
+  const subject = `Database health check failed (${safeEnvironment}) · Sealed`;
+  const when = checkedAt.toISOString();
+  const env = escapeHtml(safeEnvironment);
+
+  const html = `<div style="margin:0 auto;max-width:520px;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:15px;line-height:1.6">
+  <p style="margin:0 0 24px;font-size:17px;font-weight:700">Sealed</p>
+  <p style="margin:0 0 16px">The scheduled database health check failed in <strong>${env}</strong> at ${when}.</p>
+  <p style="margin:0 0 16px">Check whether the Supabase project is paused or down, and search the Vercel runtime logs for <code>[hc] [health]</code>.</p>
+  <p style="margin:0;color:#6b7280;font-size:13px">This alert contains no error details by design.</p>
+</div>`;
+
+  const text = `Sealed
+
+The scheduled database health check failed in ${safeEnvironment} at ${when}.
+
+Check whether the Supabase project is paused or down, and search the Vercel runtime logs for [hc] [health].
+
+This alert contains no error details by design.
+`;
+
+  return { subject, html, text };
+}
