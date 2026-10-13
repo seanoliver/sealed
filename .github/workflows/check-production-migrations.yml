@@ -1,0 +1,36 @@
+name: Check production migrations
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Compare migrations with production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if production is missing or has extra migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "PRODUCTION_DATABASE_URL is not configured"; exit 1; }
+          url="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
+          remote=$(psql "$url" -Atc "select version from supabase_migrations.schema_migrations" | sort)
+          repo=$(find supabase/migrations -maxdepth 1 -name "*.sql" -exec basename {} \; | cut -d_ -f1 | sort)
+          missing=$(comm -23 <(echo "$repo") <(echo "$remote"))
+          extra=$(comm -13 <(echo "$repo") <(echo "$remote"))
+          if [ -n "$missing" ]; then
+            echo "::error::Not applied to production (run Migrate production): ${missing//$'\n'/ }"
+          fi
+          if [ -n "$extra" ]; then
+            echo "::error::Applied to production but not on main (see the runbook's abandoned-migration recovery): ${extra//$'\n'/ }"
+          fi
+          [ -z "$missing" ] && [ -z "$extra" ] && echo "Production has exactly the migrations on main."
+          [ -z "$missing" ] && [ -z "$extra" ]

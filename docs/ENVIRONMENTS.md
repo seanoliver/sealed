@@ -77,9 +77,11 @@ Until 2026-10-13 a hosted staging environment (`sealed-staging` Vercel project, 
 The `sealed` Vercel project is connected to GitHub and deploys every push to `main`. Two settings keep it from building anything else:
 
 - `vercel.json` sets `git.deploymentEnabled` to `main` only.
-- The project's **Ignored Build Step** skips any commit not on `main` (`[ "$VERCEL_GIT_COMMIT_REF" != "main" ]`). It lives in project settings, so a branch cannot change it the way it could change `vercel.json`.
+- The project's **Ignored Build Step** skips any commit not on `main` (`[ "$VERCEL_GIT_COMMIT_REF" != "main" ]`).
 
-There are no PR preview deployments. Production variables are scoped to the Production target only.
+Both can be overridden by a branch's own `vercel.json`, so they prevent accidental previews rather than enforce a boundary. The boundary is that every production variable is scoped to the Production target and the project's Production Branch is `main`: a preview build would get no database URL or secrets and would fail at startup. Keep the Preview and Development targets empty.
+
+The `Production` GitHub environment has no required reviewers. GitHub does not support them on private repositories below Enterprise, and the repository has a single maintainer; this was a deliberate choice on 2026-10-13.
 
 Migrations are not part of the deploy. They are applied with the **Migrate production** workflow before the PR that needs them merges (see [Migration policy](#migration-policy)).
 
@@ -112,7 +114,7 @@ Required production Vercel variables:
 
 `vercel.json` schedules a daily Vercel Cron call to `GET /api/health`, which runs `select 1` against the database. It returns `200 {"ok":true}` or `503 {"ok":false}` and never includes error details. Vercel attaches `Authorization: Bearer $CRON_SECRET` to cron invocations; without `CRON_SECRET` the route answers `500` to every request. On a database failure it emails `HEALTH_ALERT_EMAIL` if set and logs the Postgres or driver error code under `[hc] [health]`.
 
-Both Supabase projects are on the Pro plan, which is not paused for inactivity, so the check serves as an outage alarm. On the Free plan it would also keep a project from being paused after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
+The production Supabase project is on the Pro plan, which is not paused for inactivity, so the check serves as an outage alarm. On the Free plan it would also keep a project from being paused after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
 
 Cron jobs run only on the production deployment. Runs appear under **Settings → Cron Jobs → View Logs**.
 
@@ -123,8 +125,11 @@ Production project variables and the GitHub migration credential are configured.
 ## Migration policy
 
 - CI tests every migration against a disposable local stack.
-- A PR that adds a migration is applied to production with **Migrate production** (`ref` = the PR branch) **before** it merges. Merging then deploys code that expects the new schema.
+- A PR that adds a migration is applied to production with **Migrate production** (`ref` = the PR branch) **before** it merges, and only after review is done and CI is green. The workflow refuses a ref that does not include `main` or has not passed all five CI checks.
+- Have one migration PR in flight at a time, and merge it promptly after migrating. A migrated PR must not be abandoned or edited; see the runbook's recovery section if one is.
+- Create migrations with `supabase migration new <name>` so versions are timestamps. Hand-numbered versions from two branches can collide, and the CLI skips a version production already has without checking its contents.
 - Every migration must be backward-compatible with the code currently on `main`, because it runs before that code is replaced. Use expand/migrate/contract steps across PRs for anything destructive.
+- After every push to `main`, **Check production migrations** compares the repository's migration versions with production's and fails if any are missing or extra.
 - Never edit a migration after it has been applied to production; add a new one.
 - Database rollback is not automatic; write corrective forward migrations.
 
@@ -146,7 +151,7 @@ Before considering an environment ready:
 - New owners can complete onboarding.
 - Owners can create/edit/import/export contacts.
 - Recipient links are write-only and rate-limited.
-- Production uses the restricted `app_server` database role.
+- Production uses the restricted runtime database role (`app_server_v2`).
 
 The repeatable release procedure and failure recovery are in [the environment promotion runbook](runbooks/promote-environments.md).
 

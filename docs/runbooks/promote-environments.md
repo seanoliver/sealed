@@ -20,7 +20,7 @@ Get a merged change live on sealed.page, applying any database migration first s
 ## Procedure
 
 1. Verify the PR locally and in CI. `main` requires a PR with passing checks.
-2. **If the PR adds a migration**, apply it before merging. Dispatch **Migrate production** against the PR branch and wait for it to succeed:
+2. **If the PR adds a migration**, apply it right before merging: after review is done, with `main` merged or rebased into the branch, and with CI green on the branch's latest commit. The workflow refuses anything else. Dispatch **Migrate production** against the PR branch and wait for it to succeed:
 
    ```bash
    gh workflow run migrate-production.yml -f ref=<pr-branch>
@@ -29,8 +29,8 @@ Get a merged change live on sealed.page, applying any database migration first s
    ```
 
    Or from the browser: <https://github.com/seanoliver/sealed/actions/workflows/migrate-production.yml> → **Run workflow**.
-3. Merge the PR. Vercel builds and deploys the merge commit to production.
-4. Confirm the production deployment is Ready and reports the merge commit, then run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
+3. Merge the PR promptly. Vercel builds and deploys the merge commit to production, and **Check production migrations** confirms production has exactly the migrations on `main`.
+4. Confirm the production deployment is Ready and reports the merge commit and that the migration check passed, then run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
 
 ## Verification
 
@@ -58,6 +58,18 @@ The migration used the transaction pooler on port 6543, which can hand the CLI a
 
 Do not merge the PR. Diagnose against a local database, fix the migration on the branch (it was not applied), and rerun **Migrate production**. If part of a multi-file push applied, add a corrective forward migration rather than editing an applied file.
 
+### A PR with a migration merged without running it
+
+**Check production migrations** fails and names the missing version. Run **Migrate production** with `ref=main` immediately. Routes that use the new schema return errors until it finishes.
+
+### A migrated PR is abandoned or reverted
+
+Production has a version that is not on `main`, so **Check production migrations** fails and later `supabase db push` runs refuse with "Remote migration versions not found in local migrations directory". Either land a reversing migration on `main` that undoes the schema change, then mark the abandoned version as reverted, or reverse the schema by hand and run `supabase migration repair --status reverted <version> --db-url <session-pooler URL>`. Do not delete rows from `supabase_migrations.schema_migrations` directly.
+
+### Two migration PRs collide
+
+If both added the same version, the second push skips its file without applying it. Rename the second migration with `supabase migration new`, merge `main` into its branch, and migrate again.
+
 ### A deploy fails after merge
 
 The previous production deployment keeps serving traffic. Fix forward with a new PR, or promote an earlier deployment from the Vercel dashboard (Instant Rollback). A rollback does not undo migrations, which is why migrations must stay backward-compatible.
@@ -70,6 +82,7 @@ Stop before redeploying. Follow the recovery in `docs/bugs/2026-08-09-vercel-env
 
 - `.github/workflows/ci.yml`
 - `.github/workflows/migrate-production.yml`
+- `.github/workflows/check-production-migrations.yml`
 - `vercel.json`
 - `docs/ENVIRONMENTS.md`
 - Vercel Git configuration: <https://vercel.com/docs/project-configuration/git-configuration>
