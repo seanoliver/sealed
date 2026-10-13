@@ -1,40 +1,30 @@
-name: Deploy production
+name: Migrate production
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Tested commit SHA or tag to deploy
+        description: Branch, tag or SHA whose migrations to apply (usually the PR branch, before merging)
         required: true
         default: main
 
 concurrency:
-  group: production-deployment
+  group: production-migration
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Migrate and deploy production
+  migrate:
+    name: Apply migrations to production
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment:
-      name: Production
-      url: ${{ steps.deploy.outputs.url }}
+    timeout-minutes: 15
+    environment: Production
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
       - uses: supabase/setup-cli@v1
         with:
           version: 2.109.1
-      - run: pnpm install --frozen-lockfile
-      - name: Install Vercel CLI
-        run: pnpm add --global vercel@49.1.2
       - name: Apply committed migrations to production
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
@@ -47,15 +37,3 @@ jobs:
             echo "PRODUCTION_DATABASE_URL must use the Supabase session pooler"; exit 1;
           }
           supabase db push --db-url "$MIGRATION_DATABASE_URL" --include-all --yes
-      - name: Build and deploy tested source on Vercel
-        id: deploy
-        run: |
-          deploy_sha=$(git rev-parse HEAD)
-          url=$(vercel deploy --prod --yes \
-            --meta "githubCommitSha=$deploy_sha" \
-            --meta "githubCommitRef=${{ inputs.ref }}" \
-            --token="${{ secrets.VERCEL_TOKEN }}")
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-        env:
-          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}

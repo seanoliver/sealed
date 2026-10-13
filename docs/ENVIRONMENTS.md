@@ -1,31 +1,28 @@
 # Environments and promotion
 
-Sealed runs in three isolated environments. `APP_ENV` is the application-level environment selector; do not use `NODE_ENV` for this distinction because Vercel Preview deployments also run with `NODE_ENV=production`.
+Sealed runs in two environments, local and production. A hosted staging environment existed until 2026-10-13 and is retired (see [Retired staging](#retired-staging)). `APP_ENV` is the application-level environment selector; do not use `NODE_ENV` for this distinction because Vercel Preview deployments also run with `NODE_ENV=production`.
 
 ## Environment matrix
 
-| Concern | Local | Staging | Production |
-|---|---|---|---|
-| Application | `http://localhost:3000` | `sealed-staging` Vercel project, including every PR preview | `sealed` Vercel project |
-| Supabase | CLI stack | `sealed-staging` (`fmjbjkcuyqopoubbylme`) | `sealed` (`ivwrvilpjhqhmlzwgyot`) |
-| Database data | Disposable local fixtures | Synthetic test data only | Real owner/contact data |
-| Email | Mailpit and dry-run logs | Dry-run logs until a restricted staging sender is configured | Resend production sender |
-| Turnstile | Cloudflare test keys | Cloudflare test keys initially | Real production widget |
-| Google OAuth | Dedicated local client | Dedicated staging client | Dedicated production client |
+| Concern | Local | Production |
+|---|---|---|
+| Application | `http://localhost:3000` | `sealed` Vercel project, deployed from `main` |
+| Supabase | CLI stack | `sealed` (`ivwrvilpjhqhmlzwgyot`) |
+| Database data | Disposable local fixtures | Real owner/contact data |
+| Email | Mailpit and dry-run logs | Resend production sender |
+| Turnstile | Cloudflare test keys | Real production widget |
+| Google OAuth | Dedicated local client | Dedicated production client |
 
-Both Vercel projects belong to the `cabin-9` team (`team_zbOQcoGZ8Edz3hYHUC0mHa3t`), and both Supabase projects to the personal Supabase organization (Pro plan).
-
-The two hosted Supabase projects must never share credentials, users, or database data. Never copy production contact data into staging.
+The Vercel project belongs to the `cabin-9` team (`team_zbOQcoGZ8Edz3hYHUC0mHa3t`), and the Supabase project to the personal Supabase organization (Pro plan). Never copy production contact data into a local database.
 
 ## URL rules
 
 `APP_URL` is the **canonical URL** used in outgoing email and public address-book links:
 
 - Local: `http://localhost:3000`
-- Staging: `https://sealed-staging.vercel.app`
 - Production: the production domain
 
-OAuth callbacks initiated on a Vercel preview should use that request's origin so the browser returns to the same preview. Supabase staging must allow both the canonical staging callback and the Vercel preview-domain wildcard. Production Supabase must allow only production callbacks.
+Production Supabase must allow only production callbacks.
 
 ## Local development
 
@@ -71,52 +68,20 @@ skip_nonce_check = false
 
 Export the two credential variables before restarting Supabase. An ignored `.envrc` with `direnv allow` is supported for local development. Never commit them. Keep `skip_nonce_check = false`; the current Supabase Auth flow performs the nonce check.
 
-## Staging
+## Retired staging
 
-### Provisioned infrastructure
-
-- Supabase project: `sealed-staging` (`fmjbjkcuyqopoubbylme`), `us-east-1`
-- Vercel project: `sealed-staging` (`prj_U3UvwU863EZVmb9up3Z0M28GQWQQ`)
-- GitHub environment: `Staging`
-- Restricted database runtime role: `app_server`
-- Migrations `00000000000001` through `00000000000003` applied
-
-The staging Vercel project's Production and Preview variables both point to staging Supabase. It is the only Vercel project connected to GitHub, so PR preview links cannot accidentally use production infrastructure.
-
-### Hosted configuration
-
-Staging Supabase is configured with:
-
-- Site URL `https://sealed-staging.vercel.app`
-- Redirect allow-list entries for the new and legacy stable staging URLs plus this project's Vercel preview wildcard
-- A dedicated Google OAuth client owned by the Sealed Google Cloud project
-- Only an empty, ungranted `api` schema exposed through the Data API; application data is not exposed
-
-The custom magic-link template in `supabase/templates/magic_link.html` remains local-only while staging uses Supabase's free-tier default email provider: hosted template modification requires either custom SMTP or a paid Supabase plan. The default provider is intentionally retained until staging-auth recipient policy is decided.
-
-The staging Google client callback is:
-
-```text
-https://fmjbjkcuyqopoubbylme.supabase.co/auth/v1/callback
-```
-
-Staging currently uses email dry-run and Turnstile test keys. This is deliberate. Do not configure real staging email until recipient restrictions prevent accidental sends to arbitrary addresses.
-
-### Staging deployment
-
-Git-connected Vercel deployments handle `main` and pull requests. After CI succeeds on `main`, `.github/workflows/deploy-staging.yml` applies committed migrations to staging. `STAGING_DATABASE_URL` must be an owner-role Supabase **session-pooler** URL on port 5432; GitHub-hosted runners cannot reach the project's IPv6-only direct database endpoint, while transaction pooling on port 6543 is incompatible with the CLI's prepared statements. Database-changing PR previews therefore run against the last merged staging schema; keep migrations backward-compatible.
+Until 2026-10-13 a hosted staging environment (`sealed-staging` Vercel project, `sealed-staging` Supabase project `fmjbjkcuyqopoubbylme`) received every merge and every PR preview, and production was released by hand after staging verification. With no real users yet, it was retired to match the simpler flow used by Sean's other projects. The Supabase project is paused, not deleted, and the Vercel project is disconnected from Git. Restore both before bringing staging back, and reintroduce a staging workflow and runbook steps.
 
 ## Production
 
-Production Vercel is intentionally disconnected from GitHub. This prevents it from creating PR previews with production credentials.
+The `sealed` Vercel project is connected to GitHub and deploys every push to `main`. Two settings keep it from building anything else:
 
-A production release is explicit:
+- `vercel.json` sets `git.deploymentEnabled` to `main` only.
+- The project's **Ignored Build Step** skips any commit not on `main` (`[ "$VERCEL_GIT_COMMIT_REF" != "main" ]`). It lives in project settings, so a branch cannot change it the way it could change `vercel.json`.
 
-1. Confirm the commit has passed CI and staging verification.
-2. Run the **Deploy production** GitHub workflow with that exact SHA or tag.
-3. The protected `Production` job applies migrations first.
-4. Vercel builds and deploys the same checked-out ref.
-5. Run non-destructive smoke checks after deployment.
+There are no PR preview deployments. Production variables are scoped to the Production target only.
+
+Migrations are not part of the deploy. They are applied with the **Migrate production** workflow before the PR that needs them merges (see [Migration policy](#migration-policy)).
 
 Required GitHub Production secret:
 
@@ -124,7 +89,7 @@ Required GitHub Production secret:
 PRODUCTION_DATABASE_URL
 ```
 
-This migration URL connects as the Supabase database owner and is available only to the protected deployment job. It must use the IPv4 session pooler on port 5432 for GitHub-hosted runners; the transaction pooler on port 6543 can retain the CLI's prepared statements across clients and fail retries with `SQLSTATE 42P05`. It is distinct from Vercel's runtime `DATABASE_URL`, which must connect as the restricted `app_server` role.
+This migration URL connects as the Supabase database owner and is available only to the **Migrate production** job, which may run only from `main` or a `v*` tag (the `Production` environment's branch policy). It checks out the requested ref, so it can apply a PR branch's migrations before merge. It must use the IPv4 session pooler on port 5432 for GitHub-hosted runners; the transaction pooler on port 6543 can retain the CLI's prepared statements across clients and fail retries with `SQLSTATE 42P05`. It is distinct from Vercel's runtime `DATABASE_URL`, which must connect as the restricted `app_server` role.
 
 Required production Vercel variables:
 
@@ -149,26 +114,25 @@ Required production Vercel variables:
 
 Both Supabase projects are on the Pro plan, which is not paused for inactivity, so the check serves as an outage alarm. On the Free plan it would also keep a project from being paused after a week without enough database activity ([Supabase: Project Pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Hobby plans allow cron jobs at most once per day and may fire anywhere within the scheduled hour ([Vercel: Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing)).
 
-Cron jobs run only on a project's production deployment, and `vercel.json` applies to both Vercel projects. Set `CRON_SECRET` in the staging project too, or its daily run returns `500`. Runs appear under **Settings → Cron Jobs → View Logs** in each project.
+Cron jobs run only on the production deployment. Runs appear under **Settings → Cron Jobs → View Logs**.
 
 ### Production configuration status
 
-Production project variables and the protected GitHub migration credential are configured. The existing deployment remains live with its original environment snapshot; the next approved deployment will use the rotated `app_server_v2` runtime credential. The original `app_server` login must remain active until that deployment is verified, after which its old login credential can be retired. Production Google OAuth now uses the dedicated client owned by the Sealed Google Cloud project.
+Production project variables and the GitHub migration credential are configured. The runtime connects as the rotated `app_server_v2` role (verified 2026-08-10); retiring the superseded `app_server` login is tracked in #20. Production Google OAuth now uses the dedicated client owned by the Sealed Google Cloud project.
 
 ## Migration policy
 
 - CI tests every migration against a disposable local stack.
-- PRs never mutate staging or production databases.
-- Successful `main` CI applies migrations to staging.
-- Production migration and deployment happen in one manually dispatched workflow.
-- Prefer expand/migrate/contract changes so old and new application versions can overlap safely.
+- A PR that adds a migration is applied to production with **Migrate production** (`ref` = the PR branch) **before** it merges. Merging then deploys code that expects the new schema.
+- Every migration must be backward-compatible with the code currently on `main`, because it runs before that code is replaced. Use expand/migrate/contract steps across PRs for anything destructive.
+- Never edit a migration after it has been applied to production; add a new one.
 - Database rollback is not automatic; write corrective forward migrations.
 
 ## Secrets and ownership
 
 - `.env.local` is ignored and contains local-only credentials.
 - Vercel owns runtime application secrets.
-- GitHub Environments own migration/deployment secrets.
+- The GitHub `Production` environment owns the migration secret.
 - Google Cloud owns OAuth client secrets.
 - Supabase project keys are environment-specific.
 - Never expose database URLs, Resend keys, Turnstile secrets, Supabase secret/service-role keys, or OAuth secrets to the browser.
@@ -182,7 +146,6 @@ Before considering an environment ready:
 - New owners can complete onboarding.
 - Owners can create/edit/import/export contacts.
 - Recipient links are write-only and rate-limited.
-- Staging sends no real address-request email.
 - Production uses the restricted `app_server` database role.
 
 The repeatable release procedure and failure recovery are in [the environment promotion runbook](runbooks/promote-environments.md).
@@ -191,6 +154,7 @@ The repeatable release procedure and failure recovery are in [the environment pr
 
 - Vercel environment variables: <https://vercel.com/docs/environment-variables>
 - Vercel Git deployments: <https://vercel.com/docs/git>
+- Vercel Git configuration (`deploymentEnabled`): <https://vercel.com/docs/project-configuration/git-configuration>
 - Supabase local development: <https://supabase.com/docs/guides/local-development>
 - Supabase redirect URLs and wildcards: <https://supabase.com/docs/guides/auth/redirect-urls>
 - Supabase Google Auth: <https://supabase.com/docs/guides/auth/social-login/auth-google>
