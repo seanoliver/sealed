@@ -2,7 +2,8 @@
 # Usage: migration-drift.sh <migrations dir> < production versions (one per line)
 set -euo pipefail
 
-repo=$(find "$1" -maxdepth 1 -name "*.sql" -exec basename {} \; | cut -d_ -f1 | sort)
+files=$(find "$1" -maxdepth 1 -name "*.sql" -exec basename {} \;)
+repo=$(grep -E '^[0-9]+_' <<<"$files" | cut -d_ -f1 | sort || true)
 remote=$(grep -v '^$' | sort || true)
 missing=$(comm -23 <(echo "$repo") <(echo "$remote") | grep -v '^$' || true)
 extra=$(comm -13 <(echo "$repo") <(echo "$remote") | grep -v '^$' || true)

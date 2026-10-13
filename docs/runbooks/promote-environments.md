@@ -14,14 +14,14 @@ Get a merged change live on sealed.page, with any database migration applied imm
 - GitHub `Production` contains `PRODUCTION_DATABASE_URL` and `VERCEL_TOKEN`, plus the `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` variables, and allows only `main`.
 - The migration URL uses Supabase's IPv4 **session pooler** on port 5432 with `sslmode=require`. GitHub-hosted runners cannot reach the project's IPv6-only direct endpoint, and the transaction pooler on port 6543 is incompatible with the migration CLI's prepared statements.
 - The `sealed` Vercel project stays disconnected from Git, and every production variable is scoped to the Production target.
-- Migrations are backward-compatible with the code that is live when they run. Production has no automatic schema rollback.
+- Migrations are backward-compatible with the code that is live when they run, and start with `set local lock_timeout = '5s';`. Production has no automatic schema rollback.
 - Do not run `supabase config push` from the localhost-oriented `supabase/config.toml`; hosted Auth configuration is managed separately.
 
 ## Procedure
 
 1. Verify the PR locally and in CI. `main` requires a PR that is up to date with `main` and has passing checks.
 2. Merge the PR.
-3. CI runs on `main`. When it passes, **Deploy production** runs on its own: it migrates, checks production's migrations against the repository, and deploys the commit. Watch it if the PR has a migration:
+3. CI runs on `main`. When it passes, **Deploy production** runs on its own: it checks out the head of `main`, migrates, checks production's migrations against the repository, and deploys. If several PRs merge close together, an earlier run may already deploy a later commit. Watch it if the PR has a migration:
 
    ```bash
    gh run list --workflow deploy-production.yml --limit 1
@@ -46,10 +46,6 @@ Also check:
 
 ## Failure recovery
 
-### The run was skipped
-
-A newer commit reached `main` before this run started, so the newer commit's run deploys instead. Nothing to do.
-
 ### Migration reports an IPv6 network error
 
 The secret contains a direct Supabase URL. Rotate the database-owner password, construct the project's session-pooler URL (`postgres.<project-ref>` on port 5432), verify it connects as `postgres`, replace `PRODUCTION_DATABASE_URL`, and rerun the workflow. Never print the URL or password in logs.
@@ -58,9 +54,9 @@ The secret contains a direct Supabase URL. Rotate the database-owner password, c
 
 The migration used the transaction pooler on port 6543. The workflow normalizes 6543 URLs to 5432 and rejects direct or unexpected endpoints; if this still appears, check the secret's host and port.
 
-### Migration fails on SQL
+### Migration fails on SQL or times out waiting for a lock
 
-The deploy does not happen, so the previous code keeps running against the unchanged schema (each migration file applies atomically). Fix forward with a new PR that corrects the migration. If an earlier file in the same push applied, add a corrective migration rather than editing the applied file.
+A lock timeout means a long query or transaction held the table; rerun the workflow once traffic is quiet. Otherwise the deploy does not happen, so the previous code keeps running against the unchanged schema (each migration file applies atomically). Fix forward with a new PR that corrects the migration. If an earlier file in the same push applied, add a corrective migration rather than editing the applied file.
 
 ### The migration check fails
 
@@ -79,5 +75,7 @@ Stop before redeploying. Follow the recovery in `docs/bugs/2026-08-09-vercel-env
 - `.github/workflows/ci.yml`
 - `.github/workflows/deploy-production.yml`
 - `scripts/ci/migration-drift.sh` (tested in `scripts/ci/migration-drift.test.ts`)
+- `scripts/ci/deploy-workflow.test.ts` (trigger, gate and step order of the deploy workflow)
+- `scripts/ci/migrations.test.ts` (lock timeout on new migrations)
 - `docs/ENVIRONMENTS.md`
 - Supabase database connection guidance: <https://supabase.com/docs/guides/database/connecting-to-postgres>
