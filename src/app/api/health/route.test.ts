@@ -140,8 +140,15 @@ describe("GET /api/health", () => {
       vi.mocked(pingDatabase).mockReturnValueOnce(new Promise<void>(() => {}));
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      const pending = get(authorized);
-      await vi.advanceTimersByTimeAsync(10_000);
+      let settled = false;
+      const pending = get(authorized).finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(settled).toBe(false);
+      expect(sendNotification).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
       const res = await pending;
 
       expect(res.status).toBe(503);
@@ -150,5 +157,27 @@ describe("GET /api/health", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("waits for the alert to finish before responding", async () => {
+    vi.mocked(pingDatabase).mockRejectedValueOnce(leakyDbError());
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let finishAlert!: () => void;
+    vi.mocked(sendNotification).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishAlert = resolve;
+      }),
+    );
+
+    let settled = false;
+    const pending = get(authorized).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(sendNotification).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+
+    finishAlert();
+    expect((await pending).status).toBe(503);
   });
 });
