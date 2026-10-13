@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
@@ -62,12 +63,16 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* GET form: search stays a server round-trip, no client JS needed. */}
-      <form action="/dashboard" method="get" className="mt-6 flex gap-2">
+      {/* next/form: submits as GET to /dashboard?q=… via client-side
+          navigation (no full reload); still a plain GET form without JS. */}
+      <Form action="/dashboard" className="mt-6 flex gap-2">
         <label htmlFor="q" className="sr-only">
           Search contacts
         </label>
+        {/* Keyed on the query so back/forward (which reuses this subtree)
+            resets the uncontrolled input to the URL's ?q= value. */}
         <input
+          key={query}
           id="q"
           name="q"
           type="search"
@@ -81,7 +86,7 @@ export default async function DashboardPage({
         >
           Search
         </button>
-      </form>
+      </Form>
 
       {rows.length === 0 ? (
         query ? (
