@@ -28,7 +28,17 @@ test.beforeAll(async ({ browser }) => {
     displayName: "Spa Owner",
   });
   await seedContact({ bookId, fullName: "Ada Lovelace" });
-  await seedContact({ bookId, fullName: "Grace Hopper" });
+  const graceId = await seedContact({ bookId, fullName: "Grace Hopper" });
+  // Compile every visited route up front; a cold dev compile outlasts toHaveURL.
+  for (const route of [
+    "/dashboard",
+    `/dashboard/contacts/${graceId}`,
+    "/dashboard/review",
+    "/dashboard/import",
+    "/dashboard/settings",
+  ]) {
+    await page.request.get(route);
+  }
 });
 
 test.afterAll(async () => {
@@ -62,6 +72,14 @@ test("search, back/forward and in-app links never reload the document", async ()
   await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
   await expect(search).toHaveValue("grace");
   await expect(table.getByRole("link", { name: "Ada Lovelace" })).toHaveCount(0);
+  await expectNoFullReload();
+
+  await search.fill("ada");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?q=ada$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
+  await expect(search).toHaveValue("grace");
   await expectNoFullReload();
 
   await table.getByRole("link", { name: "Grace Hopper" }).click();
@@ -100,4 +118,16 @@ test("search, back/forward and in-app links never reload the document", async ()
   await expect(page.getByRole("heading", { name: "Your address book" })).toBeVisible();
   await expect(search).toHaveValue("");
   await expectNoFullReload();
+});
+
+test("a search closes an open send confirmation", async () => {
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Send to all shown" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("the 2 contacts shown");
+
+  await page.getByLabel("Search contacts").fill("grace");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
+  await expect(dialog).toHaveCount(0);
 });

@@ -116,7 +116,8 @@ export default async function DashboardPage({
           </p>
         )
       ) : (
-        <ContactsTable rows={rows} />
+        // Remount per search, or an open "Send to all shown" keeps the old rows.
+        <ContactsTable key={query} rows={rows} />
       )}
     </main>
   );
