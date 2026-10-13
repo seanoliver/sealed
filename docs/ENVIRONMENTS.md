@@ -83,7 +83,7 @@ Both can be overridden by a branch's own `vercel.json`, so they prevent accident
 
 The `Production` GitHub environment has no required reviewers. GitHub does not support them on private repositories below Enterprise, and the repository has a single maintainer; this was a deliberate choice on 2026-10-13.
 
-Migrations are not part of the deploy. They are applied with the **Migrate production** workflow before the PR that needs them merges (see [Migration policy](#migration-policy)).
+Migrations are not part of the deploy. A PR that adds one is merged by the **Migrate production** workflow, which applies its migrations and then merges it (see [Migration policy](#migration-policy)).
 
 Required GitHub Production secret:
 
@@ -91,7 +91,7 @@ Required GitHub Production secret:
 PRODUCTION_DATABASE_URL
 ```
 
-This migration URL connects as the Supabase database owner and is available only to the **Migrate production** job, which may run only from `main` or a `v*` tag (the `Production` environment's branch policy). It checks out the requested ref, so it can apply a PR branch's migrations before merge. It must use the IPv4 session pooler on port 5432 for GitHub-hosted runners; the transaction pooler on port 6543 can retain the CLI's prepared statements across clients and fail retries with `SQLSTATE 42P05`. It is distinct from Vercel's runtime `DATABASE_URL`, which must connect as the restricted `app_server` role.
+This migration URL connects as the Supabase database owner. It is available to the **Migrate production** and **Check production migrations** jobs, which may run only from `main` (the `Production` environment's branch policy). Migrate production checks out the head of the PR it is given, so it can apply that PR's migrations before merging it. It must use the IPv4 session pooler on port 5432 for GitHub-hosted runners; the transaction pooler on port 6543 can retain the CLI's prepared statements across clients and fail retries with `SQLSTATE 42P05`. It is distinct from Vercel's runtime `DATABASE_URL`, which must connect as the restricted `app_server` role.
 
 Required production Vercel variables:
 
@@ -125,11 +125,11 @@ Production project variables and the GitHub migration credential are configured.
 ## Migration policy
 
 - CI tests every migration against a disposable local stack.
-- A PR that adds a migration is applied to production with **Migrate production** (`ref` = the PR branch) **before** it merges, and only after review is done and CI is green. The workflow refuses a ref that does not include `main` or has not passed all five CI checks.
-- Have one migration PR in flight at a time, and merge it promptly after migrating. A migrated PR must not be abandoned or edited; see the runbook's recovery section if one is.
+- A PR that adds a migration is merged by **Migrate production** (`pr` = its number), never from the GitHub UI. The workflow requires GitHub to report the PR ready to merge (up to date with `main`, all required checks green), confirms the five CI checks came from GitHub Actions, applies the migrations, confirms production then has exactly the PR's migrations, and squash-merges that exact commit. Nothing can change between migrating and merging.
+- If the merge step fails after migrating, re-run the workflow for the same PR; applying migrations again is a no-op.
 - Create migrations with `supabase migration new <name>` so versions are timestamps. Hand-numbered versions from two branches can collide, and the CLI skips a version production already has without checking its contents.
 - Every migration must be backward-compatible with the code currently on `main`, because it runs before that code is replaced. Use expand/migrate/contract steps across PRs for anything destructive.
-- After every push to `main`, **Check production migrations** compares the repository's migration versions with production's and fails if any are missing or extra.
+- After every push to `main` and once a day, **Check production migrations** compares the repository's migration versions with production's and fails if any are missing or extra. It catches a migration PR merged from the UI or an out-of-band change to production.
 - Never edit a migration after it has been applied to production; add a new one.
 - Database rollback is not automatic; write corrective forward migrations.
 

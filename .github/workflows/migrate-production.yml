@@ -3,13 +3,14 @@ name: Migrate production
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Branch, tag or SHA whose migrations to apply (usually the PR branch, before merging)
-        required: true
-        default: main
+      pr:
+        description: PR to migrate and merge. Leave empty to apply main's migrations (recovery).
+        required: false
+        default: ""
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   checks: read
 
 concurrency:
@@ -22,40 +23,65 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: Production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ inputs.pr }}
     steps:
+      - name: Resolve the commit to migrate
+        id: target
+        shell: bash
+        run: |
+          if [ -z "$PR" ]; then
+            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::pr must be a PR number"; exit 1; }
+          pr=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json state,isDraft,baseRefName,mergeStateStatus,headRefOid)
+          jq -e '.state == "OPEN" and (.isDraft | not) and .baseRefName == "main"' <<<"$pr" >/dev/null || {
+            echo "::error::PR #$PR must be an open, non-draft PR into main"; exit 1;
+          }
+          status=$(jq -r .mergeStateStatus <<<"$pr")
+          [ "$status" = "CLEAN" ] || {
+            echo "::error::PR #$PR is not ready to merge (mergeStateStatus $status). Update it from main and wait for CI."; exit 1;
+          }
+          echo "sha=$(jq -r .headRefOid <<<"$pr")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ steps.target.outputs.sha }}
           fetch-depth: 0
-      - name: Require the ref to include main and to have passed CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+      - name: Require CI from GitHub Actions on the PR's head
+        if: inputs.pr != ''
+        shell: bash
         run: |
-          sha=$(git rev-parse HEAD)
-          echo "Migrating from $sha"
-          git merge-base --is-ancestor origin/main "$sha" || {
-            echo "::error::$sha does not include origin/main. Merge or rebase main into the branch first."; exit 1;
+          git merge-base --is-ancestor origin/main HEAD || {
+            echo "::error::The PR does not include origin/main. Update it from main first."; exit 1;
           }
-          for check in "Lint & typecheck" "Unit & integration (vitest)" "Database (pgTAP)" "Build" "E2E (playwright)"; do
-            conclusion=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" \
-              --jq "[.check_runs[] | select(.name == \"$check\")] | sort_by(.completed_at) | last | .conclusion")
-            [ "$conclusion" = "success" ] || {
-              echo "::error::CI check '$check' is '${conclusion:-missing}' on $sha"; exit 1;
-            }
-          done
+          gh api "repos/$GITHUB_REPOSITORY/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+            | scripts/ci/check-runs-gate.sh \
+              "Lint & typecheck" "Unit & integration (vitest)" "Database (pgTAP)" "Build" "E2E (playwright)"
       - uses: supabase/setup-cli@v1
         with:
           version: 2.109.1
       - name: Apply committed migrations to production
+        shell: bash
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
         run: |
           test -n "$DATABASE_URL" || { echo "PRODUCTION_DATABASE_URL is not configured"; exit 1; }
           # The transaction pooler (6543) retains prepared statements across
           # clients; Supabase CLI migration retries then fail with SQLSTATE 42P05.
-          MIGRATION_DATABASE_URL="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
-          [[ "$MIGRATION_DATABASE_URL" == *".pooler.supabase.com:5432/"* ]] || {
+          url="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
+          [[ "$url" == *".pooler.supabase.com:5432/"* ]] || {
             echo "PRODUCTION_DATABASE_URL must use the Supabase session pooler"; exit 1;
           }
-          supabase db push --db-url "$MIGRATION_DATABASE_URL" --include-all --yes
+          echo "Migrating from $(git rev-parse HEAD)"
+          supabase db push --db-url "$url" --include-all --yes
+          versions=$(psql "$url" -Atc "select version from supabase_migrations.schema_migrations")
+          scripts/ci/migration-drift.sh supabase/migrations <<<"$versions"
+      - name: Merge the PR
+        if: inputs.pr != ''
+        shell: bash
+        run: |
+          gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --match-head-commit "$(git rev-parse HEAD)" || {
+            echo "::error::Migrations are applied but PR #$PR did not merge. Re-run this workflow for the same PR; it is safe to repeat."; exit 1;
+          }
