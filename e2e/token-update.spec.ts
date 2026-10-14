@@ -100,9 +100,6 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
 }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  // Platform request logs (Vercel) record every request path. The emailed
-  // /u/<token> link may be logged once; every later request (the form page,
-  // its RSC fetches, and the submit) must carry the token only in a cookie.
   const requestUrls: string[] = [];
   page.on("request", (req) => requestUrls.push(req.url()));
   await page.goto(`/u/${token}`);
@@ -119,7 +116,6 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   expect(tokenRequests.map((url) => new URL(url).pathname)).toEqual([
     `/u/${token}`,
   ]);
-  // The submit itself went to the token-free form URL.
   expect(requestUrls.some((url) => new URL(url).pathname === "/u/edit")).toBe(
     true,
   );

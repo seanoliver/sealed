@@ -4,11 +4,6 @@ import { generateToken } from "@/lib/tokens";
 import { UPDATE_TOKEN_COOKIE } from "../update-token-cookie";
 import { GET } from "./route";
 
-/**
- * /u/<token> is the emailed link. Platform request logs record every path,
- * so this route must trade the token for a cookie and send the browser to a
- * token-free URL: the token then appears in at most one logged request.
- */
 function visit(
   token: string,
   origin = "https://sealed.page",

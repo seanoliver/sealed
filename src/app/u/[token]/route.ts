@@ -6,12 +6,7 @@ import {
   updateTokenCookieOptions,
 } from "../update-token-cookie";
 
-/**
- * Entry point for the emailed /u/<token> link. Request logs record the path,
- * so the token moves into an HttpOnly cookie and the browser is sent to a
- * token-free URL. No DB work here: the form page does the rate-limited
- * lookup, and dead tokens render the same generic page there.
- */
+// No DB work here: the form page does the rate-limited token lookup.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -21,7 +16,6 @@ export async function GET(
   const target = request.nextUrl.clone();
   target.pathname = UPDATE_FORM_PATH;
   target.search = "";
-  // 303: the follow-up is always a plain GET of the form page.
   const res = NextResponse.redirect(target, 303);
   res.headers.set("Cache-Control", "no-store");
   res.headers.set("Referrer-Policy", "no-referrer");
@@ -35,8 +29,7 @@ export async function GET(
       }),
     );
   } else {
-    // A malformed link must not fall through to a token held from an
-    // earlier link: clear it so the form page shows the invalid notice.
+    // Otherwise a token from an earlier link would open that contact instead.
     res.cookies.set(UPDATE_TOKEN_COOKIE, "", { path: "/u", maxAge: 0 });
   }
   return res;

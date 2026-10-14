@@ -57,9 +57,7 @@ const tokenDataSchema = z.object({
 
 /**
  * Recipient update page. Unauthenticated and token-gated: no session (excluded
- * from the proxy matcher), no auth calls. The token arrives in the HttpOnly
- * cookie GET /u/[token] set, never in this URL, so request logs never see it.
- * The DOM contains ONLY display values — never owner/book/contact ids.
+ * from the proxy matcher), no auth calls. The DOM contains ONLY display values — never owner/book/contact ids.
  */
 export default async function TokenUpdatePage() {
   const token = (await cookies()).get(UPDATE_TOKEN_COOKIE)?.value ?? "";
@@ -138,9 +136,8 @@ export default async function TokenUpdatePage() {
           hit update. Only {ownerLabel} can see what you enter.
         </p>
 
-        {/* The action reads the token from the same cookie. Never bind it as
-            an argument: bound args round-trip through the client in
-            cleartext. */}
+        {/* Never bind the token as an action arg: bound args round-trip
+            through the client in cleartext. */}
         <RecipientForm
           action={submitTokenUpdate}
           defaults={defaults}

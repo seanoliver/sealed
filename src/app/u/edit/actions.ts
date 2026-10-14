@@ -39,8 +39,7 @@ function readTokenForm(formData: FormData): TokenUpdateValues {
  * Recipient-facing submit for /u/edit. Everything here is hostile input:
  * the token, the form values, the turnstile response, and the caller itself
  * (server actions are directly invokable endpoints — the page's checks are
- * NOT a precondition). The token comes from the HttpOnly cookie that
- * GET /u/[token] set, so it is never in a request URL; it is never logged.
+ * NOT a precondition). The raw token is never logged anywhere in this flow.
  */
 export async function submitTokenUpdate(
   _prevState: TokenUpdateState,
@@ -121,7 +120,6 @@ export async function submitTokenUpdate(
     return { error: INVALID_LINK_MESSAGE, values: submitted };
   }
 
-  // The token is spent; drop the cookie rather than let it idle until expiry.
   cookieStore.delete({ name: UPDATE_TOKEN_COOKIE, path: "/u" });
   redirect("/u/thanks");
 }
