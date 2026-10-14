@@ -81,10 +81,11 @@ describe("deploy-production.yml", () => {
 
   it("fails unless sealed.page serves the new deployment, then checks /login", () => {
     const deploy = workflow.indexOf("vercel deploy --prod");
+    const loop = workflow.indexOf("for attempt in 1 2 3 4 5 6; do");
     const serving = workflow.indexOf('[[ "https://$serving" == "$DEPLOY_URL" ]] && break');
     const fail = workflow.indexOf('[[ $attempt == 6 ]] && { echo "sealed.page serves $serving, not $DEPLOY_URL"; exit 1; }');
     const sleep = workflow.indexOf("sleep 10");
-    const login = workflow.indexOf("https://sealed.page/login)");
+    const login = workflow.indexOf("https://sealed.page/login) || true");
     const status = workflow.indexOf('[[ $status == 200 ]] || { echo "sealed.page/login answered $status"; exit 1; }');
     expect(workflow).toContain("DEPLOY_URL: ${{ steps.deploy.outputs.url }}");
     expect(workflow).toContain('test -n "$url" || { echo "vercel deploy printed no deployment URL"; exit 1; }');
@@ -92,7 +93,8 @@ describe("deploy-production.yml", () => {
       '"https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID" | jq -r .url) ||\n' +
         '              serving="(Vercel API error)"',
     );
-    expect(serving).toBeGreaterThan(deploy);
+    expect(loop).toBeGreaterThan(deploy);
+    expect(serving).toBeGreaterThan(loop);
     expect(fail).toBeGreaterThan(serving);
     expect(sleep).toBeGreaterThan(fail);
     expect(login).toBeGreaterThan(sleep);

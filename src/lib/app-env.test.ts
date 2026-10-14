@@ -12,7 +12,7 @@ describe("appEnvironment", () => {
     },
   );
 
-  it.each(["preview", "staging"])("rejects %s", (environment) => {
+  it.each([undefined, "preview", "staging"])("rejects %s", (environment) => {
     vi.stubEnv("APP_ENV", environment);
     expect(() => appEnvironment()).toThrow(/APP_ENV must be one of/);
   });

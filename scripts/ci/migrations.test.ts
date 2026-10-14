@@ -18,7 +18,7 @@ function startsWithLockTimeout(sql: string): boolean {
   if (!keyword) return false;
   const rest = body.slice(keyword[0].length);
   const value = /^(?:(\d+)|'(\d+)\s*(ms|s|min)?')\s*;/.exec(rest);
-  if (!value || /lock_timeout/i.test(rest)) return false;
+  if (!value || /\bset\s+lock_timeout\b/i.test(rest)) return false;
   const ms = Number(value[1] ?? value[2]) * UNIT_MS[value[3] ?? ""];
   return ms > 0 && ms <= MAX_LOCK_TIMEOUT_MS;
 }
@@ -33,6 +33,7 @@ describe("startsWithLockTimeout", () => {
     "set lock_timeout = '500ms';",
     "set lock_timeout = '5000';",
     "set lock_timeout = '5 s';",
+    "set lock_timeout = '5s';\nalter table t add column c int;\nreset lock_timeout;",
   ])("accepts %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(true));
 
   it.each([

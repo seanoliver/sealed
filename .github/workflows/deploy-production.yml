@@ -89,5 +89,5 @@ jobs:
             sleep 10
           done
           status=$(curl -fsS --max-time 15 --connect-timeout 5 --retry 5 --retry-all-errors --retry-delay 5 \
-            -o /dev/null -w '%{http_code}' https://sealed.page/login)
+            -o /dev/null -w '%{http_code}' https://sealed.page/login) || true
           [[ $status == 200 ]] || { echo "sealed.page/login answered $status"; exit 1; }
