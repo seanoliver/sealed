@@ -431,8 +431,10 @@ test("saves and sends wait for each other", async () => {
 test("an open row does not save while a send runs", async () => {
   await openDashboard();
   let held: Route | undefined;
+  let posts = 0;
   await page.route("**/dashboard", (route) => {
     if (route.request().method() !== "POST") return route.continue();
+    posts += 1;
     held = route;
   });
   await bodyRow("Bea Brown").locator("td").nth(3).click();
@@ -450,16 +452,43 @@ test("an open row does not save while a send runs", async () => {
   await expect(notice).toBeVisible();
   await expect(table().getByRole("button", { name: "Save" })).toBeVisible();
 
-  const send = held!;
-  held = undefined;
-  await send.abort();
+  await held!.abort();
   await expect(notice).toHaveCount(0);
   await expect(city).toHaveValue("Tromsø");
-  expect(held).toBeUndefined();
+  expect(posts).toBe(1);
   await page.unrouteAll({ behavior: "wait" });
   await city.press("Enter");
   await expect(table().getByRole("textbox")).toHaveCount(0);
   await expect(bodyRow("Bea Brown")).toContainText("Tromsø");
+});
+
+test("a save refused during a send replaces the row's old error", async () => {
+  await openDashboard();
+  let held: Route | undefined;
+  await bodyRow("Bea Brown").locator("td").nth(3).click();
+  await page.keyboard.press("Enter");
+  const email = table().getByRole("textbox", { name: "Email" });
+  await email.fill("ada@example.test");
+  await email.press("Enter");
+  const alert = page.getByRole("alert").filter({ hasText: /\S/ });
+  await expect(alert).toHaveText("You already have a contact with this email");
+
+  await page.route("**/dashboard", (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    held = route;
+  });
+  await page.getByRole("button", { name: "Send to all shown" }).click();
+  await page.getByRole("button", { name: "Confirm and send" }).click();
+  await expect(page.getByText("Sending…")).toBeVisible();
+  await email.fill("bea@example.test");
+  await email.press("Enter");
+  await expect(alert).toHaveText(
+    "Still sending address requests. Try again when they finish.",
+  );
+  await held!.abort();
+  await page.unrouteAll({ behavior: "wait" });
+  await page.keyboard.press("Escape");
+  await expect(table().getByRole("textbox")).toHaveCount(0);
 });
 
 test("a row deleted while being edited does not block other edits", async () => {
@@ -714,5 +743,16 @@ test("a cancelled stalled save that fails says so", async () => {
   ).toBeVisible();
   await expect(table().getByRole("textbox")).toHaveCount(0);
   await expect(bodyRow("Ada Lovelace")).toContainText("Milan");
+
+  await page.getByRole("button", { name: "Send to all shown" }).click();
+  await page.getByRole("button", { name: "Confirm and send" }).click();
+  await expect(page.getByText("Sending…")).toBeVisible();
+  await save.release("abort");
+  await expect(page.getByText("Sending…")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Your change to Ada Lovelace wasn't saved." }),
+  ).toBeVisible();
   await save.done();
 });
