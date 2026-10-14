@@ -8,14 +8,18 @@ const EXEMPT = new Set(["00000000000001", "00000000000002", "00000000000003"]);
 const MAX_LOCK_TIMEOUT_MS = 30_000;
 const UNIT_MS: Record<string, number> = { "": 1, ms: 1, s: 1000, min: 60_000 };
 
+// Postgres unit names are case-sensitive, so only the keywords match case-insensitively.
 function startsWithLockTimeout(sql: string): boolean {
   const body = sql
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/--.*$/gm, "")
     .trim();
-  const match = /^set\s+lock_timeout\s*(?:=|to)\s*'?(\d+)\s*(ms|s|min)?'?\s*;/i.exec(body);
-  if (!match) return false;
-  const ms = Number(match[1]) * UNIT_MS[(match[2] ?? "").toLowerCase()];
+  const keyword = /^set\s+lock_timeout\s*(?:=|to)\s*/i.exec(body);
+  if (!keyword) return false;
+  const rest = body.slice(keyword[0].length);
+  const value = /^(?:(\d+)|'(\d+)\s*(ms|s|min)?')\s*;/.exec(rest);
+  if (!value || /lock_timeout/i.test(rest)) return false;
+  const ms = Number(value[1] ?? value[2]) * UNIT_MS[value[3] ?? ""];
   return ms > 0 && ms <= MAX_LOCK_TIMEOUT_MS;
 }
 
@@ -27,6 +31,8 @@ describe("startsWithLockTimeout", () => {
     "set lock_timeout = 5000;",
     "set lock_timeout = '30s';",
     "set lock_timeout = '500ms';",
+    "set lock_timeout = '5000';",
+    "set lock_timeout = '5 s';",
   ])("accepts %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(true));
 
   it.each([
@@ -38,6 +44,11 @@ describe("startsWithLockTimeout", () => {
     "set lock_timeout = '31s';",
     "set lock_timeout = '1min';",
     "set lock_timeout = '5h';",
+    "set lock_timeout = '5S';",
+    "set lock_timeout = 5s;",
+    "set lock_timeout = '5s;",
+    "set lock_timeout = 5s';",
+    "set lock_timeout = '5s';\nset lock_timeout = 0;",
   ])("rejects %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(false));
 });
 

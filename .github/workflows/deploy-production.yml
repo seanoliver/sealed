@@ -66,6 +66,7 @@ jobs:
             --meta "githubCommitSha=$deploy_sha" \
             --meta "githubCommitRef=main" \
             --token="$VERCEL_TOKEN")
+          test -n "$url" || { echo "vercel deploy printed no deployment URL"; exit 1; }
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -81,10 +82,12 @@ jobs:
           for attempt in 1 2 3 4 5 6; do
             serving=$(curl -fsS --max-time 15 --connect-timeout 5 --retry 5 --retry-all-errors --retry-delay 5 \
               -H "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID" | jq -r .url)
+              "https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID" | jq -r .url) ||
+              serving="(Vercel API error)"
             [[ "https://$serving" == "$DEPLOY_URL" ]] && break
             [[ $attempt == 6 ]] && { echo "sealed.page serves $serving, not $DEPLOY_URL"; exit 1; }
             sleep 10
           done
-          curl -fsS --max-time 15 --connect-timeout 5 --retry 5 --retry-all-errors --retry-delay 5 \
-            -o /dev/null https://sealed.page/login
+          status=$(curl -fsS --max-time 15 --connect-timeout 5 --retry 5 --retry-all-errors --retry-delay 5 \
+            -o /dev/null -w '%{http_code}' https://sealed.page/login)
+          [[ $status == 200 ]] || { echo "sealed.page/login answered $status"; exit 1; }

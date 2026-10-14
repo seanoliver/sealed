@@ -12,8 +12,8 @@ describe("appEnvironment", () => {
     },
   );
 
-  it("rejects missing or unknown environments", () => {
-    vi.stubEnv("APP_ENV", "preview");
+  it.each(["preview", "staging"])("rejects %s", (environment) => {
+    vi.stubEnv("APP_ENV", environment);
     expect(() => appEnvironment()).toThrow(/APP_ENV must be one of/);
   });
 

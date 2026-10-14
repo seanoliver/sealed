@@ -59,7 +59,8 @@ describe("deploy-production.yml", () => {
     expect(install).toBeGreaterThan(workflow.indexOf("supabase db push"));
     expect(install).toBeLessThan(workflow.indexOf("vercel deploy --prod"));
     expect(workflow.match(/npm (install|ci)/g)).toHaveLength(1);
-    expect(workflow).toContain("scripts/ci/vercel-cli/node_modules/.bin/vercel deploy --prod");
+    expect(workflow).toMatch(/^\s+url=\$\(scripts\/ci\/vercel-cli\/node_modules\/\.bin\/vercel deploy --prod /m);
+    expect(workflow).not.toMatch(/npx|\bvercel@/);
   });
 
   it("does not leave the GitHub token in the checkout", () => {
@@ -74,22 +75,33 @@ describe("deploy-production.yml", () => {
 
   it("reads only repository contents and never cancels a running deploy", () => {
     expect(workflow).toMatch(/^permissions:\n  contents: read\n\n/m);
+    expect(workflow.match(/permissions:/g)).toHaveLength(1);
     expect(workflow).toContain("concurrency:\n  group: production-deployment\n  cancel-in-progress: false\n");
   });
 
-  it("checks that sealed.page serves the new deployment, then that it responds", () => {
+  it("fails unless sealed.page serves the new deployment, then checks /login", () => {
     const deploy = workflow.indexOf("vercel deploy --prod");
     const serving = workflow.indexOf('[[ "https://$serving" == "$DEPLOY_URL" ]] && break');
-    const login = workflow.indexOf("-o /dev/null https://sealed.page/login");
+    const fail = workflow.indexOf('[[ $attempt == 6 ]] && { echo "sealed.page serves $serving, not $DEPLOY_URL"; exit 1; }');
+    const sleep = workflow.indexOf("sleep 10");
+    const login = workflow.indexOf("https://sealed.page/login)");
+    const status = workflow.indexOf('[[ $status == 200 ]] || { echo "sealed.page/login answered $status"; exit 1; }');
     expect(workflow).toContain("DEPLOY_URL: ${{ steps.deploy.outputs.url }}");
-    expect(workflow).toContain('"https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID"');
+    expect(workflow).toContain('test -n "$url" || { echo "vercel deploy printed no deployment URL"; exit 1; }');
+    expect(workflow).toContain(
+      '"https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID" | jq -r .url) ||\n' +
+        '              serving="(Vercel API error)"',
+    );
     expect(serving).toBeGreaterThan(deploy);
-    expect(login).toBeGreaterThan(serving);
+    expect(fail).toBeGreaterThan(serving);
+    expect(sleep).toBeGreaterThan(fail);
+    expect(login).toBeGreaterThan(sleep);
+    expect(status).toBeGreaterThan(login);
   });
 
   it("bounds every curl", () => {
     const curls = workflow.match(/curl [^\n]*/g) ?? [];
     expect(curls.length).toBeGreaterThan(0);
-    for (const line of curls) expect(line).toContain("--max-time 15 --connect-timeout 5");
+    for (const line of curls) expect(line).toMatch(/^curl -fsS --max-time 15 --connect-timeout 5 /);
   });
 });

@@ -1,7 +1,7 @@
 # Ship a change to production
 
 **Status:** Current. Staging retired on 2026-10-13; every push to `main` migrates and deploys production automatically
-**Last verified:** 2026-10-13, first automatic deploy of `c1c33bb` (run 38510001984)
+**Last verified:** 2026-10-13, first automatic deploy of `c1c33bb` (run 38510001984), before the serving-deployment check existed
 **Owner:** Maintainers
 **Related:** [Environment topology](../ENVIRONMENTS.md), [PR #9](https://github.com/seanoliver/sealed/pull/9) (the original staging flow), [Vercel environment deletion incident](../bugs/2026-08-09-vercel-env-target-removal-deletes-shared-record.md)
 
@@ -73,6 +73,10 @@ Production's migration versions differ from the repository's, and the deploy doe
 ### Migration succeeds but the Vercel deploy fails
 
 The previous deployment keeps serving traffic against the new schema, which is safe because migrations are backward-compatible. Fix the build and push again, or dispatch the workflow to retry. Keep the build remote: sensitive Vercel variables are write-only outside Vercel.
+
+### The smoke check reports "sealed.page serves X, not Y"
+
+The new deployment built, but sealed.page still points at another one, usually after a manual rollback or promote. Check which deployment you want live, then `vercel promote <deployment-url> --scope cabin-9`. If production domains stopped following new deployments after a rollback, promoting restores that.
 
 ### A Vercel variable disappears while changing targets
 
