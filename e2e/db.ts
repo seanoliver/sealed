@@ -88,18 +88,43 @@ export async function seedContact(opts: {
   email?: string;
   partnerName?: string;
   kidsNames?: string;
+  addressLine1?: string;
   city?: string;
+  stateRegion?: string;
+  postalCode?: string;
   country?: string;
 }): Promise<string> {
   const rows = await db`
     insert into public.contacts
-      (book_id, full_name, email, partner_name, kids_names, city, country)
+      (book_id, full_name, email, partner_name, kids_names, address_line1,
+       city, state_region, postal_code, country)
     values
       (${opts.bookId}, ${opts.fullName}, ${opts.email ?? null},
        ${opts.partnerName ?? null}, ${opts.kidsNames ?? null},
-       ${opts.city ?? null}, ${opts.country ?? null})
+       ${opts.addressLine1 ?? null}, ${opts.city ?? null},
+       ${opts.stateRegion ?? null}, ${opts.postalCode ?? null},
+       ${opts.country ?? null})
     returning id`;
   return rows[0].id as string;
+}
+
+export async function getContactRow(
+  contactId: string,
+): Promise<{ city: string | null; updatedAt: Date }> {
+  const rows = await db`
+    select city, updated_at from public.contacts where id = ${contactId}`;
+  return { city: rows[0].city, updatedAt: rows[0].updated_at };
+}
+
+export async function deleteContact(contactId: string): Promise<void> {
+  await db`delete from public.contacts where id = ${contactId}`;
+}
+
+export async function setContactCity(
+  contactId: string,
+  city: string,
+): Promise<void> {
+  await db`update public.contacts set city = ${city} where id = ${contactId}`;
 }
 
 /** Mint a live update token for a contact and return the RAW token (URL part). */
