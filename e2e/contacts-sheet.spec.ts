@@ -428,6 +428,40 @@ test("saves and sends wait for each other", async () => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("an open row does not save while a send runs", async () => {
+  await openDashboard();
+  let held: Route | undefined;
+  await page.route("**/dashboard", (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    held = route;
+  });
+  await bodyRow("Bea Brown").locator("td").nth(3).click();
+  await page.keyboard.press("Enter");
+  const city = table().getByRole("textbox", { name: "City" });
+  await city.fill("Tromsø");
+
+  await page.getByRole("button", { name: "Send to all shown" }).click();
+  await page.getByRole("button", { name: "Confirm and send" }).click();
+  await expect(page.getByText("Sending…")).toBeVisible();
+  await city.press("Enter");
+  const notice = page
+    .getByRole("alert")
+    .filter({ hasText: "Still sending address requests" });
+  await expect(notice).toBeVisible();
+  await expect(table().getByRole("button", { name: "Save" })).toBeVisible();
+
+  const send = held!;
+  held = undefined;
+  await send.abort();
+  await expect(notice).toHaveCount(0);
+  await expect(city).toHaveValue("Tromsø");
+  expect(held).toBeUndefined();
+  await page.unrouteAll({ behavior: "wait" });
+  await city.press("Enter");
+  await expect(table().getByRole("textbox")).toHaveCount(0);
+  await expect(bodyRow("Bea Brown")).toContainText("Tromsø");
+});
+
 test("a row deleted while being edited does not block other edits", async () => {
   const tempId = await seedContact({ bookId, fullName: "Temp Row" });
   await openDashboard();

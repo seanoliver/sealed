@@ -358,6 +358,10 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
 
   function saveEdit(row: SheetTableRow, draft: Partial<SheetValues>) {
     if (savingRef.current) return;
+    if (isSending) {
+      setNotice(SEND_PENDING);
+      return;
+    }
     const patch = changedValues(row.original.values, draft);
     if (Object.keys(patch).length === 0) {
       finishEdit(row.id);
@@ -443,6 +447,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
         res = { error: "Couldn't send. Check your connection and try again." };
       }
       setResult(res);
+      setNotice((current) => (current === SEND_PENDING ? null : current));
       if (!("error" in res)) table.resetRowSelection(true);
     });
   }
