@@ -27,8 +27,12 @@ export async function approveEmail(
   if (!parsed.success) return { error: "Enter a valid email address." };
   const email = parsed.data;
 
+  let newlyApproved = false;
   try {
-    await dbAdmin.execute(sql`select private.approve_waitlist_email(${email})`);
+    const rows = await dbAdmin.execute(
+      sql`select private.approve_waitlist_email(${email}) as approved`,
+    );
+    newlyApproved = rows[0]?.approved === true;
   } catch (err) {
     logDbError("[wl] [approveEmail] approve failed", err);
     return { error: "Could not approve that email." };
@@ -46,7 +50,8 @@ export async function approveEmail(
     }
   }
   revalidatePath("/admin/waitlist");
+  const approved = newlyApproved ? `Approved ${email}` : `${email} was already approved`;
   return sent
-    ? { message: `Approved ${email} and sent the invitation.` }
-    : { error: `Approved ${email}, but the invitation email failed. Try again to resend it.` };
+    ? { message: `${approved}. Invitation sent.` }
+    : { error: `${approved}, but the invitation email failed. Use Resend invitation to try again.` };
 }

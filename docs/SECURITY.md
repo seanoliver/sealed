@@ -86,11 +86,15 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 - Permalink submits return an **identical response** (and take the same code path) whether or not the submitted email matches an existing contact. A match surfaces only to the owner, in the review queue.
 - The permalink page itself (`src/lib/queries/public-book.ts`) selects only the owner display name and enabled-field flags — never ids, counts, contact data, or profile details; the select's key set is asserted in tests so a widened query fails CI.
 - Auth failures on the entry page show one generic error, never Supabase's detail.
-- Requesting access returns the **same "Your request is in" response** whether the email has an account, is approved, or was just put on the waitlist.
+- Requesting access returns the **same "Your request is in" response** whether the email has an account, is approved, or was just put on the waitlist, including when Supabase rate-limits the email send.
 
 ## Invite-only sign-up
 
 Supabase Auth calls `private.before_user_created_hook` before it creates any user, whether through a magic link, Google, or the Auth API directly. The hook allows emails approved in `private.waitlist`, and records every other email as pending before rejecting the sign-up with the message `sealed_waitlisted`. The hook runs in its own transaction, so the waitlist row is kept even though the sign-up fails. Existing users never reach the hook. Only `ADMIN_EMAILS` can approve emails, at `/admin/waitlist`; the waitlist is reachable only through `private.*` functions.
+
+Sealed is passwordless, and a trigger on `auth.users` (`private.strip_password`) blanks every stored password. Without it, someone could sign up with a password for an approved email before its owner does, and keep signing in with that password after the owner confirms the email. Production must keep email confirmation on, so a password sign-up never gets a session before the owner confirms.
+
+Known limits: calling the Supabase Auth API directly with the public anon key skips the app's Turnstile check and rate limit, so it can add pending rows and tell an approved or existing email (200) from any other (403). Supabase's own per-IP limits still apply. Supabase Auth captcha would close this; see #53.
 
 ## Rate limits
 
@@ -105,7 +109,8 @@ All public surfaces are metered by `private.check_rate_limit` — a fixed-window
 | `/b/[slug]` page view | `permalink-view:sha256(ip)` | 60 / hour |
 | `/b/[slug]` submit, per client | `permalink-submit:sha256(ip)` | 5 / hour |
 | `/b/[slug]` submit, per book | `permalink-book:<slug>` | 100 / day |
-| Entry page request access | `request-access:sha256(ip)` | 30 / hour |
+| Entry page request access, per client | `request-access:sha256(ip)` | 5 / hour |
+| Entry page request access, per email | `request-access-email:sha256(email)` | 3 / hour |
 
 Ordering is deliberate: on permalink submits the per-IP limit runs first (a client burns its own budget before anything shared), and the per-book limit runs **after** the Turnstile gate — so bot-generated junk can never drain a targeted book's daily budget.
 

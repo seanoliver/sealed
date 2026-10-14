@@ -33,9 +33,13 @@ export async function requestAccess(
   const email = parsed.data;
   const ip = await requestIp();
 
+  // Supabase sends at most 30 auth emails an hour for the whole project, so
+  // one client or one address must not be able to use them all.
   let allowed = false;
   try {
-    allowed = await checkRateLimit(hashedIpKey("request-access", ip), 30, 3600);
+    allowed =
+      (await checkRateLimit(hashedIpKey("request-access", ip), 5, 3600)) &&
+      (await checkRateLimit(hashedIpKey("request-access-email", email.toLowerCase()), 3, 3600));
   } catch (err) {
     logDbError("[ra] [requestAccess] rate-limit check failed", err);
     return { status: "error", message: GENERIC_ERROR };
@@ -54,7 +58,9 @@ export async function requestAccess(
     email,
     options: { emailRedirectTo: authConfirmationUrl(process.env.APP_URL!) },
   });
-  if (error && error.message !== WAITLIST_REJECTION) {
+  // A rate-limited send must look like any other request: only approved and
+  // existing emails are ever sent mail, so an error here would reveal them.
+  if (error && error.message !== WAITLIST_REJECTION && error.status !== 429) {
     console.error(`[ra] [requestAccess] signInWithOtp failed: ${error.name} ${error.status ?? ""}`);
     return { status: "error", message: GENERIC_ERROR };
   }

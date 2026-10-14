@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
-import { approveEmail } from "./db";
+import { approveEmail, clearRequestAccessLimits } from "./db";
 
 /** Supabase's local Mailpit (config.toml [local_smtp], port 54324). */
 const MAILPIT_URL = "http://127.0.0.1:54324";
@@ -54,6 +54,7 @@ export async function expectNoDeliveredMessage(email: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 3_000));
   const query = encodeURIComponent(`to:${email}`);
   const search = await fetch(`${MAILPIT_URL}/api/v1/search?query=${query}`);
+  expect(search.ok, "Mailpit search").toBe(true);
   const { messages } = (await search.json()) as { messages: unknown[] };
   expect(messages, `email delivered to ${email}`).toHaveLength(0);
 }
@@ -68,6 +69,7 @@ export async function fetchMagicLink(email: string): Promise<string> {
 
 /** Request access through the real entry form at `/` and wait for the confirmation. */
 export async function requestAccess(page: Page, email: string): Promise<void> {
+  await clearRequestAccessLimits();
   await page.goto("/");
   await page.getByLabel("Email address").fill(email);
   await waitForTurnstile(page);

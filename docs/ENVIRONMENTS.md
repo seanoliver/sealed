@@ -153,7 +153,7 @@ Production project variables and the GitHub migration credential are configured.
 
 Before considering an environment ready:
 
-- `/login` magic-link flow reaches `/auth/confirm` and then `/dashboard` or `/onboarding`.
+- The entry page's magic-link flow reaches `/auth/confirm` and then `/dashboard` or `/onboarding`.
 - Google OAuth returns through `/auth/confirm`, not `/?code=...`.
 - New owners can complete onboarding.
 - Owners can create/edit/import/export contacts.

@@ -13,14 +13,14 @@ import {
   uniqueEmail,
 } from "./helpers";
 
-/** Matches ADMIN_EMAILS in .env.local.example. */
+/** Matches ADMIN_EMAILS in .env.local.example. Kept between runs so concurrent runs share it safely. */
 const ADMIN_EMAIL = "admin@e2e.test";
 
 const waitlisted = uniqueEmail("waitlisted");
 const approvedLater = uniqueEmail("approved-later");
 
 test.afterAll(async () => {
-  for (const email of [waitlisted, approvedLater, ADMIN_EMAIL]) {
+  for (const email of [waitlisted, approvedLater]) {
     await cleanupUser(email);
   }
 });
@@ -82,6 +82,9 @@ test("an admin approves a waiting email, which can then sign up", async ({
     .filter({ hasText: approvedLater })
     .getByRole("button", { name: "Approve" })
     .click();
+  await expect(page.getByRole("status")).toHaveText(
+    `Approved ${approvedLater}. Invitation sent.`,
+  );
   await expect(
     page
       .getByRole("region", { name: /^Approved/ })

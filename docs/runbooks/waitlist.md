@@ -17,7 +17,9 @@ Keep sign-up invite-only in production, and approve people from the waitlist.
 
 ## Enable the gate (once)
 
-Enable the hook only after the migration has applied. If the hook points at a function that does not exist, every new sign-up fails.
+Enable the hook as soon as the deploy run's **Apply committed migrations** step succeeds, before the new build goes live. Until the hook is on, anyone can create an account. If the hook points at a function that does not exist yet, every new sign-up fails instead.
+
+Keep **Confirm email** on in hosted Auth (`mailer_autoconfirm = false`); the password-stripping trigger relies on it.
 
 ```bash
 curl -fsS -X PATCH "https://api.supabase.com/v1/projects/ivwrvilpjhqhmlzwgyot/config/auth" \

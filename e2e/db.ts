@@ -167,3 +167,8 @@ export async function authUserExists(email: string): Promise<boolean> {
 export async function clearRateLimits(): Promise<void> {
   await db`delete from private.rate_limits`;
 }
+
+/** The suite shares one IP, and the entry form allows only 5 requests an hour per IP. */
+export async function clearRequestAccessLimits(): Promise<void> {
+  await db`delete from private.rate_limits where key like 'request-access%'`;
+}

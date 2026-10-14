@@ -64,11 +64,25 @@ returns void language sql security definer set search_path = '' as $$
   update private.waitlist set invite_sent_at = now() where email = lower(trim(p_email));
 $$;
 
+-- Sealed is passwordless. Without this, anyone could sign up with a password
+-- for an approved email before its owner does, and keep access afterwards.
+create or replace function private.strip_password()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  new.encrypted_password := '';
+  return new;
+end $$;
+
+create trigger strip_password
+  before insert or update of encrypted_password on auth.users
+  for each row execute function private.strip_password();
+
 revoke all on table private.waitlist from public, anon, authenticated;
 revoke execute on function private.before_user_created_hook(jsonb) from public, anon, authenticated;
 revoke execute on function private.list_waitlist() from public, anon, authenticated;
 revoke execute on function private.approve_waitlist_email(text) from public, anon, authenticated;
 revoke execute on function private.mark_waitlist_invite_sent(text) from public, anon, authenticated;
+revoke execute on function private.strip_password() from public, anon, authenticated;
 
 grant usage on schema private to supabase_auth_admin;
 grant execute on function private.before_user_created_hook(jsonb) to supabase_auth_admin;
