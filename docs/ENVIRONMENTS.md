@@ -79,7 +79,7 @@ Every push to `main` deploys to production, with no manual step. After **CI** pa
 1. checks out the current head of `main`, which may be newer than the commit whose CI finished; the `main` ruleset only accepts PRs that are up to date and green, so every head has been tested,
 2. applies committed migrations with `supabase db push`,
 3. checks that production's migration versions match the repository's (`scripts/ci/migration-drift.sh`),
-4. builds and deploys that commit on Vercel, checks through the Vercel API that sealed.page serves the new deployment, and checks that `https://sealed.page/login` responds.
+4. builds and deploys that commit on Vercel, checks through the Vercel API that sealed.page serves the new deployment, and checks that `https://sealed.page/` responds.
 
 A migration therefore runs immediately before the code that needs it goes live, never ahead of review. The workflow can also be dispatched by hand to redeploy the head of `main`.
 

@@ -28,7 +28,7 @@ Get a merged change live on sealed.page, with any database migration applied imm
    gh run watch <run-id> --exit-status
    ```
 
-4. The workflow already checks that sealed.page serves the new deployment and that `/login` responds. Run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
+4. The workflow already checks that sealed.page serves the new deployment and that the entry page at `/` responds. Run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
 
 A deploy starts only when a CI run on `main` succeeds, and it deploys whatever `main`'s head is at that moment. If the newest commit's CI fails on a flaky test and no earlier CI run is still finishing, that commit does not deploy; re-run CI, or dispatch the workflow below.
 
@@ -38,7 +38,7 @@ To redeploy the head of `main` without a new commit, dispatch the workflow: <htt
 
 ```bash
 vercel ls sealed --prod --scope cabin-9
-curl -fsS -o /dev/null -w '%{http_code}\n' https://sealed.page/login
+curl -fsS -o /dev/null -w '%{http_code}\n' https://sealed.page/
 ```
 
 Also check:
