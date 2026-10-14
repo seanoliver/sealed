@@ -18,7 +18,8 @@ function startsWithLockTimeout(sql: string): boolean {
   if (!keyword) return false;
   const rest = body.slice(keyword[0].length);
   const value = /^(?:(\d+)|'(\d+)\s*(ms|s|min)?')\s*;/.exec(rest);
-  if (!value || /\bset\s+lock_timeout\b/i.test(rest)) return false;
+  const later = rest.replace(/\breset\s+lock_timeout\s*;\s*$/i, "");
+  if (!value || /\block_timeout\b|\breset\s+all\b/i.test(later)) return false;
   const ms = Number(value[1] ?? value[2]) * UNIT_MS[value[3] ?? ""];
   return ms > 0 && ms <= MAX_LOCK_TIMEOUT_MS;
 }
@@ -34,6 +35,7 @@ describe("startsWithLockTimeout", () => {
     "set lock_timeout = '5000';",
     "set lock_timeout = '5 s';",
     "set lock_timeout = '5s';\nalter table t add column c int;\nreset lock_timeout;",
+    "set lock_timeout = '5s';\nalter table t add column lock_timeout_note text;",
   ])("accepts %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(true));
 
   it.each([
@@ -50,6 +52,11 @@ describe("startsWithLockTimeout", () => {
     "set lock_timeout = '5s;",
     "set lock_timeout = 5s';",
     "set lock_timeout = '5s';\nset lock_timeout = 0;",
+    "set lock_timeout = '5s';\nreset lock_timeout;\nalter table t add column c int;",
+    "set lock_timeout = '5s';\nset local lock_timeout = 0;",
+    "set lock_timeout = '5s';\nset session lock_timeout = 0;",
+    "set lock_timeout = '5s';\nselect set_config('lock_timeout', '0', false);",
+    "set lock_timeout = '5s';\nreset all;\nalter table t add column c int;",
   ])("rejects %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(false));
 });
 
