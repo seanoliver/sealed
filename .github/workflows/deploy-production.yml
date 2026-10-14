@@ -1,12 +1,14 @@
 name: Deploy production
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      ref:
-        description: Tested commit SHA or tag to deploy
-        required: true
-        default: main
+
+permissions:
+  contents: read
 
 concurrency:
   group: production-deployment
@@ -15,47 +17,59 @@ concurrency:
 jobs:
   deploy:
     name: Migrate and deploy production
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
       name: Production
       url: ${{ steps.deploy.outputs.url }}
     steps:
-      - uses: actions/checkout@v4
+      # Deploy main's head, not the commit whose CI finished: a newer commit
+      # may have cancelled or failed its own main CI after passing PR CI.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ inputs.ref }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: supabase/setup-cli@v1
+          ref: main
+          persist-credentials: false
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: 2.109.1
-      - run: pnpm install --frozen-lockfile
-      - name: Install Vercel CLI
-        run: pnpm add --global vercel@49.1.2
       - name: Apply committed migrations to production
+        shell: bash
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "10"
         run: |
           test -n "$DATABASE_URL" || { echo "PRODUCTION_DATABASE_URL is not configured"; exit 1; }
           # The transaction pooler (6543) retains prepared statements across
           # clients; Supabase CLI migration retries then fail with SQLSTATE 42P05.
-          MIGRATION_DATABASE_URL="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
-          [[ "$MIGRATION_DATABASE_URL" == *".pooler.supabase.com:5432/"* ]] || {
+          url="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"
+          password="${url#*://*:}"
+          echo "::add-mask::$url"
+          echo "::add-mask::${password%%@*}"
+          [[ "$url" == *".pooler.supabase.com:5432/"* ]] || {
             echo "PRODUCTION_DATABASE_URL must use the Supabase session pooler"; exit 1;
           }
-          supabase db push --db-url "$MIGRATION_DATABASE_URL" --include-all --yes
-      - name: Build and deploy tested source on Vercel
+          echo "Migrating $(git rev-parse HEAD)"
+          supabase db push --db-url "$url" --include-all --yes
+          versions=$(psql "$url" -Atc "select version from supabase_migrations.schema_migrations")
+          scripts/ci/migration-drift.sh supabase/migrations <<<"$versions"
+      - name: Install Vercel CLI
+        run: npm install --global --ignore-scripts vercel@49.1.2
+      - name: Build and deploy on Vercel
         id: deploy
+        shell: bash
         run: |
           deploy_sha=$(git rev-parse HEAD)
           url=$(vercel deploy --prod --yes \
             --meta "githubCommitSha=$deploy_sha" \
-            --meta "githubCommitRef=${{ inputs.ref }}" \
-            --token="${{ secrets.VERCEL_TOKEN }}")
+            --meta "githubCommitRef=main" \
+            --token="$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      - name: Smoke-check sealed.page
+        run: curl -fsS --retry 5 --retry-all-errors --retry-delay 5 -o /dev/null https://sealed.page/login

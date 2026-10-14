@@ -69,7 +69,7 @@ All of these live in `.env.local` (gitignored). See [.env.local.example](.env.lo
 
 Required vars are asserted at server startup (`src/lib/env.ts`); a misconfigured deployment fails loudly with the list of missing names.
 
-The reference local → staging → production topology and promotion workflow are documented in [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
+The local and production environments and the release workflow are documented in [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
 
 ## Deploying
 
