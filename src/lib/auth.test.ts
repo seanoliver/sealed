@@ -29,12 +29,13 @@ describe("requireAdmin", () => {
     await expect(requireAdmin()).resolves.toMatchObject({ sub: "user-1" });
   });
 
-  it("404s for an unlisted email or a token without one", async () => {
-    signedInAs("someone@example.test");
-    await expect(requireAdmin()).rejects.toThrow("NOT_FOUND");
-    signedInAs(undefined);
-    await expect(requireAdmin()).rejects.toThrow("NOT_FOUND");
-  });
+  it.each([["an unlisted email", "someone@example.test"], ["a token without one", undefined]])(
+    "404s for %s",
+    async (_label, email) => {
+      signedInAs(email);
+      await expect(requireAdmin()).rejects.toThrow("NOT_FOUND");
+    },
+  );
 
   it("404s for everyone when ADMIN_EMAILS is empty or unset", async () => {
     signedInAs("owner@example.test");

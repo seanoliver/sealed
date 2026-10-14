@@ -94,7 +94,7 @@ Supabase Auth calls `private.before_user_created_hook` before it creates any use
 
 Sealed is passwordless, and a trigger on `auth.users` (`private.strip_password`) blanks every stored password. Without it, someone could sign up with a password for an approved email before its owner does, and keep signing in with that password after the owner confirms the email. Production must keep email confirmation on, so a password sign-up never gets a session before the owner confirms.
 
-Known limits: calling the Supabase Auth API directly with the public anon key skips the app's Turnstile check and rate limit, so it can add pending rows and tell an approved or existing email (200) from any other (403). Supabase's own per-IP limits still apply. Supabase Auth captcha would close this; see #53.
+Known limits: calling the Supabase Auth API directly with the public anon key skips the app's Turnstile check and rate limit, so it can add pending rows and tell an approved or existing email (200) from any other (403). Supabase's own per-IP limits still apply. Supabase Auth captcha would close this; see #53. Response time also differs, because approved and existing emails wait for an email send and waitlisted ones do not.
 
 ## Rate limits
 

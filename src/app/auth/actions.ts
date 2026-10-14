@@ -34,24 +34,18 @@ export async function requestAccess(
   const ip = await requestIp();
 
   // Supabase sends at most 30 auth emails an hour for the whole project, so
-  // one client or one address must not be able to use them all.
-  let allowed = false;
-  try {
-    allowed =
-      (await checkRateLimit(hashedIpKey("request-access", ip), 5, 3600)) &&
-      (await checkRateLimit(hashedIpKey("request-access-email", email.toLowerCase()), 3, 3600));
-  } catch (err) {
-    logDbError("[ra] [requestAccess] rate-limit check failed", err);
-    return { status: "error", message: GENERIC_ERROR };
-  }
-  if (!allowed) {
-    return { status: "error", message: "Too many requests. Please try again later." };
-  }
+  // one client or one address must not be able to use them all. The email
+  // limit runs after Turnstile: otherwise anyone could use up a victim's budget.
+  const ipLimit = await withinLimit(hashedIpKey("request-access", ip), 5);
+  if (ipLimit !== true) return ipLimit;
 
   const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
   if (!(await verifyTurnstile(turnstileResponse, ip))) {
     return { status: "error", message: "Verification failed. Please try again." };
   }
+
+  const emailLimit = await withinLimit(hashedIpKey("request-access-email", email.toLowerCase()), 3);
+  if (emailLimit !== true) return emailLimit;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
@@ -60,11 +54,23 @@ export async function requestAccess(
   });
   // A rate-limited send must look like any other request: only approved and
   // existing emails are ever sent mail, so an error here would reveal them.
-  if (error && error.message !== WAITLIST_REJECTION && error.status !== 429) {
+  if (error?.status === 429) {
+    console.warn(`[ra] [requestAccess] Supabase rate-limited the send: ${error.code ?? ""}`);
+  } else if (error && error.message !== WAITLIST_REJECTION) {
     console.error(`[ra] [requestAccess] signInWithOtp failed: ${error.name} ${error.status ?? ""}`);
     return { status: "error", message: GENERIC_ERROR };
   }
   return { status: "sent", email };
+}
+
+async function withinLimit(key: string, max: number): Promise<true | RequestAccessState> {
+  try {
+    if (await checkRateLimit(key, max, 3600)) return true;
+  } catch (err) {
+    logDbError("[ra] [requestAccess] rate-limit check failed", err);
+    return { status: "error", message: GENERIC_ERROR };
+  }
+  return { status: "error", message: "Too many requests. Please try again later." };
 }
 
 export async function continueWithGoogle() {

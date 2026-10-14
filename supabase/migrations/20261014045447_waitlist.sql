@@ -77,6 +77,8 @@ create trigger strip_password
   before insert or update of encrypted_password on auth.users
   for each row execute function private.strip_password();
 
+update auth.users set encrypted_password = '' where encrypted_password <> '';
+
 revoke all on table private.waitlist from public, anon, authenticated;
 revoke execute on function private.before_user_created_hook(jsonb) from public, anon, authenticated;
 revoke execute on function private.list_waitlist() from public, anon, authenticated;

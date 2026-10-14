@@ -70,7 +70,8 @@ export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
   );
 }
 
-const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
+// A fixed time zone keeps server and browser renders identical.
+const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
 
 function EntryList({
   title,
