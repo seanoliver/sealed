@@ -66,11 +66,7 @@ export async function fetchMagicLink(email: string): Promise<string> {
   return link;
 }
 
-/**
- * Request access through the REAL entry form at `/` and wait for the
- * confirmation. The response is identical for approved, existing and
- * waitlisted emails.
- */
+/** Request access through the real entry form at `/` and wait for the confirmation. */
 export async function requestAccess(page: Page, email: string): Promise<void> {
   await page.goto("/");
   await page.getByLabel("Email address").fill(email);
@@ -79,11 +75,8 @@ export async function requestAccess(page: Page, email: string): Promise<void> {
   await expect(page.getByRole("heading", { name: "Your request is in" })).toBeVisible();
 }
 
-/**
- * Sign up (or in) through the real entry form: approve the email, request a
- * magic link, fetch it from Mailpit, and visit it. Existing owners land on
- * /dashboard; a new owner is redirected into /onboarding.
- */
+// Approve, request a magic link, and follow it from Mailpit. Existing owners
+// land on /dashboard; a new owner is redirected into /onboarding.
 export async function signupAndLogin(page: Page, email: string): Promise<void> {
   await approveEmail(email);
   await requestAccess(page, email);

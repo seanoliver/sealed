@@ -20,13 +20,8 @@ export type RequestAccessState =
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-/**
- * One door for everyone: existing owners and approved emails get a magic
- * link; any other email is put on the waitlist by
- * private.before_user_created_hook, which rejects the sign-up. Both outcomes
- * return the same "sent" state, so the response never reveals whether an
- * email has an account or an invitation.
- */
+// Approved, existing and waitlisted emails all get the same "sent" state;
+// a different response would reveal whether an email has an account.
 export async function requestAccess(
   _prevState: RequestAccessState,
   formData: FormData,

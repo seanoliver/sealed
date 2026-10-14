@@ -6,13 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 /** JWT claims shape returned by requireUser; assignable to withRls's claims param. */
 export type SessionClaims = { sub: string; email?: string; [k: string]: unknown };
 
-/**
- * Validated JWT claims, or null when signed out. getClaims() verifies the JWT
- * (locally when the project uses asymmetric signing keys; via the Auth server
- * otherwise) rather than trusting the cookie contents. Wrapped in React
- * cache() so the layout gate and page/action calls within one render pass
- * share a single getClaims().
- */
+/** Verified JWT claims, or null when signed out. Not getSession(): it trusts the cookie. */
 export const currentUser = cache(async (): Promise<SessionClaims | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
@@ -27,10 +21,7 @@ export async function requireUser(): Promise<SessionClaims> {
   return claims;
 }
 
-/**
- * Claims of a signed-in admin (ADMIN_EMAILS, comma-separated), otherwise a
- * 404 so the admin surface is invisible to everyone else.
- */
+/** Claims of a signed-in ADMIN_EMAILS member; everyone else gets a 404. */
 export async function requireAdmin(): Promise<SessionClaims> {
   const claims = await requireUser();
   const admins = (process.env.ADMIN_EMAILS ?? "")

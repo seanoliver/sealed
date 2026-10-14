@@ -4,9 +4,8 @@ import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
-// Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): the waitlist
-// lives in the private schema and is reachable only through its SECURITY
-// DEFINER functions. requireAdmin gates every call.
+// Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): the waitlist is
+// reachable only through private.* functions, and requireAdmin gates every call.
 import { dbAdmin } from "@/lib/db/admin";
 import { sendNotification } from "@/lib/email/resend";
 import { waitlistApprovedEmail } from "@/lib/email/templates";
@@ -16,10 +15,7 @@ export type ApproveState = { message?: string; error?: string };
 
 const emailSchema = z.email().max(254);
 
-/**
- * Approve an email (pending or not yet on the list) and send the invitation.
- * Re-running for an approved email whose invitation failed resends it.
- */
+// Approves any email, listed or not. Re-running for an approved email resends the invitation.
 export async function approveEmail(
   _prevState: ApproveState,
   formData: FormData,

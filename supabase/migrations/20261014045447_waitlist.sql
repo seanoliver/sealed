@@ -1,9 +1,5 @@
 set lock_timeout = '5s';
 
--- Invite-only beta. Supabase Auth calls private.before_user_created_hook before
--- creating any user (magic link, OAuth, direct API). Emails without an
--- approved row are recorded here and the sign-up is rejected. Existing users
--- never reach the hook, so they keep access.
 create table private.waitlist (
   email text primary key check (email = lower(email)),
   status text not null default 'pending' check (status in ('pending', 'approved')),
@@ -13,8 +9,7 @@ create table private.waitlist (
   invite_sent_at timestamptz
 );
 
--- The reject message doubles as the marker the app recognises: the magic-link
--- action reads it from the auth error, and OAuth returns it as error_description.
+-- The app matches the reject message (src/lib/waitlist.ts); change both together.
 create or replace function private.before_user_created_hook(event jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -37,8 +32,6 @@ begin
   return v_reject;
 end $$;
 
--- Pending first, oldest first; approved rows follow so the admin page can show
--- whether the invitation email went out.
 create or replace function private.list_waitlist()
 returns table (
   email text,
@@ -53,8 +46,7 @@ returns table (
   order by status = 'approved', requested_at;
 $$;
 
--- Approving an email that never requested access creates the row, so an
--- invitation can go out before someone asks. Returns false if already approved.
+-- Returns false if the email was already approved.
 create or replace function private.approve_waitlist_email(p_email text)
 returns boolean language plpgsql security definer set search_path = '' as $$
 declare v_email text := lower(trim(p_email));

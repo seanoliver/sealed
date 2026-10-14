@@ -14,10 +14,7 @@ import {
 
 const initialState: RequestAccessState = { status: "idle" };
 
-/**
- * The entry form. Remounting it (new key) is how "Use a different email"
- * clears the action state.
- */
+/** Remounting the form (new key) is how "Use a different email" clears the action state. */
 export function RequestAccess({ error }: { error?: boolean }) {
   const [attempt, setAttempt] = useState(0);
   return (
