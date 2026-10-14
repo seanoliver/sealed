@@ -20,6 +20,14 @@ _Avoid_: Account name, book title, email alias
 The public, write-only page an owner shares so another person can submit contact information to the address book.
 _Avoid_: Ask-your-friends page, public address book
 
+**Waitlist**:
+Emails that asked for access to the private beta and are not yet approved. Requesting access through the entry form or Google adds an email; approving it lets that email create an account.
+_Avoid_: Signup list, queue
+
+**Beta invitation**:
+The approval, and the email announcing it, that lets a waitlisted person create an account. It is unrelated to the invite page.
+_Avoid_: Invite (reserved for the invite page)
+
 **Optional invite field**:
 A recipient detail that an owner deliberately enables for the invite page. Partner name, kids’ names, and birthday are optional invite fields and default to disabled for a new address book.
 _Avoid_: Required field, custom field

@@ -135,3 +135,34 @@ This alert contains no error details by design.
 
   return { subject, html, text };
 }
+
+export interface WaitlistApprovedEmailInput {
+  signInUrl: string;
+}
+
+/** Sent when an email is approved. The sign-in page sends the actual magic link. */
+export function waitlistApprovedEmail({
+  signInUrl,
+}: WaitlistApprovedEmailInput): EmailContent {
+  const subject = "You’re invited to Sealed";
+  const url = escapeHtml(signInUrl);
+
+  const html = `<div style="margin:0 auto;max-width:520px;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:15px;line-height:1.6">
+  <p style="margin:0 0 24px;font-size:17px;font-weight:700">Sealed</p>
+  <p style="margin:0 0 16px">Hi,</p>
+  <p style="margin:0 0 16px">Your invitation to the Sealed beta is ready. Sign in with this email address to create your address book.</p>
+  <p style="margin:0 0 24px"><a href="${url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Sign in to Sealed</a></p>
+  <p style="margin:0;color:#6b7280;font-size:13px">If the button doesn&#39;t work, copy and paste this address into your browser:<br>${url}</p>
+</div>`;
+
+  const text = `Sealed
+
+Hi,
+
+Your invitation to the Sealed beta is ready. Sign in with this email address to create your address book.
+
+Sign in: ${signInUrl}
+`;
+
+  return { subject, html, text };
+}

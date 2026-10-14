@@ -71,7 +71,7 @@ const nonRedirectingHosts = [
 
 for (const { name, host } of nonRedirectingHosts) {
   test(`${name} renders without redirecting`, async ({ request }) => {
-    const response = await request.get("/login", {
+    const response = await request.get("/", {
       headers: { host },
       maxRedirects: 0,
     });

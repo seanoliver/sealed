@@ -3,6 +3,7 @@ import {
   addressRequestEmail,
   healthCheckFailedEmail,
   submissionNotificationEmail,
+  waitlistApprovedEmail,
 } from "./templates";
 
 const addressRequest = {
@@ -119,5 +120,16 @@ describe("healthCheckFailedEmail", () => {
     });
     expect(subject).not.toMatch(/[\r\n]/);
     expect(html).not.toContain("<b>x</b>");
+  });
+});
+
+describe("waitlistApprovedEmail", () => {
+  it("links to the sign-in page in html and text, escaping the URL", () => {
+    const { subject, html, text } = waitlistApprovedEmail({
+      signInUrl: "https://app.example/?a=1&b=2",
+    });
+    expect(subject).toBe("You’re invited to Sealed");
+    expect(html).toContain('href="https://app.example/?a=1&amp;b=2"');
+    expect(text).toContain("Sign in: https://app.example/?a=1&b=2");
   });
 });

@@ -109,8 +109,13 @@ Required production Vercel variables:
 - real `TURNSTILE_SECRET_KEY`
 - `CRON_SECRET` (random, at least 16 characters)
 - `HEALTH_ALERT_EMAIL` (recommended)
+- `ADMIN_EMAILS` (who can approve beta invitations at `/admin/waitlist`)
 
 `EMAIL_DRY_RUN` must be absent in production. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
+
+### Invite-only sign-up
+
+Production Auth must have the before-user-created hook enabled, pointing at `pg-functions://postgres/private/before_user_created_hook`. Local Auth enables it in `supabase/config.toml`; hosted Auth is configured separately, see [the waitlist runbook](runbooks/waitlist.md). Without the hook, anyone can create an account.
 
 ### Scheduled health check
 

@@ -129,6 +129,34 @@ export async function seedEmailSend(opts: {
  */
 export async function cleanupUser(email: string): Promise<void> {
   await db`delete from auth.users where email = ${email}`;
+  await db`delete from private.waitlist where email = ${email.toLowerCase()}`;
+}
+
+/** Let an email through the invite-only gate (private.before_user_created_hook). */
+export async function approveEmail(email: string): Promise<void> {
+  await db`select private.approve_waitlist_email(${email})`;
+}
+
+/** Record an email as waiting, as an unapproved sign-up attempt would. */
+export async function seedPendingWaitlist(email: string): Promise<void> {
+  await db`
+    insert into private.waitlist (email, source)
+    values (${email.toLowerCase()}, 'email')
+    on conflict (email) do nothing`;
+}
+
+export async function getWaitlistRow(
+  email: string,
+): Promise<{ status: string; source: string; invited: boolean } | null> {
+  const rows = await db`
+    select status, source, invite_sent_at is not null as invited
+    from private.waitlist where email = ${email.toLowerCase()}`;
+  return (rows[0] as { status: string; source: string; invited: boolean }) ?? null;
+}
+
+export async function authUserExists(email: string): Promise<boolean> {
+  const rows = await db`select 1 from auth.users where email = ${email.toLowerCase()}`;
+  return rows.length > 0;
 }
 
 /**

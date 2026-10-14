@@ -1,0 +1,46 @@
+# Run the beta waitlist
+
+**Status:** Current
+**Last verified:** not yet verified in production
+**Owner:** Maintainers
+**Related:** [#30](https://github.com/seanoliver/sealed/issues/30), [Security model](../SECURITY.md#invite-only-sign-up), [Environments](../ENVIRONMENTS.md#invite-only-sign-up)
+
+## Purpose
+
+Keep sign-up invite-only in production, and approve people from the waitlist.
+
+## Prerequisites
+
+- The `*_waitlist.sql` migration is applied to production (the deploy workflow does this on merge).
+- `ADMIN_EMAILS` is set on the `sealed` Vercel project (Production target) and includes your email.
+- A Supabase Management API token with access to the production project.
+
+## Enable the gate (once)
+
+Enable the hook only after the migration has applied. If the hook points at a function that does not exist, every new sign-up fails.
+
+```bash
+curl -fsS -X PATCH "https://api.supabase.com/v1/projects/ivwrvilpjhqhmlzwgyot/config/auth" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"hook_before_user_created_enabled": true,
+       "hook_before_user_created_uri": "pg-functions://postgres/private/before_user_created_hook"}'
+```
+
+## Approve people
+
+Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email. **Invite** approves an email that has not asked yet. An approved email whose invitation failed shows **Resend invitation**.
+
+## Verification
+
+- Request access at sealed.page with an email that is not approved. The page says "Your request is in", no email arrives, and the email appears under **Waiting**.
+- Approve it. The invitation arrives, and requesting access again sends a sign-in link that creates the account.
+
+## Failure recovery
+
+### Every new sign-up fails with a server error
+
+The hook is enabled but the function is missing or not executable by `supabase_auth_admin`. Disable the hook (same PATCH with `"hook_before_user_created_enabled": false`), check that the migration applied, then enable it again.
+
+### Approved, but "the invitation email failed"
+
+Resend rejected or could not be reached. Check `EMAIL_FROM` and `RESEND_API_KEY`, then use **Resend invitation**.

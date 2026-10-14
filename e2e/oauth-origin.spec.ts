@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("OAuth returns to the origin where sign-in started", async ({ page }) => {
   const loginOrigin = `http://127.0.0.1:${process.env.E2E_PORT ?? "3000"}`;
-  await page.goto(`${loginOrigin}/login`);
+  await page.goto(`${loginOrigin}/`);
 
   const authorizeRequest = page.waitForRequest((request) => {
     const url = new URL(request.url());

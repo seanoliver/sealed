@@ -164,8 +164,8 @@ describe("GET /api/health", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     let finishAlert!: () => void;
     vi.mocked(sendNotification).mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        finishAlert = resolve;
+      new Promise<boolean>((resolve) => {
+        finishAlert = () => resolve(true);
       }),
     );
 

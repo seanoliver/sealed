@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
+import { approveEmail } from "./db";
 
 /** Supabase's local Mailpit (config.toml [local_smtp], port 54324). */
 const MAILPIT_URL = "http://127.0.0.1:54324";
@@ -48,6 +49,15 @@ export async function fetchDeliveredMessage(
   return message;
 }
 
+/** Assert Mailpit received nothing for `email` within a short window. */
+export async function expectNoDeliveredMessage(email: string): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 3_000));
+  const query = encodeURIComponent(`to:${email}`);
+  const search = await fetch(`${MAILPIT_URL}/api/v1/search?query=${query}`);
+  const { messages } = (await search.json()) as { messages: unknown[] };
+  expect(messages, `email delivered to ${email}`).toHaveLength(0);
+}
+
 /** Pull the real /auth/confirm magic link out of the rendered email body. */
 export async function fetchMagicLink(email: string): Promise<string> {
   const { Text } = await fetchDeliveredMessage(email);
@@ -57,17 +67,26 @@ export async function fetchMagicLink(email: string): Promise<string> {
 }
 
 /**
- * Sign up (or in) through the REAL /login form: request a magic link, fetch
- * it from Mailpit, and visit it. Existing owners land on /dashboard; a new
- * owner is redirected into /onboarding.
+ * Request access through the REAL entry form at `/` and wait for the
+ * confirmation. The response is identical for approved, existing and
+ * waitlisted emails.
+ */
+export async function requestAccess(page: Page, email: string): Promise<void> {
+  await page.goto("/");
+  await page.getByLabel("Email address").fill(email);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Request access" }).click();
+  await expect(page.getByRole("heading", { name: "Your request is in" })).toBeVisible();
+}
+
+/**
+ * Sign up (or in) through the real entry form: approve the email, request a
+ * magic link, fetch it from Mailpit, and visit it. Existing owners land on
+ * /dashboard; a new owner is redirected into /onboarding.
  */
 export async function signupAndLogin(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("Email address").fill(email);
-  await page.getByRole("button", { name: "Send magic link" }).click();
-  await expect(
-    page.getByText("Check your email for a sign-in link."),
-  ).toBeVisible();
+  await approveEmail(email);
+  await requestAccess(page, email);
   const link = new URL(await fetchMagicLink(email));
   expect(link.origin).toBe(new URL(process.env.APP_URL!).origin);
   // Keep worktree/custom-port runs on the origin where this browser began.

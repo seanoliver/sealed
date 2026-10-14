@@ -2,45 +2,77 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import {
-  authConfirmationUrl,
-  parseAuthFlow,
-} from "@/lib/auth-flow";
+import { authConfirmationUrl } from "@/lib/auth-flow";
+import { checkRateLimit } from "@/lib/db/rate-limit";
+import { logDbError } from "@/lib/log";
 import { currentRequestOrigin } from "@/lib/request-origin";
+import { hashedIpKey, requestIp } from "@/lib/request-ip";
 import { createClient } from "@/lib/supabase/server";
+import { verifyTurnstile } from "@/lib/turnstile";
+import { WAITLIST_REJECTION } from "@/lib/waitlist";
 
-const emailSchema = z.object({ email: z.email().max(254) });
+const emailSchema = z.email().max(254);
 
-function readFlow(formData: FormData) {
-  return parseAuthFlow(formData.get("flow"));
-}
+export type RequestAccessState =
+  | { status: "idle" }
+  | { status: "sent"; email: string }
+  | { status: "error"; message: string };
 
-export async function sendMagicLink(formData: FormData) {
-  const flow = readFlow(formData);
-  const parsed = emailSchema.safeParse({ email: formData.get("email") });
-  if (!parsed.success) redirect(`/${flow}?error=1`);
+const GENERIC_ERROR = "Something went wrong. Please try again.";
+
+/**
+ * One door for everyone: existing owners and approved emails get a magic
+ * link; any other email is put on the waitlist by
+ * private.before_user_created_hook, which rejects the sign-up. Both outcomes
+ * return the same "sent" state, so the response never reveals whether an
+ * email has an account or an invitation.
+ */
+export async function requestAccess(
+  _prevState: RequestAccessState,
+  formData: FormData,
+): Promise<RequestAccessState> {
+  const parsed = emailSchema.safeParse(String(formData.get("email") ?? "").trim());
+  if (!parsed.success) {
+    return { status: "error", message: "Enter a valid email address." };
+  }
+  const email = parsed.data;
+  const ip = await requestIp();
+
+  let allowed = false;
+  try {
+    allowed = await checkRateLimit(hashedIpKey("request-access", ip), 30, 3600);
+  } catch (err) {
+    logDbError("[ra] [requestAccess] rate-limit check failed", err);
+    return { status: "error", message: GENERIC_ERROR };
+  }
+  if (!allowed) {
+    return { status: "error", message: "Too many requests. Please try again later." };
+  }
+
+  const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
+  if (!(await verifyTurnstile(turnstileResponse, ip))) {
+    return { status: "error", message: "Verification failed. Please try again." };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
-    email: parsed.data.email,
-    options: {
-      emailRedirectTo: authConfirmationUrl(process.env.APP_URL!, flow),
-    },
+    email,
+    options: { emailRedirectTo: authConfirmationUrl(process.env.APP_URL!) },
   });
-
-  // Generic failure state — never reveal whether an account already exists.
-  if (error) redirect(`/${flow}?error=1`);
-  redirect(`/${flow}?sent=1`);
+  if (error && error.message !== WAITLIST_REJECTION) {
+    console.error(`[ra] [requestAccess] signInWithOtp failed: ${error.name} ${error.status ?? ""}`);
+    return { status: "error", message: GENERIC_ERROR };
+  }
+  return { status: "sent", email };
 }
 
-export async function continueWithGoogle(formData: FormData) {
-  const flow = readFlow(formData);
+export async function continueWithGoogle() {
   const supabase = await createClient();
   const origin = await currentRequestOrigin();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: authConfirmationUrl(origin, flow) },
+    options: { redirectTo: authConfirmationUrl(origin) },
   });
-  if (error || !data.url) redirect(`/${flow}?error=1`);
+  if (error || !data.url) redirect("/?error=1");
   redirect(data.url);
 }

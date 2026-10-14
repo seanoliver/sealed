@@ -1,26 +1,23 @@
 import { expect, test } from "@playwright/test";
-import { fetchMagicLink, uniqueEmail } from "./helpers";
+import { approveEmail, cleanupUser } from "./db";
+import { fetchMagicLink, requestAccess, uniqueEmail } from "./helpers";
 
-test("a failed signup magic link returns to signup", async ({ page }) => {
-  const email = uniqueEmail("signup-error");
-  await page.goto("/signup");
-  await page.getByLabel("Email address").fill(email);
-  await page.getByRole("button", { name: "Send magic link" }).click();
-  await expect(
-    page.getByText("Check your email to finish creating your address book."),
-  ).toBeVisible();
+test("a failed magic link returns to the entry page with an error", async ({ page }) => {
+  const email = uniqueEmail("link-error");
+  await approveEmail(email);
+  await requestAccess(page, email);
 
   const link = new URL(await fetchMagicLink(email));
   expect(link.origin).toBe(new URL(process.env.APP_URL!).origin);
-  expect(link.searchParams.get("flow")).toBe("signup");
   link.searchParams.set("token_hash", "not-a-real-token-hash");
   const pageOrigin = new URL(page.url()).origin;
   await page.goto(`${pageOrigin}${link.pathname}${link.search}`);
 
-  await expect(page).toHaveURL(/\/signup\?error=1$/);
+  await expect(page).toHaveURL(/\/\?error=1$/);
   await expect(
-    page.getByRole("alert").filter({ hasText: "Something went wrong" }),
+    page.getByRole("alert").filter({ hasText: "That sign-in link didn’t work" }),
   ).toBeVisible();
+  await cleanupUser(email);
 });
 
 test("a provider fallback code at the site root reaches auth confirmation", async ({
@@ -31,8 +28,8 @@ test("a provider fallback code at the site root reaches auth confirmation", asyn
   // The root hands the code to /auth/confirm. A deliberately invalid code then
   // follows the confirmation route's generic failure path instead of leaving
   // the visitor stranded on the public homepage with a code in the URL.
-  await expect(page).toHaveURL(/\/login\?error=1$/);
+  await expect(page).toHaveURL(/\/\?error=1$/);
   await expect(
-    page.getByRole("alert").filter({ hasText: "Something went wrong" }),
+    page.getByRole("alert").filter({ hasText: "That sign-in link didn’t work" }),
   ).toBeVisible();
 });

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { parseAuthFlow } from "@/lib/auth-flow";
 import { createClient } from "@/lib/supabase/server";
+import { WAITLIST_REJECTION } from "@/lib/waitlist";
 
 const otpTypeSchema = z.enum([
   "signup",
@@ -16,6 +16,7 @@ const otpTypeSchema = z.enum([
  * Auth confirmation endpoint (canonical @supabase/ssr pattern).
  * - Magic link / email OTP: ?token_hash=...&type=email → verifyOtp
  * - OAuth (Google) PKCE:    ?code=...                  → exchangeCodeForSession
+ * - OAuth sign-up rejected by the waitlist hook: ?error_description=sealed_waitlisted
  * On success the session cookies are set and we land on /dashboard.
  */
 export async function GET(request: NextRequest) {
@@ -23,7 +24,10 @@ export async function GET(request: NextRequest) {
   const tokenHash = searchParams.get("token_hash");
   const type = otpTypeSchema.safeParse(searchParams.get("type"));
   const code = searchParams.get("code");
-  const flow = parseAuthFlow(searchParams.get("flow"));
+
+  if (searchParams.get("error_description") === WAITLIST_REJECTION) {
+    return NextResponse.redirect(new URL("/?requested=google", request.url));
+  }
 
   const supabase = await createClient();
 
@@ -42,5 +46,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL(`/${flow}?error=1`, request.url));
+  return NextResponse.redirect(new URL("/?error=1", request.url));
 }

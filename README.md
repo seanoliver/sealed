@@ -66,6 +66,7 @@ All of these live in `.env.local` (gitignored). See [.env.local.example](.env.lo
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key. The example value is Cloudflare's public always-pass test key. |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key. The example value is Cloudflare's public always-pass test key. |
 | `APP_URL` | Canonical base URL of the deployment — used to build the links in outgoing emails. |
+| `ADMIN_EMAILS` | Comma-separated emails that can open `/admin/waitlist` to approve beta invitations. Everyone else gets a 404 there. |
 
 Required vars are asserted at server startup (`src/lib/env.ts`); a misconfigured deployment fails loudly with the list of missing names.
 
