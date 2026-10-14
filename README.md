@@ -1,6 +1,6 @@
 # Sealed
 
-Sealed is an open-source, self-hostable address book for people who mail things to people — holiday cards being the canonical use case.
+Sealed is an address book for people who mail things to people — holiday cards being the canonical use case.
 
 Each owner has one personal address book, identified by their display name rather than a separate book title. Each year (or whenever), you email contacts a unique, expiring link where they confirm or update **their own** address — no account needed on their end. You also get a shareable permalink where people can add themselves to your book, write-only: visitors can never see what's in it. When it's time to print labels, export everything as CSV.
 
@@ -92,7 +92,3 @@ pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm test:db && pnpm build &
 ```
 
 New tables must ship with RLS policies and pgTAP coverage — the test suite fails otherwise (by design; see [docs/SECURITY.md](docs/SECURITY.md)). To report a security issue, **do not open a public issue** — see the [vulnerability reporting section](docs/SECURITY.md#reporting-a-vulnerability).
-
-## License
-
-[MIT](LICENSE)
