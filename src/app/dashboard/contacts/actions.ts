@@ -247,6 +247,91 @@ export async function updateContact(
   return { saved: true, values: submitted };
 }
 
+export type PatchContactResult = { error?: string };
+
+const patchSchema = z
+  .object(
+    Object.fromEntries(
+      CONTACT_FIELDS.map((field) => [field, z.string().optional()]),
+    ) as Record<ContactField, z.ZodOptional<z.ZodString>>,
+  )
+  .strict();
+
+function rowToFormValues(row: typeof contacts.$inferSelect): ContactFormValues {
+  const snap = rowToSnapshot(row);
+  return Object.fromEntries(
+    CONTACT_FIELDS.map((field) => [field, snap[field] ?? ""]),
+  ) as ContactFormValues;
+}
+
+export async function patchContact(
+  id: string,
+  patch: Partial<ContactFormValues>,
+): Promise<PatchContactResult> {
+  const claims = await requireUser();
+  if (!uuidSchema.safeParse(id).success) return { error: "Contact not found." };
+  const fields = patchSchema.safeParse(patch);
+  if (!fields.success) return { error: "Invalid input" };
+
+  type Outcome =
+    | { kind: "missing" }
+    | { kind: "invalid"; error: string }
+    | { kind: "saved"; before: Snapshot; after: Snapshot };
+  let outcome: Outcome;
+  try {
+    outcome = await withRls(claims, async (tx): Promise<Outcome> => {
+      const [book] = await tx
+        .select({ id: books.id })
+        .from(books)
+        .where(eq(books.ownerId, claims.sub))
+        .limit(1);
+      if (!book) return { kind: "missing" };
+      const [existing] = await tx
+        .select()
+        .from(contacts)
+        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
+        .limit(1)
+        .for("update");
+      if (!existing) return { kind: "missing" };
+      const parsed = contactSchema.safeParse({
+        ...rowToFormValues(existing),
+        ...fields.data,
+      });
+      if (!parsed.success) {
+        return {
+          kind: "invalid",
+          error: parsed.error.issues[0]?.message ?? "Invalid input",
+        };
+      }
+      const before = rowToSnapshot(existing);
+      const after = inputToSnapshot(parsed.data);
+      // A no-op save must not bump updated_at.
+      if (changedFields(before, after)) {
+        await tx
+          .update(contacts)
+          .set(toRow(parsed.data))
+          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+      }
+      return { kind: "saved", before, after };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err, "contacts_book_email_unique")) {
+      return { error: "You already have a contact with this email" };
+    }
+    logDbError("[ct] [patchContact] update failed", err);
+    return { error: "Something went wrong. Please try again." };
+  }
+  if (outcome.kind === "missing") return { error: "Contact not found." };
+  if (outcome.kind === "invalid") return { error: outcome.error };
+
+  const diff = changedFields(outcome.before, outcome.after);
+  if (diff) await recordContactEvent(id, diff);
+
+  revalidatePath("/dashboard");
+  revalidatePath(`/dashboard/contacts/${id}`);
+  return {};
+}
+
 export async function deleteContact(
   _prevState: DeleteContactState,
   formData: FormData,

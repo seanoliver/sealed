@@ -20,7 +20,10 @@ export interface ContactListRow {
   fullName: string;
   partnerName: string | null;
   email: string | null;
+  addressLine1: string | null;
   city: string | null;
+  stateRegion: string | null;
+  postalCode: string | null;
   country: string | null;
   /** Factual latest-send status; the UI layers an "updated" chip on top. */
   sendStatus: SendStatus;
@@ -90,7 +93,10 @@ export async function listContacts(
         fullName: contacts.fullName,
         partnerName: contacts.partnerName,
         email: contacts.email,
+        addressLine1: contacts.addressLine1,
         city: contacts.city,
+        stateRegion: contacts.stateRegion,
+        postalCode: contacts.postalCode,
         country: contacts.country,
         // Wrapped in sql`` because drizzle types flat partial selects from a
         // left-joined subquery as non-nullable; this is string | null.

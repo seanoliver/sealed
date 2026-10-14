@@ -19,7 +19,7 @@ const isRealDate = (s: string) => {
 };
 
 export const contactSchema = z.object({
-  full_name: z.string().trim().min(1).max(200),
+  full_name: z.string().trim().min(1, "Name is required").max(200),
   partner_name: opt(200),
   kids_names: opt(500),
   email: z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional(),

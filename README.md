@@ -8,7 +8,7 @@ Security is the top design priority: this app stores home addresses, and leaking
 
 ## Features
 
-- **Contact list** with partner names, kids' names, birthdays, and international-friendly structured addresses
+- **Contact list** with partner names, kids' names, birthdays, and international-friendly structured addresses, shown as a spreadsheet-style table: sortable and resizable columns, keyboard navigation, and inline row editing
 - **"Request addresses" in bulk** — each contact gets a personal, single-use link (30-day expiry) to update their own info
 - **Send-status tracking** — per-contact chips (sent / delivered / opened / bounced / updated) driven by signed Resend webhooks
 - **Public permalink** (`/b/your-slug`) — a write-only self-add form; submissions land in a review queue where you approve, merge, or reject

@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
-import { ContactsTable, type DashboardRow } from "./contacts-table";
+import { toSheetRow } from "@/lib/contacts-sheet";
+import { ContactsTable } from "./contacts-table";
 
 export default async function DashboardPage({
   searchParams,
@@ -22,19 +23,18 @@ export default async function DashboardPage({
   const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
   const contacts = await listContacts(claims, query || undefined);
 
-  // Serialize for the client table: format the date server-side so the
-  // client component stays free of Date/locale handling.
-  const rows: DashboardRow[] = contacts.map(({ updatedAt, ...rest }) => ({
-    ...rest,
-    updatedAtLabel: updatedAt.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-  }));
+  const rows = contacts.map((contact) =>
+    toSheetRow(contact, (date) =>
+      date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    ),
+  );
 
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
+    <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-serif text-2xl leading-tight text-foreground">
           Your address book
