@@ -1,4 +1,5 @@
 import { type Metadata } from "next";
+import { cookies } from "next/headers";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs):
@@ -13,11 +14,13 @@ import { TOKEN_SHAPE } from "@/lib/tokens";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { RecipientForm } from "@/components/recipient-form";
 import { InvalidLinkNotice, Notice } from "../notice";
+import { UPDATE_TOKEN_COOKIE } from "../update-token-cookie";
 import { submitTokenUpdate } from "./actions";
 
 /**
- * Tokens are secrets carried in the URL — this route must NEVER be crawled,
- * indexed, or followed. (Task 18 additionally sends X-Robots-Tag here.)
+ * Recipient pages show personal data behind a bearer token — this route must
+ * NEVER be crawled, indexed, or followed. (next.config.ts additionally sends
+ * X-Robots-Tag for /u/*.)
  */
 export const metadata: Metadata = {
   title: "Update your address",
@@ -53,16 +56,13 @@ const tokenDataSchema = z.object({
 });
 
 /**
- * Recipient update page. Unauthenticated and token-gated: no session, no
- * cookies (excluded from the proxy matcher), no auth calls. The DOM contains
- * ONLY display values — never owner/book/contact ids.
+ * Recipient update page. Unauthenticated and token-gated: no session (excluded
+ * from the proxy matcher), no auth calls. The token arrives in the HttpOnly
+ * cookie GET /u/[token] set, never in this URL, so request logs never see it.
+ * The DOM contains ONLY display values — never owner/book/contact ids.
  */
-export default async function TokenUpdatePage({
-  params,
-}: {
-  params: Promise<{ token: string }>;
-}) {
-  const { token } = await params;
+export default async function TokenUpdatePage() {
+  const token = (await cookies()).get(UPDATE_TOKEN_COOKIE)?.value ?? "";
 
   // 1. Shape gate FIRST: anything that isn't exactly 43 base64url chars gets
   //    the generic page with ZERO DB work (no rate-limit row, no lookup).
@@ -127,12 +127,6 @@ export default async function TokenUpdatePage({
     country: contact.country ?? "",
   };
 
-  // Bind the token server-side. Note: bound args may round-trip through the
-  // client in cleartext (observed in dev) — acceptable here only because the
-  // recipient's browser already holds the token in the URL. Never bind
-  // secrets the client shouldn't see.
-  const action = submitTokenUpdate.bind(null, token);
-
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10">
       <div className="rounded-xl border border-border bg-card p-8 shadow-sm ">
@@ -144,8 +138,11 @@ export default async function TokenUpdatePage({
           hit update. Only {ownerLabel} can see what you enter.
         </p>
 
+        {/* The action reads the token from the same cookie. Never bind it as
+            an argument: bound args round-trip through the client in
+            cleartext. */}
         <RecipientForm
-          action={action}
+          action={submitTokenUpdate}
           defaults={defaults}
           enabled={enabled_fields}
           submitLabel="Update my details"

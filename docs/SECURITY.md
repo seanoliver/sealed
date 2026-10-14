@@ -14,7 +14,7 @@ A leak requires **two independent failures** — a bug in server code *and* a bu
 
 ### Untrusted surfaces: SECURITY DEFINER functions
 
-The two unauthenticated flows — token updates (`/u/[token]`) and permalink self-adds (`/b/[slug]`) — go through four narrow `SECURITY DEFINER` functions in a `private` schema (`supabase/migrations/00000000000002_private_functions.sql`):
+The two unauthenticated flows — token updates (`/u/[token]`, served at `/u/edit`) and permalink self-adds (`/b/[slug]`) — go through four narrow `SECURITY DEFINER` functions in a `private` schema (`supabase/migrations/00000000000002_private_functions.sql`):
 
 - `private.get_contact_for_token` — token lookup, returns only the contact's own fields plus display metadata
 - `private.apply_token_update` — single-use update, re-gated against the book's enabled fields server-side
@@ -77,6 +77,7 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 - **Single-active-per-contact** — re-running "Request addresses" deletes the contact's previous unused tokens before minting, so old links die immediately instead of living out their expiry
 - **Shape gate before DB** — both the page and the action test the token against `TOKEN_SHAPE` (`^[A-Za-z0-9_-]{43}$`) before any query; malformed tokens cost zero DB work
 - **Never logged** — the raw token exists only in the emailed URL; `logDbError` strips query params, and the sole exception is the `EMAIL_DRY_RUN=1` non-production log, which is hard-disabled when `APP_ENV=production`
+- **Out of the URL after one request** — platform request logs record every path, so `GET /u/[token]` (`src/app/u/[token]/route.ts`) does no DB work: it moves the token into an HttpOnly, `SameSite=Lax`, `Path=/u`, one-hour cookie and 303-redirects to `/u/edit`. The form page and its submit action read the cookie, so the token appears in at most one logged request (the first click). The action deletes the cookie once the token is spent
 - `/u/*` responses carry `X-Robots-Tag: noindex, nofollow` (`next.config.ts`) so a leaked link can't end up in a search index
 - Emails contain no address data — only the link, which identifies nothing by itself
 
@@ -95,8 +96,8 @@ All public surfaces are metered by `private.check_rate_limit` — a fixed-window
 
 | Surface | Key | Limit |
 |---|---|---|
-| `/u/[token]` page view | `token-view:sha256(ip)` | 30 / hour |
-| `/u/[token]` submit | `token-submit:sha256(ip)` | 10 / hour |
+| `/u/edit` page view | `token-view:sha256(ip)` | 30 / hour |
+| `/u/edit` submit | `token-submit:sha256(ip)` | 10 / hour |
 | `/b/[slug]` page view | `permalink-view:sha256(ip)` | 60 / hour |
 | `/b/[slug]` submit, per client | `permalink-submit:sha256(ip)` | 5 / hour |
 | `/b/[slug]` submit, per book | `permalink-book:<slug>` | 100 / day |

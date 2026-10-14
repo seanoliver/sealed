@@ -13,8 +13,8 @@ export const TOKEN_TTL_DAYS = 30;
 
 /**
  * Exact shape of a raw token (32 bytes → 43 chars unpadded base64url).
- * The /u/[token] surface gates on this BEFORE any DB work: malformed input
- * must never cost a query.
+ * The /u/[token] redirect and the /u/edit page and action gate on this
+ * BEFORE any DB work: malformed input must never cost a query.
  */
 export const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 

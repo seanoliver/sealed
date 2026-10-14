@@ -1,11 +1,12 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs):
 // private.apply_token_update is a SECURITY DEFINER function with zero grants
 // for client roles — the admin connection is the only path to it. This
-// action and the /u/[token] page are its ONLY consumers.
+// action and the /u/edit page are its ONLY consumers.
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
@@ -22,6 +23,7 @@ import {
 // client code is pulled into this server action bundle.
 import { type RecipientFormState } from "@/components/recipient-form";
 import { INVALID_LINK_MESSAGE } from "../notice";
+import { UPDATE_TOKEN_COOKIE } from "../update-token-cookie";
 
 export type TokenUpdateState = RecipientFormState;
 
@@ -34,16 +36,19 @@ function readTokenForm(formData: FormData): TokenUpdateValues {
 }
 
 /**
- * Recipient-facing submit for /u/[token]. Everything here is hostile input:
+ * Recipient-facing submit for /u/edit. Everything here is hostile input:
  * the token, the form values, the turnstile response, and the caller itself
  * (server actions are directly invokable endpoints — the page's checks are
- * NOT a precondition). The raw token is never logged anywhere in this flow.
+ * NOT a precondition). The token comes from the HttpOnly cookie that
+ * GET /u/[token] set, so it is never in a request URL; it is never logged.
  */
 export async function submitTokenUpdate(
-  token: string,
   _prevState: TokenUpdateState,
   formData: FormData,
 ): Promise<TokenUpdateState> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(UPDATE_TOKEN_COOKIE)?.value ?? "";
+
   // 1. Token shape gate — same regex as the page; malformed tokens cost no
   //    DB work and get the same generic copy as dead ones.
   if (!TOKEN_SHAPE.test(token)) {
@@ -116,5 +121,7 @@ export async function submitTokenUpdate(
     return { error: INVALID_LINK_MESSAGE, values: submitted };
   }
 
+  // The token is spent; drop the cookie rather than let it idle until expiry.
+  cookieStore.delete({ name: UPDATE_TOKEN_COOKIE, path: "/u" });
   redirect("/u/thanks");
 }
