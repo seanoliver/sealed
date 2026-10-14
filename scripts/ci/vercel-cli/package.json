@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Vercel CLI pinned for the production deploy workflow",
+  "dependencies": {
+    "vercel": "49.1.2"
+  }
+}

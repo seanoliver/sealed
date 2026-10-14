@@ -25,6 +25,8 @@ describe("deploy-production.yml", () => {
     const push = workflow.indexOf("supabase db push");
     for (const line of [
       'test -n "$DATABASE_URL" || {',
+      'url="${DATABASE_URL/.pooler.supabase.com:6543/.pooler.supabase.com:5432}"',
+      'password="${url#*://*:}"',
       'echo "::add-mask::$url"',
       'echo "::add-mask::${password%%@*}"',
       '[[ "$url" == *".pooler.supabase.com:5432/"* ]] || {',
@@ -45,17 +47,19 @@ describe("deploy-production.yml", () => {
     const versions = workflow.indexOf('psql "$url" -Atc "select version from supabase_migrations.schema_migrations"');
     const drift = workflow.indexOf('scripts/ci/migration-drift.sh supabase/migrations <<<"$versions"');
     const deploy = workflow.indexOf("vercel deploy --prod");
+    expect(workflow).toContain('supabase db push --db-url "$url" --include-all --yes');
     expect(push).toBeGreaterThan(-1);
     expect(versions).toBeGreaterThan(push);
     expect(drift).toBeGreaterThan(versions);
     expect(deploy).toBeGreaterThan(drift);
   });
 
-  it("installs the Vercel CLI after migrating and without install scripts", () => {
-    const install = workflow.indexOf("npm install --global --ignore-scripts vercel@");
+  it("installs the locked Vercel CLI after migrating, without install scripts, and deploys with it", () => {
+    const install = workflow.indexOf("npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/ci/vercel-cli");
     expect(install).toBeGreaterThan(workflow.indexOf("supabase db push"));
     expect(install).toBeLessThan(workflow.indexOf("vercel deploy --prod"));
-    expect(workflow.match(/npm install/g)).toHaveLength(1);
+    expect(workflow.match(/npm (install|ci)/g)).toHaveLength(1);
+    expect(workflow).toContain("scripts/ci/vercel-cli/node_modules/.bin/vercel deploy --prod");
   });
 
   it("does not leave the GitHub token in the checkout", () => {
@@ -66,5 +70,26 @@ describe("deploy-production.yml", () => {
     const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((m) => m[1]);
     expect(uses.length).toBeGreaterThan(0);
     for (const ref of uses) expect(ref).toMatch(/@[0-9a-f]{40}$/);
+  });
+
+  it("reads only repository contents and never cancels a running deploy", () => {
+    expect(workflow).toMatch(/^permissions:\n  contents: read\n\n/m);
+    expect(workflow).toContain("concurrency:\n  group: production-deployment\n  cancel-in-progress: false\n");
+  });
+
+  it("checks that sealed.page serves the new deployment, then that it responds", () => {
+    const deploy = workflow.indexOf("vercel deploy --prod");
+    const serving = workflow.indexOf('[[ "https://$serving" == "$DEPLOY_URL" ]] && break');
+    const login = workflow.indexOf("-o /dev/null https://sealed.page/login");
+    expect(workflow).toContain("DEPLOY_URL: ${{ steps.deploy.outputs.url }}");
+    expect(workflow).toContain('"https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID"');
+    expect(serving).toBeGreaterThan(deploy);
+    expect(login).toBeGreaterThan(serving);
+  });
+
+  it("bounds every curl", () => {
+    const curls = workflow.match(/curl [^\n]*/g) ?? [];
+    expect(curls.length).toBeGreaterThan(0);
+    for (const line of curls) expect(line).toContain("--max-time 15 --connect-timeout 5");
   });
 });

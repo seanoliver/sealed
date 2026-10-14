@@ -5,12 +5,18 @@ import { describe, expect, it } from "vitest";
 const DIR = path.join(__dirname, "../../supabase/migrations");
 const EXEMPT = new Set(["00000000000001", "00000000000002", "00000000000003"]);
 
+const MAX_LOCK_TIMEOUT_MS = 30_000;
+const UNIT_MS: Record<string, number> = { "": 1, ms: 1, s: 1000, min: 60_000 };
+
 function startsWithLockTimeout(sql: string): boolean {
   const body = sql
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/--.*$/gm, "")
     .trim();
-  return /^set\s+lock_timeout\s*(=|to)/i.test(body);
+  const match = /^set\s+lock_timeout\s*(?:=|to)\s*'?(\d+)\s*(ms|s|min)?'?\s*;/i.exec(body);
+  if (!match) return false;
+  const ms = Number(match[1]) * UNIT_MS[(match[2] ?? "").toLowerCase()];
+  return ms > 0 && ms <= MAX_LOCK_TIMEOUT_MS;
 }
 
 describe("startsWithLockTimeout", () => {
@@ -18,12 +24,20 @@ describe("startsWithLockTimeout", () => {
     "set lock_timeout = '5s';\nalter table t add column c int;",
     "-- why\nSET lock_timeout TO '5s';",
     "/* header */\nset lock_timeout='5s';",
+    "set lock_timeout = 5000;",
+    "set lock_timeout = '30s';",
+    "set lock_timeout = '500ms';",
   ])("accepts %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(true));
 
   it.each([
     "alter table t add column c int;",
     "alter table t add column c int;\nset lock_timeout = '5s';",
     "set local lock_timeout = '5s';",
+    "set lock_timeout = 0;",
+    "set lock_timeout = '0s';",
+    "set lock_timeout = '31s';",
+    "set lock_timeout = '1min';",
+    "set lock_timeout = '5h';",
   ])("rejects %j", (sql) => expect(startsWithLockTimeout(sql)).toBe(false));
 });
 

@@ -26,9 +26,8 @@ let dryRunCounter = 0;
 
 /**
  * Dry-run predicate, shared with requestAddresses' up-front env validation.
- * APP_ENV-gated because Vercel staging and preview deployments also run with
- * NODE_ENV=production. A stray EMAIL_DRY_RUN=1 can never suppress real
- * production sends.
+ * APP_ENV-gated because every Vercel deployment runs with NODE_ENV=production.
+ * A stray EMAIL_DRY_RUN=1 can never suppress real production sends.
  */
 export function isEmailDryRun(): boolean {
   return process.env.EMAIL_DRY_RUN === "1" && !isProductionEnvironment();

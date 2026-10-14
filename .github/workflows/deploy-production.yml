@@ -56,13 +56,13 @@ jobs:
           versions=$(psql "$url" -Atc "select version from supabase_migrations.schema_migrations")
           scripts/ci/migration-drift.sh supabase/migrations <<<"$versions"
       - name: Install Vercel CLI
-        run: npm install --global --ignore-scripts vercel@49.1.2
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/ci/vercel-cli
       - name: Build and deploy on Vercel
         id: deploy
         shell: bash
         run: |
           deploy_sha=$(git rev-parse HEAD)
-          url=$(vercel deploy --prod --yes \
+          url=$(scripts/ci/vercel-cli/node_modules/.bin/vercel deploy --prod --yes \
             --meta "githubCommitSha=$deploy_sha" \
             --meta "githubCommitRef=main" \
             --token="$VERCEL_TOKEN")
@@ -72,4 +72,19 @@ jobs:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       - name: Smoke-check sealed.page
-        run: curl -fsS --retry 5 --retry-all-errors --retry-delay 5 -o /dev/null https://sealed.page/login
+        shell: bash
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            serving=$(curl -fsS --max-time 15 --connect-timeout 5 --retry 5 --retry-all-errors --retry-delay 5 \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/sealed.page?teamId=$VERCEL_ORG_ID" | jq -r .url)
+            [[ "https://$serving" == "$DEPLOY_URL" ]] && break
+            [[ $attempt == 6 ]] && { echo "sealed.page serves $serving, not $DEPLOY_URL"; exit 1; }
+            sleep 10
+          done
+          curl -fsS --max-time 15 --connect-timeout 5 --retry 5 --retry-all-errors --retry-delay 5 \
+            -o /dev/null https://sealed.page/login

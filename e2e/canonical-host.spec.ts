@@ -63,16 +63,8 @@ const nonRedirectingHosts = [
   { name: "the canonical apex", host: "sealed.page" },
   { name: "local development", host: "localhost:3000" },
   {
-    name: "the stable staging host",
-    host: "sealed-staging.vercel.app",
-  },
-  {
-    name: "the legacy stable staging host",
-    host: "address-book-staging.vercel.app",
-  },
-  {
-    name: "an ephemeral preview host",
-    host: "address-book-staging-git-feat-15-seanoliver.vercel.app",
+    name: "a deployment-specific URL",
+    host: "sealed-ojgrtho1p-cabin-9.vercel.app",
   },
   { name: "a regex lookalike of an allowed host", host: "www-sealed.page" },
 ];
