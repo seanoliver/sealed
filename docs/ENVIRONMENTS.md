@@ -70,7 +70,7 @@ Export the two credential variables before restarting Supabase. An ignored `.env
 
 ## Retired staging
 
-Until 2026-10-13 a hosted staging environment (`sealed-staging` Vercel project, `sealed-staging` Supabase project `fmjbjkcuyqopoubbylme`) received every merge and every PR preview, and production was released by hand after staging verification. With no real users yet, it was retired to match the simpler flow used by Sean's other projects. The Supabase project is paused, not deleted, and the Vercel project is disconnected from Git. Restore both before bringing staging back, and reintroduce a staging workflow and runbook steps. The GitHub `Staging` environment and its secret are deleted.
+Until 2026-10-13 a hosted staging environment (`sealed-staging` Vercel project, `sealed-staging` Supabase project `fmjbjkcuyqopoubbylme`) received every merge and every PR preview, and production was released by hand after staging verification. With no real users yet, it was retired to match the simpler flow used by Sean's other projects. The staging Supabase project was deleted, because Supabase cannot pause projects in a paid organization. The Vercel project is disconnected from Git. Bringing staging back means a new Supabase project, a Git link, a staging workflow and runbook steps. The GitHub `Staging` environment and its secret are deleted.
 
 ## Production
 
@@ -79,7 +79,7 @@ Every push to `main` deploys to production, with no manual step. After **CI** pa
 1. checks out the current head of `main`, which may be newer than the commit whose CI finished; the `main` ruleset only accepts PRs that are up to date and green, so every head has been tested,
 2. applies committed migrations with `supabase db push`,
 3. checks that production's migration versions match the repository's (`scripts/ci/migration-drift.sh`),
-4. builds and deploys that commit on Vercel, then checks that `https://sealed.page/login` responds.
+4. builds and deploys that commit on Vercel, checks through the Vercel API that sealed.page serves the new deployment, and checks that `https://sealed.page/login` responds.
 
 A migration therefore runs immediately before the code that needs it goes live, never ahead of review. The workflow can also be dispatched by hand to redeploy the head of `main`.
 
@@ -130,7 +130,8 @@ Production project variables and the GitHub migration credential are configured.
 - Migrations reach production only after merge, in the deploy workflow, immediately before the code that uses them. PRs never touch the production database.
 - Every migration must be backward-compatible with the code currently live, because it runs a few minutes before that code is replaced. Use expand/migrate/contract steps across PRs for anything destructive.
 - Create migrations with `supabase migration new <name>` so versions are timestamps; hand-numbered versions from two branches can collide.
-- Start every new migration with `set lock_timeout = '5s';` so a migration waiting on a busy table fails instead of stalling the app's queries behind it. The setting lasts for the rest of that deploy's database session. `scripts/ci/migrations.test.ts` enforces this for every migration after `00000000000003`.
+- Start every new migration with `set lock_timeout = '5s';` so a migration waiting on a busy table fails instead of stalling the app's queries behind it. The setting lasts for the rest of that deploy's database session. `scripts/ci/migrations.test.ts` enforces this for every migration after `00000000000003`, with a value above zero and at most 30 seconds.
+- `create index concurrently` and other statements that cannot run in a transaction fail under `db push`. Use a plain `create index` on small tables, or run the concurrent build by hand and record it with `supabase migration repair`.
 - Never edit a migration after it has been applied to production; add a new one.
 - Database rollback is not automatic; write corrective forward migrations.
 

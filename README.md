@@ -53,7 +53,7 @@ All of these live in `.env.local` (gitignored). See [.env.local.example](.env.lo
 
 | Variable | Description |
 |---|---|
-| `APP_ENV` | Explicit runtime environment: `local`, `staging`, or `production`. Do not infer this from `NODE_ENV`; Vercel previews use `NODE_ENV=production`. |
+| `APP_ENV` | Explicit runtime environment: `local` or `production`. Do not infer this from `NODE_ENV`; every Vercel deployment uses `NODE_ENV=production`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL. Used for **auth only** — the browser never touches Supabase data APIs. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon (publishable) key. Auth only, same as above. |
 | `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` | Local Supabase CLI Google Web OAuth client ID; export before starting Supabase. |
@@ -62,7 +62,7 @@ All of these live in `.env.local` (gitignored). See [.env.local.example](.env.lo
 | `RESEND_API_KEY` | [Resend](https://resend.com) API key for sending address-request emails. |
 | `RESEND_WEBHOOK_SECRET` | Signing secret (svix, `whsec_…`) for verifying `/api/webhooks/resend` events. |
 | `EMAIL_FROM` | From header for outgoing email, e.g. `"Sealed <addresses@example.com>"`. Must be a domain verified in Resend. |
-| `EMAIL_DRY_RUN` | Set to `1` to log tokenized links instead of sending email. Allowed only when `APP_ENV` is `local` or `staging`; always ignored in production. |
+| `EMAIL_DRY_RUN` | Set to `1` to log tokenized links instead of sending email. Allowed only when `APP_ENV` is `local`; always ignored in production. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key. The example value is Cloudflare's public always-pass test key. |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key. The example value is Cloudflare's public always-pass test key. |
 | `APP_URL` | Canonical base URL of the deployment — used to build the links in outgoing emails. |

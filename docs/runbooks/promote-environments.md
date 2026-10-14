@@ -1,7 +1,7 @@
 # Ship a change to production
 
-**Status:** Current — staging retired on 2026-10-13; every push to `main` migrates and deploys production automatically
-**Last verified:** not yet verified end to end on the new flow
+**Status:** Current. Staging retired on 2026-10-13; every push to `main` migrates and deploys production automatically
+**Last verified:** 2026-10-13, first automatic deploy of `c1c33bb` (run 38510001984), before the serving-deployment check existed
 **Owner:** Maintainers
 **Related:** [Environment topology](../ENVIRONMENTS.md), [PR #9](https://github.com/seanoliver/sealed/pull/9) (the original staging flow), [Vercel environment deletion incident](../bugs/2026-08-09-vercel-env-target-removal-deletes-shared-record.md)
 
@@ -28,9 +28,9 @@ Get a merged change live on sealed.page, with any database migration applied imm
    gh run watch <run-id> --exit-status
    ```
 
-4. Confirm the production deployment is Ready and reports the merge commit, then run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
+4. The workflow already checks that sealed.page serves the new deployment and that `/login` responds. Run non-destructive smoke checks: homepage, login initiation and callback, dashboard access, public form rendering, and any changed flow. Do not create or inspect real contact data just for a smoke test.
 
-If the newest commit's CI on `main` fails on a flaky test, nothing deploys until CI is re-run or another commit lands; re-run CI, or dispatch the workflow below.
+A deploy starts only when a CI run on `main` succeeds, and it deploys whatever `main`'s head is at that moment. If the newest commit's CI fails on a flaky test and no earlier CI run is still finishing, that commit does not deploy; re-run CI, or dispatch the workflow below.
 
 To redeploy the head of `main` without a new commit, dispatch the workflow: <https://github.com/seanoliver/sealed/actions/workflows/deploy-production.yml> → **Run workflow**, or `gh workflow run deploy-production.yml`.
 
@@ -58,7 +58,7 @@ The migration used the transaction pooler on port 6543. The workflow normalizes 
 
 ### Migration fails on SQL or times out waiting for a lock
 
-A lock timeout means a long query or transaction held the table; rerun the workflow once traffic is quiet. Otherwise the deploy does not happen, so the previous code keeps running against the unchanged schema (each migration file applies atomically unless it contains a statement that cannot run in a transaction, such as `create index concurrently`). Fix forward with a new PR that corrects the migration. If an earlier file in the same push applied, add a corrective migration rather than editing the applied file.
+A lock timeout means a long query or transaction held the table; rerun the workflow once traffic is quiet. Otherwise the deploy does not happen, so the previous code keeps running against the unchanged schema: each migration file applies atomically. `db push` cannot run statements that refuse to run in a transaction, such as `create index concurrently`; it fails with SQLSTATE 25001 and rolls the file back. Fix forward with a new PR that corrects the migration. If an earlier file in the same push applied, add a corrective migration rather than editing the applied file.
 
 ### `db push` reports "Remote migration versions not found in local migrations directory"
 
@@ -74,6 +74,10 @@ Production's migration versions differ from the repository's, and the deploy doe
 
 The previous deployment keeps serving traffic against the new schema, which is safe because migrations are backward-compatible. Fix the build and push again, or dispatch the workflow to retry. Keep the build remote: sensitive Vercel variables are write-only outside Vercel.
 
+### The smoke check reports "sealed.page serves X, not Y"
+
+The new deployment built, but sealed.page still points at another one, usually after a manual rollback or promote. Check which deployment you want live, then `vercel promote <deployment-url> --scope cabin-9`. If production domains stopped following new deployments after a rollback, promoting restores that.
+
 ### A Vercel variable disappears while changing targets
 
 Stop before redeploying. Follow the recovery in `docs/bugs/2026-08-09-vercel-env-target-removal-deletes-shared-record.md`, restore the complete Production set, and verify names with `vercel env ls`.
@@ -85,5 +89,6 @@ Stop before redeploying. Follow the recovery in `docs/bugs/2026-08-09-vercel-env
 - `scripts/ci/migration-drift.sh` (tested in `scripts/ci/migration-drift.test.ts`)
 - `scripts/ci/deploy-workflow.test.ts` (trigger, gate and step order of the deploy workflow)
 - `scripts/ci/migrations.test.ts` (lock timeout on new migrations)
+- `scripts/ci/vercel-cli/` (Vercel CLI version and lockfile used by the deploy)
 - `docs/ENVIRONMENTS.md`
 - Supabase database connection guidance: <https://supabase.com/docs/guides/database/connecting-to-postgres>
