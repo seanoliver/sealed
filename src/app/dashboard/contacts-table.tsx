@@ -274,6 +274,8 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
   // await have committed, so an error would show while still "saving".
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  // Not isSending: it stays true until the send's refreshed rows commit.
+  const sendingRef = useRef(false);
   const [cursorId, setCursorId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -341,7 +343,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
         ?.focus();
       return;
     }
-    if (savingRef.current || isSending) {
+    if (savingRef.current || sendingRef.current) {
       setNotice(savingRef.current ? SAVE_PENDING : SEND_PENDING);
       return;
     }
@@ -358,6 +360,13 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
 
   function saveEdit(row: SheetTableRow, draft: Partial<SheetValues>) {
     if (savingRef.current) return;
+    if (sendingRef.current) {
+      setEditState((current) =>
+        current?.id === row.id ? { id: row.id } : current,
+      );
+      setNotice(SEND_PENDING);
+      return;
+    }
     const patch = changedValues(row.original.values, draft);
     if (Object.keys(patch).length === 0) {
       finishEdit(row.id);
@@ -435,6 +444,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
   function fire(input: Parameters<typeof requestAddresses>[0]) {
     setConfirm(null);
     setResult(null);
+    sendingRef.current = true;
     startSend(async () => {
       let res: RequestAddressesResult;
       try {
@@ -442,7 +452,9 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
       } catch {
         res = { error: "Couldn't send. Check your connection and try again." };
       }
+      sendingRef.current = false;
       setResult(res);
+      setNotice((current) => (current === SEND_PENDING ? null : current));
       if (!("error" in res)) table.resetRowSelection(true);
     });
   }
