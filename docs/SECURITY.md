@@ -1,6 +1,6 @@
 # Security Model
 
-This app stores home addresses — of people who never signed up for it and can't audit it. Leaking them is the failure mode the architecture is built around, and because the code is open source, the security model can't rely on obscurity: every mechanism below is inspectable in this repo and covered by tests.
+This app stores home addresses — of people who never signed up for it and can't audit it. Leaking them is the failure mode the architecture is built around. The security model does not rely on obscurity: every mechanism below is in this repo and covered by tests.
 
 This document describes the model as implemented, the production checklist for deployments, and how to report a vulnerability.
 
