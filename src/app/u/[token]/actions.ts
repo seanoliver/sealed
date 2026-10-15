@@ -13,11 +13,15 @@ import { hashedIpKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import {
-  TOKEN_UPDATE_FIELDS,
-  tokenUpdateSchema,
-  type TokenUpdateField,
-  type TokenUpdateValues,
+  readTokenDetails,
+  TOKEN_DETAIL_FIELDS,
+  tokenDetailSchema,
 } from "@/lib/validation/contact";
+import {
+  lastNameRequired,
+  parseHouseholdForm,
+  readHouseholdValues,
+} from "@/lib/validation/household";
 // Type-only import from a client module — erased at compile time, so no
 // client code is pulled into this server action bundle.
 import { type RecipientFormState } from "@/components/recipient-form";
@@ -27,10 +31,22 @@ export type TokenUpdateState = RecipientFormState;
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-function readTokenForm(formData: FormData): TokenUpdateValues {
-  return Object.fromEntries(
-    TOKEN_UPDATE_FIELDS.map((field) => [field, String(formData.get(field) ?? "")]),
-  ) as TokenUpdateValues;
+/**
+ * The book owner's name, for the last-name error copy only. Looked up on
+ * that error path rather than bound into the action, so the token flow is
+ * unchanged.
+ */
+async function ownerNameForToken(token: string): Promise<string | null> {
+  try {
+    const rows = await dbAdmin.execute(
+      sql`select private.get_contact_for_token(${token}) ->> 'owner_name' as owner`,
+    );
+    const owner = rows[0]?.owner;
+    return typeof owner === "string" ? owner : null;
+  } catch (err) {
+    logDbError("[tu] [ownerNameForToken] get_contact_for_token failed", err);
+    return null;
+  }
 }
 
 /**
@@ -50,7 +66,8 @@ export async function submitTokenUpdate(
     return { error: INVALID_LINK_MESSAGE };
   }
 
-  const submitted = readTokenForm(formData);
+  const submitted = readTokenDetails(formData);
+  const echo = { values: submitted, household: readHouseholdValues(formData) };
   const ip = await requestIp();
 
   // 2. Rate limit submits per IP: 10/hour. Fail CLOSED on a rate-limiter
@@ -60,43 +77,60 @@ export async function submitTokenUpdate(
     allowed = await checkRateLimit(hashedIpKey("token-submit", ip), 10, 3600);
   } catch (err) {
     logDbError("[tu] [submitTokenUpdate] rate-limit check failed", err);
-    return { error: GENERIC_ERROR, values: submitted };
+    return { error: GENERIC_ERROR, ...echo };
   }
   if (!allowed) {
-    return {
-      error: "Too many requests — please try again later.",
-      values: submitted,
-    };
+    return { error: "Too many requests — please try again later.", ...echo };
   }
 
   // 3. Turnstile. The response comes from the hidden input the widget
   //    injects; verifyTurnstile fails closed and never logs it.
   const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
   if (!(await verifyTurnstile(turnstileResponse, ip))) {
-    return {
-      error: "Verification failed — please try again.",
-      values: submitted,
-    };
+    return { error: "Verification failed — please try again.", ...echo };
   }
 
   // 4. Validate. Same limits as the SQL CHECK constraints — class-22 errors
   //    (which can echo values into logs) stay unreachable.
-  const parsed = tokenUpdateSchema.safeParse(submitted);
-  if (!parsed.success) {
+  const household = parseHouseholdForm(formData, { ownerName: "the sender" });
+  const details = tokenDetailSchema.safeParse(submitted);
+  if (!household.ok || !details.success) {
+    const fieldErrors = household.ok ? undefined : household.fieldErrors;
+    if (fieldErrors?.last_name !== undefined) {
+      const ownerName = await ownerNameForToken(token);
+      if (ownerName !== null) fieldErrors.last_name = lastNameRequired(ownerName);
+    }
     return {
-      error: parsed.error.issues[0]?.message ?? "Invalid input",
-      values: submitted,
+      error: details.success
+        ? household.ok
+          ? undefined
+          : household.error
+        : (details.error.issues[0]?.message ?? "Invalid input"),
+      fieldErrors,
+      ...echo,
     };
   }
 
   // 5. Payload keys = exactly the fields the form rendered (present in
-  //    formData): a present key with "" clears the column, an absent key
-  //    (field disabled for this book) leaves it untouched. A hostile client
-  //    CAN inject extra keys here, but apply_token_update re-gates disabled
-  //    fields against books.enabled_fields server-side, so they are inert.
-  const payload: Partial<Record<TokenUpdateField, string>> = {};
-  for (const field of TOKEN_UPDATE_FIELDS) {
-    if (formData.has(field)) payload[field] = parsed.data[field] ?? "";
+  //    formData): a present key with "" (or [] for kids) clears the column,
+  //    an absent key (field disabled for this book) leaves it untouched. The
+  //    partner_section / kids_section markers say the household builder
+  //    rendered those groups, so a removed partner or kid row clears it. A
+  //    hostile client CAN inject extra keys here, but apply_token_update
+  //    re-gates disabled fields against books.enabled_fields server-side, so
+  //    they are inert.
+  const names = household.data;
+  const payload: Record<string, unknown> = {
+    first_name: names.first_name,
+    last_name: names.last_name,
+  };
+  if (formData.has("partner_section")) {
+    payload.partner_first_name = names.partner_first_name ?? "";
+    payload.partner_last_name = names.partner_last_name ?? "";
+  }
+  if (formData.has("kids_section")) payload.kids = names.kids ?? [];
+  for (const field of TOKEN_DETAIL_FIELDS) {
+    if (formData.has(field)) payload[field] = details.data[field] ?? "";
   }
 
   // 6. Single-use apply. `false` covers unknown/expired/used token AND
@@ -110,10 +144,10 @@ export async function submitTokenUpdate(
   } catch (err) {
     // logDbError reports code/constraint only — the token never reaches logs.
     logDbError("[tu] [submitTokenUpdate] apply_token_update failed", err);
-    return { error: GENERIC_ERROR, values: submitted };
+    return { error: GENERIC_ERROR, ...echo };
   }
   if (!applied) {
-    return { error: INVALID_LINK_MESSAGE, values: submitted };
+    return { error: INVALID_LINK_MESSAGE, ...echo };
   }
 
   redirect("/u/thanks");

@@ -11,6 +11,7 @@ import {
   type PublicBook,
 } from "@/lib/queries/public-book";
 import { hashedIpKey, requestIp } from "@/lib/request-ip";
+import { BLANK_HOUSEHOLD_VALUES } from "@/lib/validation/household";
 import { Notice } from "../../u/notice";
 import { submitToBook } from "./actions";
 
@@ -93,7 +94,7 @@ export default async function PublicBookPage({
           submitLabel="Add my details"
           pendingLabel="Submitting…"
           emailHint={`Optional — but include it so ${ownerLabel} can reach you.`}
-          householdBuilder
+          household={BLANK_HOUSEHOLD_VALUES}
         />
       </div>
     </main>

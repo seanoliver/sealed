@@ -21,12 +21,7 @@ import {
 } from "@/lib/queries/public-book";
 import { hashedIpKey, requestIp } from "@/lib/request-ip";
 import { verifyTurnstile } from "@/lib/turnstile";
-import {
-  TOKEN_UPDATE_FIELDS,
-  tokenUpdateSchema,
-  type TokenUpdateField,
-  type TokenUpdateValues,
-} from "@/lib/validation/contact";
+import { readTokenDetails, tokenDetailSchema } from "@/lib/validation/contact";
 import {
   parseHouseholdForm,
   readHouseholdValues,
@@ -34,31 +29,6 @@ import {
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 const TOO_MANY = "Too many requests — please try again later.";
-
-const LEGACY_NAME_FIELDS: readonly TokenUpdateField[] = [
-  "full_name",
-  "partner_name",
-  "kids_names",
-];
-
-/** Everything except names, which come from the household builder. */
-const DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
-  (field) => !LEGACY_NAME_FIELDS.includes(field),
-);
-const detailSchema = tokenUpdateSchema.omit({
-  full_name: true,
-  partner_name: true,
-  kids_names: true,
-});
-
-function readForm(formData: FormData): TokenUpdateValues {
-  return Object.fromEntries(
-    TOKEN_UPDATE_FIELDS.map((field) => [
-      field,
-      DETAIL_FIELDS.includes(field) ? String(formData.get(field) ?? "") : "",
-    ]),
-  ) as TokenUpdateValues;
-}
 
 /**
  * Best-effort owner notification for a new submission. NEVER contains
@@ -112,7 +82,7 @@ export async function submitToBook(
   if (!SLUG_SHAPE.test(slug)) notFound();
 
   const echo = {
-    values: readForm(formData),
+    values: readTokenDetails(formData),
     household: readHouseholdValues(formData),
   };
   const ip = await requestIp();
@@ -171,7 +141,7 @@ export async function submitToBook(
   }
   if (!book) notFound();
   const household = parseHouseholdForm(formData, { ownerName: book.ownerName });
-  const details = detailSchema.safeParse(echo.values);
+  const details = tokenDetailSchema.safeParse(echo.values);
   if (!household.ok || !details.success) {
     return {
       error: details.success

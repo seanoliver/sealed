@@ -11,7 +11,6 @@ import {
 } from "@/components/turnstile-widget";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import {
-  BLANK_HOUSEHOLD_VALUES,
   type HouseholdFieldErrors,
   type HouseholdValues,
 } from "@/lib/validation/household";
@@ -33,7 +32,7 @@ import {
 export type RecipientFormState = {
   error?: string;
   values?: TokenUpdateValues;
-  /** Household builder only (/b/[slug]). */
+  /** Household builder only. */
   household?: HouseholdValues;
   fieldErrors?: HouseholdFieldErrors;
 };
@@ -50,8 +49,11 @@ type RecipientFormProps = {
   pendingLabel: string;
   /** Optional helper copy under the email input (e.g. "Optional — ..."). */
   emailHint?: string;
-  /** Collect names with the household builder instead of the legacy fields. */
-  householdBuilder?: boolean;
+  /**
+   * Collect names with the household builder, prefilled with these values,
+   * instead of the legacy fields.
+   */
+  household?: HouseholdValues;
 };
 
 export function RecipientForm({
@@ -61,7 +63,7 @@ export function RecipientForm({
   submitLabel,
   pendingLabel,
   emailHint,
-  householdBuilder = false,
+  household,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   // Turnstile responses are single-use: refresh the widget after any error
@@ -92,9 +94,9 @@ export function RecipientForm({
         enabled={enabled}
         emailHint={emailHint}
         household={
-          householdBuilder
+          household
             ? {
-                defaults: state.household ?? BLANK_HOUSEHOLD_VALUES,
+                defaults: state.household ?? household,
                 errors: state.fieldErrors,
               }
             : undefined

@@ -1,9 +1,12 @@
 import { z } from "zod";
 
 /**
- * The household builder on /b/[slug]: the recipient's own first and last
- * name, an optional partner, and up to KIDS_MAX kids. Caps mirror the SQL
- * CHECKs in 00000000000004_household_names.sql (name parts, valid_kids).
+ * The household builder: the contact's own first and last name, an optional
+ * partner, and up to KIDS_MAX kids. Caps mirror the SQL CHECKs in
+ * 00000000000004_household_names.sql (name parts, valid_kids).
+ *
+ * Recipient surfaces (/b/[slug], /u/[token]) pass the book owner's name for
+ * the error copy; owner surfaces omit it.
  */
 
 export const NAME_MAX = 80;
@@ -13,6 +16,8 @@ export const FIRST_NAME_REQUIRED = "Add your first name.";
 export const ROW_FIRST_NAME_REQUIRED = "Add a first name, or remove this row.";
 export const lastNameRequired = (ownerName: string) =>
   `Add your last name so ${ownerName} can address your mail.`;
+export const OWNER_FIRST_NAME_REQUIRED = "Add a first name.";
+export const OWNER_LAST_NAME_REQUIRED = "Add a last name.";
 const TOO_LONG = `Keep each name under ${NAME_MAX + 1} characters.`;
 
 const requiredName = (message: string) =>
@@ -31,10 +36,19 @@ const kidSchema = z.strictObject({
 });
 
 /** Shared by the form schema and the stored-payload schema in submission.ts. */
-export function householdShape({ ownerName }: { ownerName: string }) {
+/** Omit ownerName on owner surfaces (dashboard), where the copy is not "your". */
+export type HouseholdVoice = { ownerName?: string };
+
+export function householdShape({ ownerName }: HouseholdVoice = {}) {
   return {
-    first_name: requiredName(FIRST_NAME_REQUIRED),
-    last_name: requiredName(lastNameRequired(ownerName)),
+    first_name: requiredName(
+      ownerName === undefined ? OWNER_FIRST_NAME_REQUIRED : FIRST_NAME_REQUIRED,
+    ),
+    last_name: requiredName(
+      ownerName === undefined
+        ? OWNER_LAST_NAME_REQUIRED
+        : lastNameRequired(ownerName),
+    ),
     partner_first_name: requiredName(ROW_FIRST_NAME_REQUIRED).optional(),
     partner_last_name: optionalName,
     kids: z
@@ -59,9 +73,9 @@ export function requirePartnerFirstName(
   }
 }
 
-export function householdSchema({ ownerName }: { ownerName: string }) {
+export function householdSchema(voice: HouseholdVoice = {}) {
   return z
-    .strictObject(householdShape({ ownerName }))
+    .strictObject(householdShape(voice))
     .superRefine(requirePartnerFirstName);
 }
 
@@ -119,10 +133,10 @@ export function readHouseholdValues(formData: FormData): HouseholdValues {
   };
 }
 
-/** Read and validate the household section of the /b form. */
+/** Read and validate the household section of a form. */
 export function parseHouseholdForm(
   formData: FormData,
-  { ownerName }: { ownerName: string },
+  voice: HouseholdVoice = {},
 ): HouseholdFormResult {
   const values = readHouseholdValues(formData);
   const kidFirsts = formData.getAll("kid_first").map(text);
@@ -132,7 +146,7 @@ export function parseHouseholdForm(
     return { ok: false, values, error: "Something went wrong. Please try again." };
   }
 
-  const parsed = householdSchema({ ownerName }).safeParse({
+  const parsed = householdSchema(voice).safeParse({
     first_name: values.first_name,
     last_name: values.last_name,
     ...(values.partner

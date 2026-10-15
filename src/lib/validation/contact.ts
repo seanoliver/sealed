@@ -77,5 +77,28 @@ export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];
 /** contactSchema minus notes; unknown keys (incl. a smuggled `notes`) are stripped. */
 export const tokenUpdateSchema = contactSchema.omit({ notes: true });
 
+/**
+ * Recipient fields other than names: the household builder collects names
+ * on /b/[slug] and /u/[token].
+ */
+export const TOKEN_DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
+  (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",
+);
+export const tokenDetailSchema = tokenUpdateSchema.omit({
+  full_name: true,
+  partner_name: true,
+  kids_names: true,
+});
+
 /** Raw token-form values (all strings), echoed back through action state. */
 export type TokenUpdateValues = Record<TokenUpdateField, string>;
+
+/** Detail fields as typed; name fields stay blank (the household builder echoes those). */
+export function readTokenDetails(formData: FormData): TokenUpdateValues {
+  return Object.fromEntries(
+    TOKEN_UPDATE_FIELDS.map((field) => [
+      field,
+      (TOKEN_DETAIL_FIELDS as readonly string[]).includes(field) ? String(formData.get(field) ?? "") : "",
+    ]),
+  ) as TokenUpdateValues;
+}
