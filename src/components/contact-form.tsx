@@ -115,7 +115,7 @@ export function ContactForm({
         name="kids_names"
         label="Kids' names"
         value={v.kids_names}
-        maxLength={500}
+        maxLength={2000}
         hint="Comma separated."
       />
       <Field

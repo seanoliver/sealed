@@ -1,6 +1,7 @@
 import {
   pgTable, uuid, text, jsonb, timestamp, date, customType,
 } from "drizzle-orm/pg-core";
+import type { Kid } from "../names";
 
 const citext = customType<{ data: string }>({ dataType: () => "citext" });
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -27,6 +28,11 @@ export const contacts = pgTable("contacts", {
   fullName: text("full_name").notNull(),
   partnerName: text("partner_name"),
   kidsNames: text("kids_names"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  partnerFirstName: text("partner_first_name"),
+  partnerLastName: text("partner_last_name"),
+  kids: jsonb("kids").$type<Kid[]>(),
   email: citext("email"),
   birthday: date("birthday"),
   addressLine1: text("address_line1"),
@@ -43,7 +49,7 @@ export const contacts = pgTable("contacts", {
 export const submissions = pgTable("submissions", {
   id: uuid("id").primaryKey().defaultRandom(),
   bookId: uuid("book_id").notNull(),
-  payload: jsonb("payload").notNull().$type<Record<string, string>>(),
+  payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
   status: text("status").notNull().default("pending"),
   matchedContactId: uuid("matched_contact_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

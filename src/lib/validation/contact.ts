@@ -21,7 +21,7 @@ const isRealDate = (s: string) => {
 export const contactSchema = z.object({
   full_name: z.string().trim().min(1, "Name is required").max(200),
   partner_name: opt(200),
-  kids_names: opt(500),
+  kids_names: opt(2000),
   email: z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional(),
   // refine: shape-valid but calendar-invalid dates ("2025-99-99") must never
   // reach the Postgres date cast — class-22 errors embed the value in logs

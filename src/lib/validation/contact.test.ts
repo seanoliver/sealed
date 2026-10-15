@@ -68,7 +68,7 @@ describe("contactSchema", () => {
   it.each([
     ["full_name", 200],
     ["partner_name", 200],
-    ["kids_names", 500],
+    ["kids_names", 2000],
     ["address_line1", 200],
     ["address_line2", 200],
     ["city", 120],
