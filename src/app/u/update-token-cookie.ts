@@ -34,7 +34,6 @@ export function updateTokenCookieOptions({ secure }: { secure: boolean }) {
 
 type CookieReader = { get(name: string): { value: string } | undefined };
 
-/** The token behind `ref`, or null when this browser holds none for it. */
 export function readUpdateToken(cookies: CookieReader, ref: string): string | null {
   if (!REF_SHAPE.test(ref)) return null;
   const token = cookies.get(updateTokenCookieName(ref))?.value;

@@ -103,7 +103,11 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   const context = await browser.newContext();
   const page = await context.newPage();
   const requestUrls: string[] = [];
-  page.on("request", (req) => requestUrls.push(req.url()));
+  const posts: string[] = [];
+  page.on("request", (req) => {
+    requestUrls.push(req.url());
+    if (req.method() === "POST") posts.push(new URL(req.url()).pathname);
+  });
   await page.goto(`/u/${token}`);
   expect(page.url()).not.toContain(token);
 
@@ -118,9 +122,11 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   expect(tokenRequests.map((url) => new URL(url).pathname)).toEqual([
     `/u/${token}`,
   ]);
-  expect(requestUrls.some((url) => new URL(url).pathname === "/u/edit")).toBe(
-    true,
+  expect(posts).toEqual(["/u/edit"]);
+  const held = (await context.cookies()).filter((c) =>
+    c.name.startsWith("sealed_update_"),
   );
+  expect(held).toEqual([]);
   await context.close();
 
   await ownerPage.goto("/dashboard");

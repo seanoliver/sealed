@@ -35,9 +35,19 @@ describe("GET /u/[token]", () => {
     expect(setCookie).toMatch(/Path=\/u(;|$)/);
     expect(setCookie).toMatch(/SameSite=Lax/i);
     expect(setCookie).toMatch(/Secure/i);
-    expect(setCookie).toMatch(/Max-Age=\d+/);
+    expect(setCookie).toMatch(/Max-Age=86400(;|$)/);
     expect(res.headers.get("cache-control")).toContain("no-store");
     expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("drops any query string from the emailed link", async () => {
+    const { token } = generateToken();
+    const res = await GET(
+      new NextRequest(`https://sealed.page/u/${token}?utm_source=mail`),
+      { params: Promise.resolve({ token }) },
+    );
+    const location = new URL(res.headers.get("location") ?? "");
+    expect([...location.searchParams.keys()]).toEqual(["ref"]);
   });
 
   it("omits Secure over plain http so local dev can hold the cookie", async () => {
