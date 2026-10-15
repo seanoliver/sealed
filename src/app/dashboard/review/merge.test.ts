@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
+import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
 import {
@@ -30,11 +31,9 @@ async function merge(id: string, payload: unknown, enabled = ALL_ENABLED) {
   const before = rowToSnapshot(await load(id));
   const set = mergeUpdate(before, gate(payload, enabled));
   if (!set) return { set, row: await load(id), diff: undefined };
-  const [row] = await dbAdmin
-    .update(contacts)
-    .set(set)
-    .where(eq(contacts.id, id))
-    .returning();
+  const [row] = await withRls({ sub: U }, (tx) =>
+    tx.update(contacts).set(set).where(eq(contacts.id, id)).returning(),
+  );
   return { set, row, diff: changedFields(before, rowToSnapshot(row)) };
 }
 
@@ -140,21 +139,18 @@ describe("approving a household submission", () => {
   });
 
   it("builds a new contact whose display strings the trigger derives", async () => {
-    const [row] = await dbAdmin
-      .insert(contacts)
-      .values({
-        bookId: B,
-        ...toInsertRow(
-          gate({
-            first_name: "Priya",
-            last_name: "Raman",
-            partner_first_name: "Daniel",
-            partner_last_name: "Okafor",
-            kids: [{ first: "Asha", last: "Raman" }],
-          }),
-        ),
-      })
-      .returning();
+    const values = toInsertRow(
+      gate({
+        first_name: "Priya",
+        last_name: "Raman",
+        partner_first_name: "Daniel",
+        partner_last_name: "Okafor",
+        kids: [{ first: "Asha", last: "Raman" }],
+      }),
+    );
+    const [row] = await withRls({ sub: U }, (tx) =>
+      tx.insert(contacts).values({ bookId: B, ...values }).returning(),
+    );
     expect(row).toMatchObject({
       fullName: "Priya Raman",
       partnerName: "Daniel Okafor",
