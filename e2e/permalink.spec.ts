@@ -1,5 +1,9 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { cleanupUser, clearRateLimits } from "./db";
+import {
+  cleanupUser,
+  clearRateLimits,
+  getContactNamesByEmail,
+} from "./db";
 import {
   createBook,
   signupAndLogin,
@@ -17,17 +21,30 @@ test.describe.configure({ mode: "serial" });
 
 const ownerEmail = uniqueEmail("permalink-owner");
 const slug = uniqueSlug("permalink");
+const householdEmail = uniqueEmail("household");
 
 let ownerPage: Page;
+
+async function openInvitePage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`/b/${slug}`);
+  return page;
+}
+
+async function expectThanks(page: Page): Promise<void> {
+  await expect(page).toHaveURL(new RegExp(`/b/${slug}/thanks$`));
+  await expect(
+    page.getByRole("heading", { name: /Thanks — you're all set!/ }),
+  ).toBeVisible();
+}
 
 /** Submit the public form as a brand-new anonymous visitor. */
 async function submitAsVisitor(
   browser: Browser,
-  fields: { full_name: string; email?: string; city?: string },
+  fields: { first_name: string; last_name: string; email?: string; city?: string },
 ): Promise<void> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(`/b/${slug}`);
+  const page = await openInvitePage(browser);
   await expect(
     page.getByRole("heading", {
       name: "Add your address to Permalink Owner's address book",
@@ -39,18 +56,17 @@ async function submitAsVisitor(
     ),
   ).toBeVisible();
   // Write-only page: the form never pre-fills anything.
-  await expect(page.locator("#full_name")).toHaveValue("");
+  await expect(page.locator("#first_name")).toHaveValue("");
+  await expect(page.locator("#last_name")).toHaveValue("");
 
-  await page.locator("#full_name").fill(fields.full_name);
+  await page.locator("#first_name").fill(fields.first_name);
+  await page.locator("#last_name").fill(fields.last_name);
   if (fields.email) await page.locator("#email").fill(fields.email);
   if (fields.city) await page.locator("#city").fill(fields.city);
   await waitForTurnstile(page);
   await page.getByRole("button", { name: "Add my details" }).click();
-  await expect(page).toHaveURL(new RegExp(`/b/${slug}/thanks$`));
-  await expect(
-    page.getByRole("heading", { name: /Thanks — you're all set!/ }),
-  ).toBeVisible();
-  await context.close();
+  await expectThanks(page);
+  await page.context().close();
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -60,7 +76,11 @@ test.beforeAll(async ({ browser }) => {
 
   ownerPage = await browser.newPage();
   await signupAndLogin(ownerPage, ownerEmail);
-  await createBook(ownerPage, { displayName: "Permalink Owner", slug });
+  await createBook(ownerPage, {
+    displayName: "Permalink Owner",
+    slug,
+    toggles: { partner_name: true, kids_names: true },
+  });
 });
 
 test.afterAll(async () => {
@@ -78,7 +98,8 @@ test("an unknown slug 404s", async ({ browser }) => {
 
 test("an anonymous visitor submits the write-only form", async ({ browser }) => {
   await submitAsVisitor(browser, {
-    full_name: "Greta Approve",
+    first_name: "Greta",
+    last_name: "Approve",
     email: "greta@e2e.test",
     city: "Geneva",
   });
@@ -87,7 +108,7 @@ test("an anonymous visitor submits the write-only form", async ({ browser }) => 
 test("a second visitor submits (queued for the reject flow)", async ({
   browser,
 }) => {
-  await submitAsVisitor(browser, { full_name: "Rex Reject" });
+  await submitAsVisitor(browser, { first_name: "Rex", last_name: "Reject" });
 });
 
 test("the owner approves a submission into a contact", async () => {
@@ -102,6 +123,89 @@ test("the owner approves a submission into a contact", async () => {
   await expect(
     ownerPage.getByRole("link", { name: "Greta Approve" }),
   ).toBeVisible();
+});
+
+test("a validation error keeps the typed household rows", async ({
+  browser,
+}) => {
+  const page = await openInvitePage(browser);
+  await page.locator("#first_name").fill("");
+  await page.getByRole("button", { name: "Add partner" }).click();
+  await page.locator("#partner_first").fill("Pat");
+  await page.getByRole("button", { name: "Add a child" }).click();
+  await page.getByRole("button", { name: "Add a child" }).click();
+  await page.locator("#kid_1_first").fill("Kit");
+  await page.locator("#city").fill("Lisbon");
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Add my details" }).click();
+
+  await expect(page.getByText("Add your first name.")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Add your last name so Permalink Owner can address your mail.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Add a first name, or remove this row."),
+  ).toHaveCount(1);
+  await expect(page.locator("#kid_0_first")).toHaveAttribute("aria-invalid", "true");
+  await expect(page).toHaveURL(new RegExp(`/b/${slug}$`));
+  await expect(page.locator("#partner_first")).toHaveValue("Pat");
+  await expect(page.locator("#kid_1_first")).toHaveValue("Kit");
+  await expect(page.locator("#city")).toHaveValue("Lisbon");
+
+  await page.getByRole("button", { name: "Remove child 1" }).click();
+  await expect(page.locator("#kid_0_first")).toHaveValue("Kit");
+  await expect(page.locator("#kid_1_first")).toHaveCount(0);
+  await page.context().close();
+});
+
+test("a visitor adds a partner and two kids", async ({ browser }) => {
+  const page = await openInvitePage(browser);
+  await page.locator("#first_name").fill("Hana");
+  await page.locator("#last_name").fill("Household");
+
+  await page.getByRole("button", { name: "Add partner" }).click();
+  await page.locator("#partner_first").fill("Sam");
+  await expect(page.locator("#partner_last")).toHaveValue("Household");
+  await expect(page.getByText("Same last name as you")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add partner" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Add a child" }).click();
+  await page.locator("#kid_0_first").fill("Zoe");
+  await page.getByRole("button", { name: "Add a child" }).click();
+  await page.locator("#kid_1_first").fill("Max");
+  await page.locator("#kid_1_last").fill("Rivera");
+  await expect(page.locator("#kid_0_last")).toHaveValue("Household");
+
+  await page.locator("#email").fill(householdEmail);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Add my details" }).click();
+  await expectThanks(page);
+  await page.context().close();
+});
+
+test("the owner approves a household into display names", async () => {
+  await ownerPage.goto("/dashboard/review");
+  const card = ownerPage.locator("ol > li", { hasText: "Hana Household" });
+  await expect(card).toContainText("Sam Household");
+  await expect(card).toContainText("Zoe, Max Rivera");
+  await card.getByRole("button", { name: "Add contact" }).click();
+  await expect(card).toHaveCount(0);
+
+  expect(await getContactNamesByEmail(householdEmail)).toEqual({
+    fullName: "Hana Household",
+    partnerName: "Sam Household",
+    kidsNames: "Zoe, Max Rivera",
+    firstName: "Hana",
+    lastName: "Household",
+    partnerFirstName: "Sam",
+    partnerLastName: "Household",
+    kids: [
+      { first: "Zoe", last: "Household" },
+      { first: "Max", last: "Rivera" },
+    ],
+  });
 });
 
 test("the owner rejects a submission and it never becomes a contact", async () => {

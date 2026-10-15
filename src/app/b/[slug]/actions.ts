@@ -14,7 +14,11 @@ import { checkRateLimit } from "@/lib/db/rate-limit";
 import { sendNotification } from "@/lib/email/resend";
 import { submissionNotificationEmail } from "@/lib/email/templates";
 import { logDbError } from "@/lib/log";
-import { SLUG_SHAPE } from "@/lib/queries/public-book";
+import {
+  getPublicBook,
+  SLUG_SHAPE,
+  type PublicBook,
+} from "@/lib/queries/public-book";
 import { hashedIpKey, requestIp } from "@/lib/request-ip";
 import { verifyTurnstile } from "@/lib/turnstile";
 import {
@@ -23,13 +27,36 @@ import {
   type TokenUpdateField,
   type TokenUpdateValues,
 } from "@/lib/validation/contact";
+import {
+  parseHouseholdForm,
+  readHouseholdValues,
+} from "@/lib/validation/household";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 const TOO_MANY = "Too many requests — please try again later.";
 
+const LEGACY_NAME_FIELDS: readonly TokenUpdateField[] = [
+  "full_name",
+  "partner_name",
+  "kids_names",
+];
+
+/** Everything except names, which come from the household builder. */
+const DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
+  (field) => !LEGACY_NAME_FIELDS.includes(field),
+);
+const detailSchema = tokenUpdateSchema.omit({
+  full_name: true,
+  partner_name: true,
+  kids_names: true,
+});
+
 function readForm(formData: FormData): TokenUpdateValues {
   return Object.fromEntries(
-    TOKEN_UPDATE_FIELDS.map((field) => [field, String(formData.get(field) ?? "")]),
+    TOKEN_UPDATE_FIELDS.map((field) => [
+      field,
+      DETAIL_FIELDS.includes(field) ? String(formData.get(field) ?? "") : "",
+    ]),
   ) as TokenUpdateValues;
 }
 
@@ -84,7 +111,10 @@ export async function submitToBook(
   //    404s with zero DB work, same as the page.
   if (!SLUG_SHAPE.test(slug)) notFound();
 
-  const submitted = readForm(formData);
+  const echo = {
+    values: readForm(formData),
+    household: readHouseholdValues(formData),
+  };
   const ip = await requestIp();
 
   // 2a. Rate limit per hashed IP FIRST (5/hour): a single client must burn
@@ -95,10 +125,10 @@ export async function submitToBook(
     allowed = await checkRateLimit(hashedIpKey("permalink-submit", ip), 5, 3600);
   } catch (err) {
     logDbError("[pb] [submitToBook] ip rate-limit check failed", err);
-    return { error: GENERIC_ERROR, values: submitted };
+    return { error: GENERIC_ERROR, ...echo };
   }
   if (!allowed) {
-    return { error: TOO_MANY, values: submitted };
+    return { error: TOO_MANY, ...echo };
   }
 
   // 3. Turnstile BEFORE the shared book budget: requests that fail the bot
@@ -110,7 +140,7 @@ export async function submitToBook(
   if (!(await verifyTurnstile(turnstileResponse, ip))) {
     return {
       error: "Verification failed — please try again.",
-      values: submitted,
+      ...echo,
     };
   }
 
@@ -122,20 +152,35 @@ export async function submitToBook(
     allowed = await checkRateLimit(`permalink-book:${slug}`, 100, 86400);
   } catch (err) {
     logDbError("[pb] [submitToBook] book rate-limit check failed", err);
-    return { error: GENERIC_ERROR, values: submitted };
+    return { error: GENERIC_ERROR, ...echo };
   }
   if (!allowed) {
-    return { error: TOO_MANY, values: submitted };
+    return { error: TOO_MANY, ...echo };
   }
 
   // 5. Validate. Same limits as the SQL CHECK constraints — class-22 errors
   //    (which can echo values into logs) stay unreachable, and the Zod
   //    max-lengths keep the payload far below submit_to_book's 64KB guard.
-  const parsed = tokenUpdateSchema.safeParse(submitted);
-  if (!parsed.success) {
+  //    The owner name is only needed for the last-name error copy.
+  let book: PublicBook | null;
+  try {
+    book = await getPublicBook(slug);
+  } catch (err) {
+    logDbError("[pb] [submitToBook] getPublicBook failed", err);
+    return { error: GENERIC_ERROR, ...echo };
+  }
+  if (!book) notFound();
+  const household = parseHouseholdForm(formData, { ownerName: book.ownerName });
+  const details = detailSchema.safeParse(echo.values);
+  if (!household.ok || !details.success) {
     return {
-      error: parsed.error.issues[0]?.message ?? "Invalid input",
-      values: submitted,
+      error: details.success
+        ? household.ok
+          ? undefined
+          : household.error
+        : (details.error.issues[0]?.message ?? "Invalid input"),
+      fieldErrors: household.ok ? undefined : household.fieldErrors,
+      ...echo,
     };
   }
 
@@ -143,10 +188,10 @@ export async function submitToBook(
   //    (where a present-but-empty key means "clear the column"), submit_to_
   //    book stores the payload verbatim as a NEW pending submission — empty
   //    keys carry no meaning there and would only pad attacker-controlled
-  //    stored data, so they are dropped.
-  const payload: Partial<Record<TokenUpdateField, string>> = {};
-  for (const field of TOKEN_UPDATE_FIELDS) {
-    const value = parsed.data[field];
+  //    stored data, so they are dropped. The payload uses the household
+  //    shape that parseSubmissionPayload expects at approval.
+  const payload: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries({ ...household.data, ...details.data })) {
     if (value !== undefined) payload[field] = value;
   }
 
@@ -164,7 +209,7 @@ export async function submitToBook(
   } catch (err) {
     // logDbError reports code/constraint only — never the payload.
     logDbError("[pb] [submitToBook] submit_to_book failed", err);
-    return { error: GENERIC_ERROR, values: submitted };
+    return { error: GENERIC_ERROR, ...echo };
   }
   if (!accepted) notFound();
 

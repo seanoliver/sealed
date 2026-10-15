@@ -101,7 +101,7 @@ export async function createBook(
         birthday: "Birthday",
       } as const;
       await page
-        .getByRole("checkbox", {
+        .getByRole("switch", {
           name: labels[name as keyof typeof labels],
         })
         .setChecked(on);

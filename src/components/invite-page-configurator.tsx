@@ -7,6 +7,7 @@ import {
   RecipientFields,
   type EnabledFields,
 } from "@/components/recipient-fields";
+import { BLANK_HOUSEHOLD_VALUES } from "@/lib/validation/household";
 import { Switch } from "@/components/ui/switch";
 
 const OPTIONAL_FIELDS = [
@@ -141,6 +142,7 @@ export function InvitePageConfigurator({
                 <RecipientFields
                   defaults={BLANK_RECIPIENT_VALUES}
                   enabled={enabledFields}
+                  household={{ defaults: BLANK_HOUSEHOLD_VALUES }}
                 />
                 <button
                   type="button"

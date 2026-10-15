@@ -93,6 +93,7 @@ export default async function PublicBookPage({
           submitLabel="Add my details"
           pendingLabel="Submitting…"
           emailHint={`Optional — but include it so ${ownerLabel} can reach you.`}
+          householdBuilder
         />
       </div>
     </main>

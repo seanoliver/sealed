@@ -10,6 +10,11 @@ import {
   useTurnstileResetOnError,
 } from "@/components/turnstile-widget";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
+import {
+  BLANK_HOUSEHOLD_VALUES,
+  type HouseholdFieldErrors,
+  type HouseholdValues,
+} from "@/lib/validation/household";
 
 /**
  * Shared recipient-facing contact form, used by both unauthenticated
@@ -28,6 +33,9 @@ import { type TokenUpdateValues } from "@/lib/validation/contact";
 export type RecipientFormState = {
   error?: string;
   values?: TokenUpdateValues;
+  /** Household builder only (/b/[slug]). */
+  household?: HouseholdValues;
+  fieldErrors?: HouseholdFieldErrors;
 };
 
 type RecipientFormProps = {
@@ -42,6 +50,8 @@ type RecipientFormProps = {
   pendingLabel: string;
   /** Optional helper copy under the email input (e.g. "Optional — ..."). */
   emailHint?: string;
+  /** Collect names with the household builder instead of the legacy fields. */
+  householdBuilder?: boolean;
 };
 
 export function RecipientForm({
@@ -51,11 +61,16 @@ export function RecipientForm({
   submitLabel,
   pendingLabel,
   emailHint,
+  householdBuilder = false,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   // Turnstile responses are single-use: refresh the widget after any error
   // so the user's retry carries a fresh response.
-  useTurnstileResetOnError(state.error);
+  useTurnstileResetOnError(
+    state.error !== undefined || state.fieldErrors !== undefined
+      ? state
+      : undefined,
+  );
   // React 19 resets uncontrolled inputs to defaultValue after a form action
   // completes; on error the action echoes the submitted values back so the
   // reset restores what the user typed instead of wiping the form.
@@ -72,7 +87,19 @@ export function RecipientForm({
         </div>
       ) : null}
 
-      <RecipientFields defaults={v} enabled={enabled} emailHint={emailHint} />
+      <RecipientFields
+        defaults={v}
+        enabled={enabled}
+        emailHint={emailHint}
+        household={
+          householdBuilder
+            ? {
+                defaults: state.household ?? BLANK_HOUSEHOLD_VALUES,
+                errors: state.fieldErrors,
+              }
+            : undefined
+        }
+      />
 
       <TurnstileWidget />
 

@@ -22,18 +22,19 @@ type TurnstileGlobal = { reset?: () => void };
  * Reset the widget after a failed submit. Turnstile responses are single-use
  * at siteverify: without a reset, a user who hits a validation error and
  * resubmits would post the already-consumed response and fail verification
- * forever. Call with the action state's error each render.
+ * forever. Pass the failed action state (a new object per result, so two
+ * identical errors in a row still reset), or undefined while there is none.
  */
-export function useTurnstileResetOnError(error: string | undefined): void {
+export function useTurnstileResetOnError(failedState: object | undefined): void {
   useEffect(() => {
-    if (!error) return;
+    if (!failedState) return;
     const turnstile = (window as { turnstile?: TurnstileGlobal }).turnstile;
     try {
       turnstile?.reset?.();
     } catch {
       // Widget not rendered yet (script still loading) — nothing to reset.
     }
-  }, [error]);
+  }, [failedState]);
 }
 
 export function TurnstileWidget() {

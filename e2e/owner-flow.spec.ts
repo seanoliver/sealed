@@ -67,19 +67,20 @@ test("configures a faithful preview and preserves it when going back", async () 
       name: "Add your address to Draft Owner's address book",
     }),
   ).toBeVisible();
-  await expect(preview.locator("#full_name")).toBeDisabled();
+  await expect(preview.locator("#first_name")).toBeDisabled();
+  await expect(preview.locator("#last_name")).toBeDisabled();
   await expect(preview.locator("#email")).toBeDisabled();
   await expect(preview.locator("#address_line1")).toBeDisabled();
-  await expect(preview.locator("#partner_name")).toHaveCount(0);
-  await expect(preview.locator("#kids_names")).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add partner" })).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(preview.locator("#birthday")).toHaveCount(0);
   await expect(preview.getByRole("button", { name: "Add my details" })).toBeDisabled();
 
   await page.getByRole("switch", { name: "Partner name" }).check();
   await page.getByRole("switch", { name: "Kids' names" }).check();
   await page.getByRole("switch", { name: "Birthday" }).check();
-  await expect(preview.locator("#partner_name")).toBeDisabled();
-  await expect(preview.locator("#kids_names")).toBeDisabled();
+  await expect(preview.getByRole("button", { name: "Add partner" })).toBeDisabled();
+  await expect(preview.getByRole("button", { name: "Add a child" })).toBeDisabled();
   await expect(preview.locator("#birthday")).toBeDisabled();
   await page.getByRole("switch", { name: "Birthday" }).uncheck();
   await expect(preview.locator("#birthday")).toHaveCount(0);
@@ -103,8 +104,8 @@ test("publishes the optional fields selected in the preview", async () => {
   await expect(page.getByText("No contacts yet")).toBeVisible();
 
   await page.goto(`/b/${slug}`);
-  await expect(page.locator("#partner_name")).toBeVisible();
-  await expect(page.locator("#kids_names")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a child" })).toBeVisible();
   await expect(page.locator("#birthday")).toHaveCount(0);
 
   await page.goto("/onboarding");
@@ -128,7 +129,7 @@ test("previews settings changes before publishing them", async ({ browser }) => 
       name: "Add your address to Updated Owner's address book",
     }),
   ).toBeVisible();
-  await expect(preview.locator("#kids_names")).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(preview.locator("#birthday")).toBeDisabled();
 
   const liveContext = await browser.newContext();
@@ -139,7 +140,7 @@ test("previews settings changes before publishing them", async ({ browser }) => 
       name: "Add your address to Draft Owner's address book",
     }),
   ).toBeVisible();
-  await expect(livePage.locator("#kids_names")).toBeVisible();
+  await expect(livePage.getByRole("button", { name: "Add a child" })).toBeVisible();
   await expect(livePage.locator("#birthday")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save" }).click();
@@ -150,7 +151,7 @@ test("previews settings changes before publishing them", async ({ browser }) => 
       name: "Add your address to Updated Owner's address book",
     }),
   ).toBeVisible();
-  await expect(livePage.locator("#kids_names")).toHaveCount(0);
+  await expect(livePage.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(livePage.locator("#birthday")).toBeVisible();
   await liveContext.close();
 });

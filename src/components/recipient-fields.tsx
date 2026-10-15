@@ -1,8 +1,10 @@
+import { HouseholdFields } from "@/components/household-fields";
+import { inputClasses, labelClasses } from "@/components/recipient-field-styles";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
-
-const inputClasses =
-  "h-11 rounded-lg border border-input bg-card/70 px-3.5 text-base text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 disabled:cursor-default disabled:opacity-100";
-const labelClasses = "text-sm font-medium text-foreground/90";
+import {
+  type HouseholdFieldErrors,
+  type HouseholdValues,
+} from "@/lib/validation/household";
 
 export type EnabledFields = {
   partner_name: boolean;
@@ -28,6 +30,8 @@ type RecipientFieldsProps = {
   defaults: TokenUpdateValues;
   enabled: EnabledFields;
   emailHint?: string;
+  /** Renders the household builder in place of the legacy name fields. */
+  household?: { defaults: HouseholdValues; errors?: HouseholdFieldErrors };
 };
 
 type FieldProps = {
@@ -65,12 +69,14 @@ function Field({
   );
 }
 
-/** The shared field layout for live recipient forms and inert previews. */
-export function RecipientFields({
+/** Legacy display-string name fields, still used by /u/[token]. */
+function LegacyNameFields({
   defaults: v,
   enabled,
-  emailHint,
-}: RecipientFieldsProps) {
+}: {
+  defaults: TokenUpdateValues;
+  enabled: EnabledFields;
+}) {
   return (
     <>
       <div className="flex flex-col gap-1.5">
@@ -101,10 +107,32 @@ export function RecipientFields({
           name="kids_names"
           label="Kids' names"
           value={v.kids_names}
-          maxLength={500}
+          maxLength={2000}
           hint="Comma separated."
         />
       ) : null}
+    </>
+  );
+}
+
+/** The shared field layout for live recipient forms and inert previews. */
+export function RecipientFields({
+  defaults: v,
+  enabled,
+  emailHint,
+  household,
+}: RecipientFieldsProps) {
+  return (
+    <>
+      {household ? (
+        <HouseholdFields
+          defaults={household.defaults}
+          enabled={enabled}
+          errors={household.errors}
+        />
+      ) : (
+        <LegacyNameFields defaults={v} enabled={enabled} />
+      )}
       <Field
         name="email"
         label="Email"

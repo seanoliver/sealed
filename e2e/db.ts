@@ -116,6 +116,36 @@ export async function getContactRow(
   return { city: rows[0].city, updatedAt: rows[0].updated_at };
 }
 
+export async function getContactNamesByEmail(email: string): Promise<{
+  fullName: string;
+  partnerName: string | null;
+  kidsNames: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  partnerFirstName: string | null;
+  partnerLastName: string | null;
+  kids: unknown;
+}> {
+  const rows = await db`
+    select full_name, partner_name, kids_names, first_name, last_name,
+           partner_first_name, partner_last_name, kids
+    from public.contacts where email = ${email}`;
+  if (rows.length !== 1) {
+    throw new Error(`expected 1 contact for ${email}, found ${rows.length}`);
+  }
+  const r = rows[0];
+  return {
+    fullName: r.full_name,
+    partnerName: r.partner_name,
+    kidsNames: r.kids_names,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    partnerFirstName: r.partner_first_name,
+    partnerLastName: r.partner_last_name,
+    kids: r.kids,
+  };
+}
+
 export async function deleteContact(contactId: string): Promise<void> {
   await db`delete from public.contacts where id = ${contactId}`;
 }
