@@ -144,5 +144,5 @@ export function parseHouseholdForm(
     const key = issue.path.join(".");
     fieldErrors[key] ??= issue.message;
   }
-  return { ok: false, values, fieldErrors };
+  return { ok: false, values, fieldErrors, error: "Check the names below." };
 }

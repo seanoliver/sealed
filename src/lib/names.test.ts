@@ -169,6 +169,11 @@ describe("householdPrefill", () => {
     });
   });
 
+  it("keeps every legacy kid past the cap so validation flags it", () => {
+    const kidsNames = Array.from({ length: 11 }, (_, i) => `Kid${i}`).join(", ");
+    expect(householdPrefill({ ...legacy, kidsNames }).kids).toHaveLength(11);
+  });
+
   it("guesses from the display strings for a legacy contact", () => {
     expect(
       householdPrefill({
@@ -197,10 +202,6 @@ describe("householdPrefill", () => {
     ).toEqual({ first_name: "Jen", last_name: "Holloway", partner: null, kids: [] });
   });
 
-  it("caps legacy kids at ten", () => {
-    const kidsNames = Array.from({ length: 12 }, (_, i) => `K${i}`).join(", ");
-    expect(householdPrefill({ ...legacy, kidsNames }).kids).toHaveLength(10);
-  });
 });
 
 describe("lastNameKey and compareLastName", () => {

@@ -1,4 +1,4 @@
-import { KIDS_MAX, type HouseholdValues } from "@/lib/validation/household";
+import { type HouseholdValues } from "@/lib/validation/household";
 
 export type Kid = { first: string; last?: string };
 
@@ -126,9 +126,7 @@ export function householdPrefill(
       ? []
       : names.kids !== null
         ? names.kids.map((kid) => ({ first: kid.first, last: kid.last ?? person.last }))
-        : splitKids(names.kidsNames ?? "")
-            .slice(0, KIDS_MAX)
-            .map((first) => ({ first, last: person.last })),
+        : splitKids(names.kidsNames ?? "").map((first) => ({ first, last: person.last })),
   };
 }
 

@@ -452,6 +452,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
           await patchContact(row.id, {
             values: patch,
             household: names ? householdPatchInput(names) : undefined,
+            namesBase: names ? row.original.names : undefined,
           })
         ).error;
       } catch {

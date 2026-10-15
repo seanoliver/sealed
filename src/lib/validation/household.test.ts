@@ -117,6 +117,7 @@ describe("parseHouseholdForm", () => {
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    expect(result.error).toBe("Check the names below.");
     expect(result.fieldErrors).toEqual({
       first_name: FIRST_NAME_REQUIRED,
       last_name: lastNameRequired("Sean"),

@@ -9,9 +9,10 @@ import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
+import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { type Kid } from "@/lib/names";
+import { type Kid, type StoredNames } from "@/lib/names";
 import {
   CONTACT_FIELDS,
   contactDetailsSchema,
@@ -109,7 +110,7 @@ function changedFields(
   const diff = { before: {} as Partial<Snapshot>, after: {} as Partial<Snapshot> };
   let changed = false;
   for (const field of SNAPSHOT_FIELDS) {
-    if (JSON.stringify(before[field]) !== JSON.stringify(after[field])) {
+    if (!sameJsonb(before[field], after[field])) {
       diff.before[field] = before[field];
       diff.after[field] = after[field];
       changed = true;
@@ -303,12 +304,30 @@ const patchSchema = z.strictObject({
     )
     .optional(),
   household: householdSchema().optional(),
+  namesBase: z.unknown().optional(),
 });
 
 export type ContactPatch = {
   values?: Partial<Record<DetailField, string>>;
   household?: z.input<ReturnType<typeof householdSchema>>;
+  namesBase?: StoredNames;
 };
+
+const NAMES_CHANGED =
+  "This contact's names changed since you opened them. Reload to see the new names.";
+
+function storedNames(row: ContactRow): StoredNames {
+  return {
+    fullName: row.fullName,
+    partnerName: row.partnerName,
+    kidsNames: row.kidsNames,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    partnerFirstName: row.partnerFirstName,
+    partnerLastName: row.partnerLastName,
+    kids: row.kids,
+  };
+}
 
 function rowToDetailValues(row: ContactRow): Record<DetailField, string> {
   const snap = rowToSnapshot(row);
@@ -347,6 +366,9 @@ export async function patchContact(
         .limit(1)
         .for("update");
       if (!existing) return { kind: "missing" };
+      if (names && !sameJsonb(storedNames(existing), fields.data.namesBase)) {
+        return { kind: "invalid", error: NAMES_CHANGED };
+      }
       const parsed = contactDetailsSchema.safeParse({
         ...rowToDetailValues(existing),
         ...fields.data.values,

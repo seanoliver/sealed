@@ -337,6 +337,11 @@ export function HouseholdNameCell({
                     </button>
                   </div>
                 ))}
+                {errors?.kids ? (
+                  <p role="alert" className="text-xs text-red-700 dark:text-red-300">
+                    {errors.kids}
+                  </p>
+                ) : null}
 
                 <div className="flex flex-wrap items-center gap-1 border-t border-border/60 pt-2">
                   {draft.partner ? null : (

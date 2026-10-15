@@ -120,7 +120,7 @@ function PersonRow({
         <NameInput
           id={`${idPrefix}_first`}
           name={firstName}
-          label="First name"
+          label={`${label} first name`}
           value={row.first}
           onChange={(first) => onChange({ ...row, first })}
           error={errors.first}
@@ -128,7 +128,7 @@ function PersonRow({
         <NameInput
           id={`${idPrefix}_last`}
           name={lastName}
-          label="Last name"
+          label={`${label} last name`}
           value={following ? familyLast : row.last}
           onChange={(last) => onChange({ ...row, last, lastEdited: true })}
           error={errors.last}

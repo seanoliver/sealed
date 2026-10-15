@@ -1,5 +1,6 @@
 import "server-only";
 import { contactInputToRow as toRow } from "@/lib/db/contact-row";
+import { sameJsonb } from "@/lib/db/jsonb";
 import { type contacts } from "@/lib/db/schema";
 import { formatPerson, type Kid } from "@/lib/names";
 import {
@@ -52,14 +53,6 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
   };
 }
 
-// jsonb reorders object keys, so kids compare with sorted keys.
-const canonical = (value: unknown) =>
-  JSON.stringify(value, (_key, v: unknown) =>
-    v !== null && typeof v === "object" && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
-      : v,
-  );
-const sameValue = (a: unknown, b: unknown) => canonical(a) === canonical(b);
 
 /** Non-null fields only — keeps create diffs compact. */
 export function definedFields(snap: Snapshot): Partial<Snapshot> {
@@ -83,7 +76,7 @@ export function changedFields(
   };
   let changed = false;
   for (const field of SNAPSHOT_FIELDS) {
-    if (!sameValue(before[field], after[field])) {
+    if (!sameJsonb(before[field], after[field])) {
       diff.before[field] = before[field];
       diff.after[field] = after[field];
       changed = true;
@@ -156,7 +149,7 @@ export function mergeUpdate(
   const patch = mergePatch(payload);
   const set: Partial<Record<string, unknown>> = {};
   for (const field of SNAPSHOT_FIELDS) {
-    if (field in patch && !sameValue(before[field], patch[field])) {
+    if (field in patch && !sameJsonb(before[field], patch[field])) {
       set[FIELD_TO_COLUMN[field]] = patch[field];
     }
   }

@@ -10,6 +10,7 @@ import {
   seedEmailSend,
   seedOwnerBook,
   setContactCity,
+  setContactKidsByEmail,
 } from "./db";
 import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
@@ -812,6 +813,34 @@ test("Sort by last name puts unsplit contacts last", async () => {
     /Ada Lovelace/,
     /Cole Abernathy/,
   ]);
+});
+
+test("a household edited elsewhere since the page loaded is not overwritten", async () => {
+  await openDashboard();
+  await bodyRow("Jen & Mark Holloway").locator("td").nth(3).dblclick();
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("dialog", { name: "Household" });
+  await panel.getByRole("textbox", { name: "Partner last name" }).fill("Okafor");
+
+  const updated = [
+    { first: "Zoe", last: "Holloway" },
+    { first: "Maxine", last: "Holloway" },
+    { first: "Ivy", last: "Holloway" },
+  ];
+  await setContactKidsByEmail("jen@example.test", updated);
+  await panel.getByRole("textbox", { name: "Partner last name" }).press("Enter");
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "names changed since you opened them" }),
+  ).toBeVisible();
+  expect(await getContactNamesByEmail("jen@example.test")).toMatchObject({
+    partnerLastName: "Holloway",
+    kidsNames: "Zoe, Maxine, Ivy",
+  });
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await table().getByRole("button", { name: "Cancel" }).click();
+  await expect(table().getByRole("textbox")).toHaveCount(0);
 });
 
 let clockInstalled = false;

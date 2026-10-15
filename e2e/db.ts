@@ -157,6 +157,13 @@ export async function getContactNamesByEmail(email: string): Promise<{
   };
 }
 
+export async function setContactKidsByEmail(
+  email: string,
+  kids: { first: string; last?: string }[],
+): Promise<void> {
+  await db`update public.contacts set kids = ${db.json(kids)} where email = ${email}`;
+}
+
 export async function deleteContact(contactId: string): Promise<void> {
   await db`delete from public.contacts where id = ${contactId}`;
 }
