@@ -31,6 +31,15 @@ display strings, and existing rows cannot be split reliably.
   forms from legacy strings.
 - Submissions from `/b/[slug]` store the household shape; approval accepts
   household and legacy payloads.
+- `/u/[token]`, the owner contact form, and the contacts sheet edit the
+  household too. Their writers set the structured groups and the display
+  strings together, so removing a partner or every kid clears the string
+  as well (the trigger only derives from a set group).
+  `private.apply_token_update` accepts the structured keys with the same
+  `enabled_fields` gating as the display strings
+  (`00000000000005_token_household_names.sql`).
+- CSV export adds the structured columns after the display names; CSV
+  import still reads only the display names.
 
 ## Alternatives considered
 
@@ -62,3 +71,5 @@ any path that forgot to re-derive would leave the two forms out of sync.
   and `valid_kids`, and holds the parity fixture.
 - `src/lib/names.test.ts` runs the same fixture against the TypeScript
   formatters.
+- `supabase/tests/database/04_token_household_names.sql` covers token
+  update gating and the audit allowlist.

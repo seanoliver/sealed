@@ -279,6 +279,8 @@ test("a row save keeps changes made elsewhere since the page loaded", async () =
   await panel.getByRole("button", { name: "Add a child" }).click();
   await panel.getByRole("textbox", { name: "Child 1 first name" }).fill("Sam");
   await page.keyboard.press("Enter");
+  // The open panel hides the row from role queries, so wait for it to close.
+  await expect(panel).toHaveCount(0);
   await expect(table().getByRole("textbox")).toHaveCount(0);
   await expect(bodyRow("Bea Brown")).toContainText("· 1 kid");
 
@@ -746,6 +748,7 @@ test("the household panel edits a kid by keyboard and Esc keeps the draft", asyn
     panel.getByRole("textbox", { name: "Child 2 first name" }),
   ).toHaveValue("Maxine");
   await panel.getByRole("textbox", { name: "Child 2 first name" }).press("Enter");
+  await expect(panel).toHaveCount(0);
   await expect(table().getByRole("textbox")).toHaveCount(0);
   await expect(bodyRow("Jen & Mark Holloway")).toBeFocused();
 
@@ -792,6 +795,7 @@ test("splitting a legacy row waits for the required names", async () => {
   await last.fill("Sarkisian");
   await expect(panel.getByText("Add a last name.")).toHaveCount(0);
   await last.press("Enter");
+  await expect(panel).toHaveCount(0);
   await expect(table().getByRole("textbox")).toHaveCount(0);
   const row = bodyRow("Cher & Sonny Sarkisian");
   await expect(row).toBeVisible();

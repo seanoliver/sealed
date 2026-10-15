@@ -175,7 +175,7 @@ const columns = helper.columns([
   helper.accessor((row) => sheetName(row.names).line, {
     id: NAME_COLUMN,
     header: "Name",
-    size: 220,
+    size: 260,
     minSize: 100,
     sortFn: "text",
     enableHiding: false,

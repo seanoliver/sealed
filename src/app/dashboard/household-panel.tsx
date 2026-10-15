@@ -54,8 +54,7 @@ export function HouseholdLabel({
     <>
       <span className="truncate">{line}</span>
       {kids ? (
-        <span className="shrink-0 font-normal text-muted-foreground">
-          {" "}
+        <span className="shrink-0 pl-1 font-normal text-muted-foreground">
           · {kids}
         </span>
       ) : null}
