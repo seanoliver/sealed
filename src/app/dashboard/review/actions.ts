@@ -10,20 +10,25 @@ import { contactInputToRow as toRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
+import { formatPerson, type Kid } from "@/lib/names";
 import {
   TOKEN_UPDATE_FIELDS,
-  tokenUpdateSchema,
   type TokenUpdateField,
 } from "@/lib/validation/contact";
-import { dropDisabledFields } from "@/lib/validation/submission";
+import {
+  dropDisabledFields,
+  isHouseholdPayload,
+  parseSubmissionPayload,
+  type SubmissionPayload,
+} from "@/lib/validation/submission";
 
 /**
  * Review-queue actions. `submissions.payload` is ATTACKER-CONTROLLED jsonb
  * (public permalink submissions; submit_to_book does not gate enabled_fields
  * and stores whatever object it was handed). Every approval therefore:
- *   1. re-validates the payload through the STRICT tokenUpdateSchema
- *      (unknown keys — including a smuggled `notes` — stripped, per-field
- *      caps, full_name required), and
+ *   1. re-validates the payload through the STRICT parseSubmissionPayload
+ *      (household or legacy shape; unknown keys — including a smuggled
+ *      `notes` — stripped, per-field caps, a name required), and
  *   2. drops fields DISABLED on the book (dropDisabledFields)
  * BEFORE anything touches `contacts`. The DB CHECK constraints are the third
  * net. Display-side gating (review/page.tsx) uses the same dropDisabledFields
@@ -41,26 +46,26 @@ const INVALID_PAYLOAD =
 const DUPLICATE_EMAIL =
   "You already have a contact with this email — use Apply update on the matching card or reject this one.";
 
-type TokenUpdateInput = z.infer<typeof tokenUpdateSchema>;
+const NAME_FIELDS = [
+  "first_name",
+  "last_name",
+  "partner_first_name",
+  "partner_last_name",
+  "kids",
+] as const;
 
-/** Field snapshot keyed by schema names, for audit diffs. No `notes`: it can never arrive via a submission. */
-type Snapshot = Record<TokenUpdateField, string | null>;
+/** Every contact field a submission can write, for audit diffs. */
+const SNAPSHOT_FIELDS = [...TOKEN_UPDATE_FIELDS, ...NAME_FIELDS] as const;
+type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 
-function inputToSnapshot(d: TokenUpdateInput): Snapshot {
-  return {
-    full_name: d.full_name,
-    partner_name: d.partner_name ?? null,
-    kids_names: d.kids_names ?? null,
-    email: d.email ?? null,
-    birthday: d.birthday ?? null,
-    address_line1: d.address_line1 ?? null,
-    address_line2: d.address_line2 ?? null,
-    city: d.city ?? null,
-    state_region: d.state_region ?? null,
-    postal_code: d.postal_code ?? null,
-    country: d.country ?? null,
-  };
-}
+/** Field snapshot keyed by schema names. No `notes`: it can never arrive via a submission. */
+type Snapshot = Record<TokenUpdateField, string | null> & {
+  first_name: string | null;
+  last_name: string | null;
+  partner_first_name: string | null;
+  partner_last_name: string | null;
+  kids: Kid[] | null;
+};
 
 function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
   return {
@@ -75,33 +80,52 @@ function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     state_region: row.stateRegion,
     postal_code: row.postalCode,
     country: row.country,
+    first_name: row.firstName,
+    last_name: row.lastName,
+    partner_first_name: row.partnerFirstName,
+    partner_last_name: row.partnerLastName,
+    kids: row.kids,
   };
 }
 
+// jsonb reorders object keys, so kids compare with sorted keys.
+const canonical = (value: unknown) =>
+  JSON.stringify(value, (_key, v: unknown) =>
+    v !== null && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  );
+const sameValue = (a: unknown, b: unknown) => canonical(a) === canonical(b);
+
 /** Non-null fields only — keeps create diffs compact. */
 function definedFields(snap: Snapshot): Partial<Snapshot> {
-  const out: Partial<Snapshot> = {};
-  for (const field of TOKEN_UPDATE_FIELDS) {
+  const out: Partial<Record<SnapshotField, unknown>> = {};
+  for (const field of SNAPSHOT_FIELDS) {
     if (snap[field] !== null) out[field] = snap[field];
   }
-  return out;
+  return out as Partial<Snapshot>;
 }
+
+type SnapshotDiff = { before: Partial<Snapshot>; after: Partial<Snapshot> };
 
 /** Changed fields only, or undefined for a no-op merge (no audit row). */
 function changedFields(
   before: Snapshot,
   after: Snapshot,
-): { before: Partial<Snapshot>; after: Partial<Snapshot> } | undefined {
-  const diff = { before: {} as Partial<Snapshot>, after: {} as Partial<Snapshot> };
+): SnapshotDiff | undefined {
+  const diff = {
+    before: {} as Partial<Record<SnapshotField, unknown>>,
+    after: {} as Partial<Record<SnapshotField, unknown>>,
+  };
   let changed = false;
-  for (const field of TOKEN_UPDATE_FIELDS) {
-    if (before[field] !== after[field]) {
+  for (const field of SNAPSHOT_FIELDS) {
+    if (!sameValue(before[field], after[field])) {
       diff.before[field] = before[field];
       diff.after[field] = after[field];
       changed = true;
     }
   }
-  return changed ? diff : undefined;
+  return changed ? (diff as SnapshotDiff) : undefined;
 }
 
 /** Schema field name → contacts column name, for the merge update. */
@@ -117,7 +141,55 @@ const FIELD_TO_COLUMN = {
   state_region: "stateRegion",
   postal_code: "postalCode",
   country: "country",
-} as const satisfies Record<TokenUpdateField, keyof typeof contacts.$inferInsert>;
+  first_name: "firstName",
+  last_name: "lastName",
+  partner_first_name: "partnerFirstName",
+  partner_last_name: "partnerLastName",
+  kids: "kids",
+} as const satisfies Record<SnapshotField, keyof typeof contacts.$inferInsert>;
+
+/**
+ * Contact columns for a new contact. fullName is NOT NULL in the insert
+ * type; for household payloads the trigger re-derives it (and the partner
+ * and kids display strings) from the structured names.
+ */
+function toInsertRow(payload: SubmissionPayload) {
+  if (!isHouseholdPayload(payload)) return toRow(payload);
+  const {
+    first_name,
+    last_name,
+    partner_first_name,
+    partner_last_name,
+    kids,
+    ...rest
+  } = payload;
+  return {
+    ...toRow({
+      ...rest,
+      full_name: formatPerson({ first: first_name, last: last_name }) ?? "",
+    }),
+    firstName: first_name,
+    lastName: last_name,
+    partnerFirstName: partner_first_name ?? null,
+    partnerLastName: partner_last_name ?? null,
+    kids: kids ?? null,
+  };
+}
+
+/**
+ * Fields a merge writes: present keys only. A submitted partner is written
+ * as a whole group, so a partner with no last name clears the old one.
+ */
+function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
+  const patch: Partial<Record<SnapshotField, unknown>> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== undefined) patch[key as SnapshotField] = value;
+  }
+  if (isHouseholdPayload(payload) && payload.partner_first_name !== undefined) {
+    patch.partner_last_name = payload.partner_last_name ?? null;
+  }
+  return patch as Partial<Snapshot>;
+}
 
 /**
  * Audit append — the ONLY sanctioned dbAdmin use in this module.
@@ -221,10 +293,10 @@ export async function approveNew(
       const { book, submission } = loaded;
 
       // STRICT re-validation of the untrusted payload (unknown keys stripped,
-      // caps enforced, full_name required — a missing/invalid name fails
+      // caps enforced, a name required — a missing/invalid name fails
       // here), then drop book-disabled fields. Nothing unvalidated or
       // ungated ever reaches `contacts`.
-      const parsed = tokenUpdateSchema.safeParse(submission.payload);
+      const parsed = parseSubmissionPayload(submission.payload);
       if (!parsed.success) return { kind: "invalid" };
       const gated = dropDisabledFields(parsed.data, book.enabledFields);
 
@@ -238,12 +310,12 @@ export async function approveNew(
 
       const [row] = await tx
         .insert(contacts)
-        .values({ bookId: book.id, ...toRow(gated) })
-        .returning({ id: contacts.id });
+        .values({ bookId: book.id, ...toInsertRow(gated) })
+        .returning();
       return {
         kind: "ok",
         contactId: row.id,
-        after: definedFields(inputToSnapshot(gated)),
+        after: definedFields(rowToSnapshot(row)),
       };
     });
   } catch (err) {
@@ -294,7 +366,7 @@ export async function approveMerge(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       // Same strict-parse + gate as approveNew (see module doc).
-      const parsed = tokenUpdateSchema.safeParse(submission.payload);
+      const parsed = parseSubmissionPayload(submission.payload);
       if (!parsed.success) return { kind: "invalid" };
       const gated = dropDisabledFields(parsed.data, book.enabledFields);
 
@@ -315,13 +387,15 @@ export async function approveMerge(
 
       // Merge semantics: PRESENT keys overwrite, ABSENT keys stay untouched.
       // Legit payloads are value-bearing by construction (submitToBook drops
-      // empty values), and tokenUpdateSchema turns "" into undefined — so an
+      // empty values), and the strict parse turns "" into undefined — so an
       // empty string (only craftable by a hostile direct insert) is treated
       // as absent and can never CLEAR a column. This intentionally differs
       // from token updates, where a present-but-empty key means "clear".
       const before = rowToSnapshot(existing);
-      const after = { ...before, ...definedFields(inputToSnapshot(gated)) };
-      const diff = changedFields(before, after);
+      const patch = mergePatch(gated);
+      const changed = SNAPSHOT_FIELDS.filter(
+        (field) => field in patch && !sameValue(before[field], patch[field]),
+      );
 
       // Concurrency gate: atomically flip pending → approved after all the
       // read-only checks and BEFORE the contact write; a concurrent approval
@@ -331,25 +405,24 @@ export async function approveMerge(
         return { kind: "not_found" };
       }
 
-      if (diff) {
-        const set: Partial<
-          Record<(typeof FIELD_TO_COLUMN)[TokenUpdateField], string>
-        > = {};
-        for (const field of TOKEN_UPDATE_FIELDS) {
-          // Changed fields always carry the submitted string — a merge can
-          // overwrite but never clear (see the semantics note above).
-          const next = diff.after[field];
-          if (typeof next === "string") set[FIELD_TO_COLUMN[field]] = next;
-        }
-        await tx
-          .update(contacts)
-          .set(set)
-          .where(
-            and(eq(contacts.id, existing.id), eq(contacts.bookId, book.id)),
-          );
+      if (changed.length === 0) {
+        return { kind: "ok", contactId: existing.id, diff: undefined };
       }
-
-      return { kind: "ok", contactId: existing.id, diff };
+      const set: Partial<Record<string, unknown>> = {};
+      for (const field of changed) set[FIELD_TO_COLUMN[field]] = patch[field];
+      const [row] = await tx
+        .update(contacts)
+        .set(set as Partial<typeof contacts.$inferInsert>)
+        .where(
+          and(eq(contacts.id, existing.id), eq(contacts.bookId, book.id)),
+        )
+        .returning();
+      // Diff the stored row so trigger-derived display strings are audited.
+      return {
+        kind: "ok",
+        contactId: existing.id,
+        diff: changedFields(before, rowToSnapshot(row)),
+      };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {

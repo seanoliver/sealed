@@ -3,6 +3,7 @@ import {
   DISPLAY_VALUE_MAX,
   dropDisabledFields,
   parseSubmissionForDisplay,
+  parseSubmissionPayload,
   submissionDisplaySchema,
   type EnabledFields,
 } from "./submission";
@@ -80,6 +81,19 @@ describe("dropDisabledFields", () => {
     expect(gated).toEqual({ full_name: "Ada", partner_name: "p" });
   });
 
+  it("removes household partner and kids keys the book disables", () => {
+    const gated = dropDisabledFields(
+      {
+        first_name: "Ada",
+        partner_first_name: "Sam",
+        partner_last_name: "Lee",
+        kids: [{ first: "Zoe" }],
+      },
+      { partner_name: false, kids_names: false, birthday: true },
+    );
+    expect(gated).toEqual({ first_name: "Ada" });
+  });
+
   it("keeps everything when all fields are enabled", () => {
     const data = { full_name: "Ada", kids_names: "k" };
     expect(dropDisabledFields(data, allEnabled)).toEqual(data);
@@ -111,5 +125,115 @@ describe("parseSubmissionForDisplay", () => {
     for (const payload of [undefined, 0, "", () => {}, Symbol("x")]) {
       expect(() => parseSubmissionForDisplay(payload, allEnabled)).not.toThrow();
     }
+  });
+});
+
+describe("parseSubmissionForDisplay (household payloads)", () => {
+  it("formats household names into display strings", () => {
+    const result = parseSubmissionForDisplay(
+      {
+        first_name: "Jane",
+        last_name: "Smith",
+        partner_first_name: "Sam",
+        partner_last_name: "Lee",
+        kids: [
+          { first: "Zoe", last: "Smith" },
+          { first: "Max", last: "Jones" },
+        ],
+        city: "Geneva",
+      },
+      allEnabled,
+    );
+    expect(result).toEqual({
+      full_name: "Jane Smith",
+      partner_name: "Sam Lee",
+      kids_names: "Zoe, Max Jones",
+      city: "Geneva",
+    });
+  });
+
+  it("prefers household names over legacy strings in the same payload", () => {
+    const result = parseSubmissionForDisplay(
+      { first_name: "Jane", last_name: "Smith", full_name: "Smuggled", kids_names: "x" },
+      allEnabled,
+    );
+    expect(result?.full_name).toBe("Jane Smith");
+    expect(result?.kids_names).toBeUndefined();
+  });
+
+  it("gates disabled partner and kids before formatting", () => {
+    const result = parseSubmissionForDisplay(
+      {
+        first_name: "Jane",
+        last_name: "Smith",
+        partner_first_name: "Sam",
+        kids: [{ first: "Zoe" }],
+      },
+      { partner_name: false, kids_names: false, birthday: true },
+    );
+    expect(result?.partner_name).toBeUndefined();
+    expect(result?.kids_names).toBeUndefined();
+  });
+
+  it("skips malformed kid items instead of failing the card", () => {
+    const result = parseSubmissionForDisplay(
+      { first_name: "Jane", last_name: "Smith", kids: ["Zoe", { first: "Max" }, null] },
+      allEnabled,
+    );
+    expect(result?.kids_names).toBe("Max");
+  });
+});
+
+describe("parseSubmissionPayload", () => {
+  it("parses a legacy payload", () => {
+    const result = parseSubmissionPayload({
+      full_name: "Greta Approve",
+      kids_names: "Zoe, Max",
+      notes: "smuggled",
+    });
+    expect(result).toEqual({
+      success: true,
+      data: { full_name: "Greta Approve", kids_names: "Zoe, Max" },
+    });
+  });
+
+  it("parses a household payload and strips legacy name keys", () => {
+    const result = parseSubmissionPayload({
+      first_name: "Jane",
+      last_name: "Smith",
+      partner_first_name: "Sam",
+      kids: [{ first: "Zoe", last: "Smith" }],
+      full_name: "Smuggled",
+      email: "jane@example.com",
+    });
+    expect(result).toEqual({
+      success: true,
+      data: {
+        first_name: "Jane",
+        last_name: "Smith",
+        partner_first_name: "Sam",
+        kids: [{ first: "Zoe", last: "Smith" }],
+        email: "jane@example.com",
+      },
+    });
+  });
+
+  it.each([
+    ["missing last name", { first_name: "Jane", full_name: "Jane Smith" }],
+    ["11 kids", {
+      first_name: "Jane",
+      last_name: "Smith",
+      kids: Array.from({ length: 11 }, (_, i) => ({ first: `K${i}` })),
+    }],
+    ["kid with an extra key", {
+      first_name: "Jane",
+      last_name: "Smith",
+      kids: [{ first: "Zoe", middle: "Q" }],
+    }],
+    ["name over 80 characters", { first_name: "x".repeat(81), last_name: "Smith" }],
+    ["legacy payload without a name", { city: "Geneva" }],
+    ["non-object payload", ["first_name"]],
+  ])("rejects %s", (_label, payload) => {
+    expect(parseSubmissionPayload(payload).success).toBe(false);
   });
 });
