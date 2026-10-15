@@ -1,7 +1,7 @@
 begin;
 create schema if not exists tests;
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(24);
 
 -- Parity fixture shared with src/lib/names.test.ts, which parses the
 -- dollar-quoted literal below. Keep it valid JSON.
@@ -148,6 +148,15 @@ select throws_ok(
   $$ update public.contacts set kids = '[{"first": "Zoe", "middle": "Q"}]'
      where id = '20000000-0000-0000-0000-0000000000c3' $$,
   '23514', null, 'valid_kids rejects extra keys');
+select throws_ok(
+  $$ update public.contacts set kids = '[{"first": "Zoe", "last": ""}]'
+     where id = '20000000-0000-0000-0000-0000000000c3' $$,
+  '23514', null, 'valid_kids rejects an empty kid last name');
+select throws_ok(
+  $$ update public.contacts set kids = jsonb_build_array(
+       jsonb_build_object('first', 'Zoe', 'last', repeat('x', 81)))
+     where id = '20000000-0000-0000-0000-0000000000c3' $$,
+  '23514', null, 'valid_kids caps a kid last name at 80 characters');
 select throws_ok(
   $$ update public.contacts set first_name = repeat('x', 81)
      where id = '20000000-0000-0000-0000-0000000000c3' $$,

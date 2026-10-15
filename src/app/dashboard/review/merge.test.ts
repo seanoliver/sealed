@@ -3,10 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
-import {
-  dropDisabledFields,
-  parseSubmissionPayload,
-} from "@/lib/validation/submission";
+import { parseSubmissionPayload } from "@/lib/validation/submission";
 import { changedFields, mergeUpdate, rowToSnapshot, toInsertRow } from "./merge";
 
 const U = "00000000-0000-0000-0000-00000000d001";
@@ -17,9 +14,9 @@ const C_SPLIT = "20000000-0000-0000-0000-00000000d002";
 const ALL_ENABLED = { partner_name: true, kids_names: true, birthday: true };
 
 function gate(payload: unknown, enabled = ALL_ENABLED) {
-  const parsed = parseSubmissionPayload(payload);
+  const parsed = parseSubmissionPayload(payload, enabled);
   if (!parsed.success) throw new Error("payload did not parse");
-  return dropDisabledFields(parsed.data, enabled);
+  return parsed.data;
 }
 
 async function load(id: string) {

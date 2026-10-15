@@ -38,11 +38,14 @@ const hasHouseholdNames = (payload: unknown) =>
 
 export function parseSubmissionPayload(
   payload: unknown,
+  enabled: EnabledFields,
 ): { success: true; data: SubmissionPayload } | { success: false } {
   const parsed = hasHouseholdNames(payload)
     ? householdPayloadSchema.safeParse(payload)
     : tokenUpdateSchema.safeParse(payload);
-  return parsed.success ? { success: true, data: parsed.data } : { success: false };
+  return parsed.success
+    ? { success: true, data: dropDisabledFields<SubmissionPayload>(parsed.data, enabled) }
+    : { success: false };
 }
 
 export function isHouseholdPayload(

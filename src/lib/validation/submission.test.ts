@@ -184,13 +184,32 @@ describe("parseSubmissionForDisplay (household payloads)", () => {
   });
 });
 
+const ALL_ON = { partner_name: true, kids_names: true, birthday: true };
+
 describe("parseSubmissionPayload", () => {
+  it("drops the partner and kids a book disables", () => {
+    expect(
+      parseSubmissionPayload(
+        {
+          first_name: "Jane",
+          last_name: "Smith",
+          partner_first_name: "Sam",
+          partner_last_name: "Lee",
+          kids: [{ first: "Zoe" }],
+          kids_names: "Zoe",
+          birthday: "1990-01-01",
+        },
+        { partner_name: false, kids_names: false, birthday: false },
+      ),
+    ).toEqual({ success: true, data: { first_name: "Jane", last_name: "Smith" } });
+  });
+
   it("parses a legacy payload", () => {
     const result = parseSubmissionPayload({
       full_name: "Greta Approve",
       kids_names: "Zoe, Max",
       notes: "smuggled",
-    });
+    }, ALL_ON);
     expect(result).toEqual({
       success: true,
       data: { full_name: "Greta Approve", kids_names: "Zoe, Max" },
@@ -205,7 +224,7 @@ describe("parseSubmissionPayload", () => {
       kids: [{ first: "Zoe", last: "Smith" }],
       full_name: "Smuggled",
       email: "jane@example.com",
-    });
+    }, ALL_ON);
     expect(result).toEqual({
       success: true,
       data: {
@@ -220,6 +239,7 @@ describe("parseSubmissionPayload", () => {
 
   it.each([
     ["missing last name", { first_name: "Jane", full_name: "Jane Smith" }],
+    ["missing first name", { last_name: "Smith", full_name: "Jane Smith" }],
     ["11 kids", {
       first_name: "Jane",
       last_name: "Smith",
@@ -234,6 +254,6 @@ describe("parseSubmissionPayload", () => {
     ["legacy payload without a name", { city: "Geneva" }],
     ["non-object payload", ["first_name"]],
   ])("rejects %s", (_label, payload) => {
-    expect(parseSubmissionPayload(payload).success).toBe(false);
+    expect(parseSubmissionPayload(payload, ALL_ON).success).toBe(false);
   });
 });

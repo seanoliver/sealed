@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(16);
+select plan(18);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000d1', 'tokennames@test.dev');
 update public.profiles set display_name = 'Dana D' where id = '00000000-0000-0000-0000-0000000000d1';
@@ -24,6 +24,7 @@ insert into public.update_tokens (contact_id, token_hash, expires_at) values
   ('20000000-0000-0000-0000-0000000000d1', extensions.digest('tn1', 'sha256'), now() + interval '1 day'),
   ('20000000-0000-0000-0000-0000000000d1', extensions.digest('tn2', 'sha256'), now() + interval '1 day'),
   ('20000000-0000-0000-0000-0000000000d1', extensions.digest('tn3', 'sha256'), now() + interval '1 day'),
+  ('20000000-0000-0000-0000-0000000000d1', extensions.digest('tn6', 'sha256'), now() + interval '1 day'),
   ('20000000-0000-0000-0000-0000000000d2', extensions.digest('tn4', 'sha256'), now() + interval '1 day'),
   ('20000000-0000-0000-0000-0000000000d2', extensions.digest('tn5', 'sha256'), now() + interval '1 day');
 
@@ -68,6 +69,16 @@ select results_eq(
      from public.contacts where id = '20000000-0000-0000-0000-0000000000d1' $$,
   $$ values (null::text, null::text, null::text, null::text, null::jsonb) $$,
   'empty partner and kids clear the partner and kids');
+
+select ok(private.apply_token_update('tn6',
+  '{"first_name": "Jen", "last_name": "Holloway",
+    "partner_first_name": "", "partner_last_name": "Okafor"}'),
+  'token update with only a partner last name succeeds');
+select results_eq(
+  $$ select partner_name, partner_first_name, partner_last_name
+     from public.contacts where id = '20000000-0000-0000-0000-0000000000d1' $$,
+  $$ values (null::text, null::text, null::text) $$,
+  'a partner last name without a first name stores no partner');
 
 select ok(private.apply_token_update('tn3', '{"partner_name": "Sam Lee", "full_name": "Jen H"}'),
   'legacy token update succeeds');

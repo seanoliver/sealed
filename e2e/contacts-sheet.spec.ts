@@ -695,6 +695,7 @@ test("the Name cell shows one line for the household", async () => {
   await seedContact({
     bookId,
     fullName: "x",
+    email: "priya@example.test",
     household: {
       firstName: "Priya",
       lastName: "Raman",
@@ -841,6 +842,24 @@ test("a household edited elsewhere since the page loaded is not overwritten", as
   await expect(panel).toHaveCount(0);
   await table().getByRole("button", { name: "Cancel" }).click();
   await expect(table().getByRole("textbox")).toHaveCount(0);
+});
+
+test("removing the partner in the panel clears the partner on save", async () => {
+  await openDashboard();
+  await bodyRow("Priya Raman & Daniel Okafor").locator("td").nth(3).dblclick();
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("dialog", { name: "Household" });
+  await panel.getByRole("button", { name: "Remove partner" }).click();
+  await panel.getByRole("textbox", { name: "Contact first name" }).press("Enter");
+  await expect(panel).toHaveCount(0);
+  await expect(table().getByRole("textbox")).toHaveCount(0);
+
+  await expect(bodyRow("Priya Raman")).not.toContainText("Daniel");
+  expect(await getContactNamesByEmail("priya@example.test")).toMatchObject({
+    partnerName: null,
+    partnerFirstName: null,
+    partnerLastName: null,
+  });
 });
 
 let clockInstalled = false;

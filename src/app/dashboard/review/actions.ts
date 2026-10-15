@@ -9,10 +9,7 @@ import { dbAdmin } from "@/lib/db/admin";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import {
-  dropDisabledFields,
-  parseSubmissionPayload,
-} from "@/lib/validation/submission";
+import { parseSubmissionPayload } from "@/lib/validation/submission";
 import {
   changedFields,
   definedFields,
@@ -28,7 +25,7 @@ import {
  * and stores whatever object it was handed). Every approval therefore:
  *   1. re-validates the payload through the STRICT parseSubmissionPayload
  *      (household or legacy shape; unknown keys — including a smuggled
- *      `notes` — stripped, per-field caps, a name required), and
+ *      `notes` — stripped, per-field caps, a name required), which also
  *   2. drops fields DISABLED on the book (dropDisabledFields)
  * BEFORE anything touches `contacts`. The DB CHECK constraints are the third
  * net. Display-side gating (review/page.tsx) uses the same dropDisabledFields
@@ -151,9 +148,9 @@ export async function approveNew(
       // caps enforced, a name required — a missing/invalid name fails
       // here), then drop book-disabled fields. Nothing unvalidated or
       // ungated ever reaches `contacts`.
-      const parsed = parseSubmissionPayload(submission.payload);
+      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
       if (!parsed.success) return { kind: "invalid" };
-      const gated = dropDisabledFields(parsed.data, book.enabledFields);
+      const gated = parsed.data;
 
       // Concurrency gate: atomically flip pending → approved FIRST; a
       // concurrent approval of the same submission loses here and returns
@@ -221,9 +218,9 @@ export async function approveMerge(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       // Same strict-parse + gate as approveNew (see module doc).
-      const parsed = parseSubmissionPayload(submission.payload);
+      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
       if (!parsed.success) return { kind: "invalid" };
-      const gated = dropDisabledFields(parsed.data, book.enabledFields);
+      const gated = parsed.data;
 
       // Scoped by id AND bookId (RLS backstops the same predicate). The FK
       // is ON DELETE SET NULL, so a dangling match is unreachable in

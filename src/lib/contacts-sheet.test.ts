@@ -7,6 +7,7 @@ import {
   householdEdited,
   householdPatchInput,
   moveCursor,
+  namesFromValues,
   parseStoredLayout,
   sheetName,
   STATUS_RANK,
@@ -169,6 +170,38 @@ describe("sheetName", () => {
       kids: null,
       split: false,
     });
+  });
+});
+
+describe("namesFromValues", () => {
+  it("derives the stored names, dropping blank kids and blank last names", () => {
+    expect(
+      namesFromValues({
+        first_name: " Jen ",
+        last_name: "Holloway",
+        partner: { first: "Mark", last: "" },
+        kids: [
+          { first: "", last: "Holloway" },
+          { first: "Zoe", last: "" },
+          { first: "Max", last: "Jones" },
+        ],
+      }),
+    ).toEqual({
+      fullName: "Jen Holloway",
+      partnerName: "Mark",
+      kidsNames: "Zoe, Max Jones",
+      firstName: "Jen",
+      lastName: "Holloway",
+      partnerFirstName: "Mark",
+      partnerLastName: null,
+      kids: [{ first: "Zoe" }, { first: "Max", last: "Jones" }],
+    });
+  });
+
+  it("has no partner or kids when none are given", () => {
+    expect(
+      namesFromValues({ first_name: "Jen", last_name: "Holloway", partner: null, kids: [] }),
+    ).toMatchObject({ partnerName: null, partnerFirstName: null, kids: null, kidsNames: null });
   });
 });
 
