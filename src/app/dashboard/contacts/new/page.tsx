@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { ContactForm } from "@/components/contact-form";
+import { BLANK_HOUSEHOLD_VALUES } from "@/lib/validation/household";
 import { createContact } from "../actions";
 
 export default async function NewContactPage() {
@@ -25,6 +26,7 @@ export default async function NewContactPage() {
         <ContactForm
           action={createContact}
           submitLabel="Add contact"
+          household={BLANK_HOUSEHOLD_VALUES}
           defaults={{
             full_name: "",
             partner_name: "",

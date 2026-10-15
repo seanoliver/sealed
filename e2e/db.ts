@@ -93,17 +93,29 @@ export async function seedContact(opts: {
   stateRegion?: string;
   postalCode?: string;
   country?: string;
+  /** Structured names; the DB trigger derives the display strings from them. */
+  household?: {
+    firstName: string;
+    lastName: string;
+    partnerFirstName?: string;
+    partnerLastName?: string;
+    kids?: { first: string; last?: string }[];
+  };
 }): Promise<string> {
+  const h = opts.household;
   const rows = await db`
     insert into public.contacts
       (book_id, full_name, email, partner_name, kids_names, address_line1,
-       city, state_region, postal_code, country)
+       city, state_region, postal_code, country, first_name, last_name,
+       partner_first_name, partner_last_name, kids)
     values
       (${opts.bookId}, ${opts.fullName}, ${opts.email ?? null},
        ${opts.partnerName ?? null}, ${opts.kidsNames ?? null},
        ${opts.addressLine1 ?? null}, ${opts.city ?? null},
        ${opts.stateRegion ?? null}, ${opts.postalCode ?? null},
-       ${opts.country ?? null})
+       ${opts.country ?? null}, ${h?.firstName ?? null}, ${h?.lastName ?? null},
+       ${h?.partnerFirstName ?? null}, ${h?.partnerLastName ?? null},
+       ${h?.kids ? db.json(h.kids) : null})
     returning id`;
   return rows[0].id as string;
 }

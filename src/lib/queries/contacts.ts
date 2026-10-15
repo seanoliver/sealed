@@ -3,6 +3,7 @@ import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
+import { type StoredNames } from "@/lib/names";
 
 const SEND_STATUSES = [
   "sent",
@@ -15,10 +16,8 @@ const SEND_STATUSES = [
 /** Latest email_sends.status for a contact, or "none" when never emailed. */
 export type SendStatus = "none" | (typeof SEND_STATUSES)[number];
 
-export interface ContactListRow {
+export interface ContactListRow extends StoredNames {
   id: string;
-  fullName: string;
-  partnerName: string | null;
   email: string | null;
   addressLine1: string | null;
   city: string | null;
@@ -92,6 +91,12 @@ export async function listContacts(
         id: contacts.id,
         fullName: contacts.fullName,
         partnerName: contacts.partnerName,
+        kidsNames: contacts.kidsNames,
+        firstName: contacts.firstName,
+        lastName: contacts.lastName,
+        partnerFirstName: contacts.partnerFirstName,
+        partnerLastName: contacts.partnerLastName,
+        kids: contacts.kids,
         email: contacts.email,
         addressLine1: contacts.addressLine1,
         city: contacts.city,

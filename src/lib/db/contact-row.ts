@@ -1,5 +1,10 @@
 import "server-only";
-import { type ContactInput } from "@/lib/validation/contact";
+import { formatKids, formatPerson } from "@/lib/names";
+import {
+  type ContactDetailsInput,
+  type ContactInput,
+} from "@/lib/validation/contact";
+import { type HouseholdInput } from "@/lib/validation/household";
 
 /**
  * Parsed contact input → drizzle column values (cleared optionals become
@@ -10,6 +15,31 @@ export function contactInputToRow(d: ContactInput) {
     fullName: d.full_name,
     partnerName: d.partner_name ?? null,
     kidsNames: d.kids_names ?? null,
+    ...contactDetailsToRow(d),
+  };
+}
+
+/**
+ * Household names → structured columns plus the display strings the
+ * contacts_sync_names trigger would derive. Writing both keeps a removed
+ * partner or kid group from leaving its display string behind.
+ */
+export function householdToRow(h: HouseholdInput) {
+  return {
+    firstName: h.first_name,
+    lastName: h.last_name,
+    fullName: formatPerson({ first: h.first_name, last: h.last_name }) ?? h.first_name,
+    partnerFirstName: h.partner_first_name ?? null,
+    partnerLastName: h.partner_last_name ?? null,
+    partnerName: formatPerson({ first: h.partner_first_name, last: h.partner_last_name }),
+    kids: h.kids ?? null,
+    kidsNames: formatKids({ kids: h.kids, familyLast: h.last_name }),
+  };
+}
+
+/** Every column except names. */
+export function contactDetailsToRow(d: ContactDetailsInput) {
+  return {
     email: d.email ?? null,
     birthday: d.birthday ?? null,
     addressLine1: d.address_line1 ?? null,

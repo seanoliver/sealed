@@ -33,6 +33,14 @@ export const contactSchema = z.object({
 });
 export type ContactInput = z.infer<typeof contactSchema>;
 
+/** Everything but names, which come from the household builder on owner forms. */
+export const contactDetailsSchema = contactSchema.omit({
+  full_name: true,
+  partner_name: true,
+  kids_names: true,
+});
+export type ContactDetailsInput = z.infer<typeof contactDetailsSchema>;
+
 /** Form field names in display order; shared by the form, actions, and diffs. */
 export const CONTACT_FIELDS = [
   "full_name",

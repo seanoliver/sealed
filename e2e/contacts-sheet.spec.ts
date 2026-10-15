@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   cleanupUser,
   deleteContact,
+  getContactNamesByEmail,
   getContactRow,
   getUserIdByEmail,
   seedBook,
@@ -182,7 +183,7 @@ test("Enter edits the row in place and keeps fields the row does not show", asyn
   const row = table()
     .locator("tbody tr")
     .filter({ has: page.getByRole("textbox") });
-  await expect(row.getByRole("textbox", { name: "Name" })).toBeFocused();
+  await expect(row.getByRole("button", { name: /Ada Lovelace/ })).toBeFocused();
   await row.getByRole("textbox", { name: "City" }).fill("Paris");
   await page.keyboard.press("Enter");
 
@@ -192,7 +193,7 @@ test("Enter edits the row in place and keeps fields the row does not show", asyn
 
   await page.goto(`/dashboard/contacts/${adaId}`);
   await expect(page.locator("#city")).toHaveValue("Paris");
-  await expect(page.locator("#kids_names")).toHaveValue("Byron");
+  await expect(page.locator("#kid_0_first")).toHaveValue("Byron");
   await expect(
     page.getByRole("region", { name: "History" }).locator("li").first(),
   ).toContainText('"city": "Paris"');
@@ -202,6 +203,7 @@ test("Escape discards the edit", async () => {
   await openDashboard();
   await bodyRow("Bea Brown").locator("td").nth(3).click();
   await page.keyboard.press("Enter");
+  await table().getByRole("textbox", { name: "City" }).focus();
   await page.keyboard.type(" Changed");
   await page.keyboard.press("Escape");
 
@@ -223,13 +225,16 @@ test("an invalid edit shows the error and stays in edit mode", async () => {
     page.getByRole("alert").filter({ hasText: "You already have" }),
   ).toHaveText("You already have a contact with this email");
   await expect(email).toHaveValue("ada@example.test");
-  const name = table().getByRole("textbox", { name: "Name" });
-  await name.fill("");
-  await name.press("Enter");
-  await expect(
-    page.getByRole("alert").filter({ hasText: "Name is required" }),
-  ).toHaveText("Name is required");
+  await table().getByRole("button", { name: /Bea Brown/ }).click();
+  const panel = page.getByRole("dialog", { name: "Household" });
+  const first = panel.getByRole("textbox", { name: "Contact first name" });
+  await first.fill("");
+  await first.press("Enter");
+  await expect(panel.getByText("Add a first name.")).toBeVisible();
 
+  // The first Esc closes the panel, the second cancels the row.
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(bodyRow("Bea Brown")).toContainText("bea@example.test");
 });
@@ -269,12 +274,16 @@ test("a row save keeps changes made elsewhere since the page loaded", async () =
   await bodyRow("Bea Brown")
     .getByRole("button", { name: "Edit Bea Brown" })
     .click();
-  await table().getByRole("textbox", { name: "Partner" }).fill("Sam");
+  await table().getByRole("button", { name: /Bea Brown/ }).click();
+  const panel = page.getByRole("dialog", { name: "Household" });
+  await panel.getByRole("button", { name: "Add a child" }).click();
+  await panel.getByRole("textbox", { name: "Child 1 first name" }).fill("Sam");
   await page.keyboard.press("Enter");
   await expect(table().getByRole("textbox")).toHaveCount(0);
+  await expect(bodyRow("Bea Brown")).toContainText("· 1 kid");
 
   await page.goto(`/dashboard/contacts/${beaId}`);
-  await expect(page.locator("#partner_name")).toHaveValue("Sam");
+  await expect(page.locator("#kid_0_first")).toHaveValue("Sam");
   await expect(page.locator("#city")).toHaveValue("Oslo");
 });
 
@@ -338,7 +347,7 @@ test("arrow keys still move rows from a focused checkbox", async () => {
 test("double-clicking a row edits it", async () => {
   await openDashboard();
   await bodyRow("Bea Brown").locator("td").nth(3).dblclick();
-  await expect(table().getByRole("textbox", { name: "Name" })).toBeFocused();
+  await expect(table().getByRole("button", { name: /Bea/ })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(table().getByRole("textbox")).toHaveCount(0);
 });
@@ -495,7 +504,7 @@ test("a row deleted while being edited does not block other edits", async () => 
   const tempId = await seedContact({ bookId, fullName: "Temp Row" });
   await openDashboard();
   await bodyRow("Temp Row").locator("td").nth(3).dblclick();
-  await expect(table().getByRole("textbox", { name: "Name" })).toBeVisible();
+  await expect(table().getByRole("button", { name: /Temp Row/ })).toBeVisible();
 
   await deleteContact(tempId);
   await page.evaluate(() =>
@@ -503,7 +512,7 @@ test("a row deleted while being edited does not block other edits", async () => 
   );
   await expect(table().getByRole("textbox")).toHaveCount(0);
   await bodyRow("Ada Lovelace").locator("td").nth(3).dblclick();
-  await expect(table().getByRole("textbox", { name: "Name" })).toBeFocused();
+  await expect(table().getByRole("button", { name: /Ada Lovelace/ })).toBeFocused();
   await page.keyboard.press("Escape");
 });
 
@@ -528,7 +537,7 @@ test("pressing Enter twice while saving sends one save", async () => {
 });
 
 async function saveWithRewrittenArgs(
-  rewrite: (args: [string, Record<string, string>]) => unknown[],
+  rewrite: (args: [string, Record<string, unknown>]) => unknown[],
 ) {
   await openDashboard();
   await page.route("**/dashboard", (route) => {
@@ -631,13 +640,13 @@ test("phones get a list with the same selection", async () => {
 test("hidden columns stay hidden after a reload", async () => {
   await openDashboard();
   await expect(
-    table().getByRole("columnheader", { name: "Partner" }),
+    table().getByRole("columnheader", { name: "Country" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Columns" }).click();
-  await page.getByRole("menuitemcheckbox", { name: "Partner" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Country" }).click();
   await page.keyboard.press("Escape");
   await expect(
-    table().getByRole("columnheader", { name: "Partner" }),
+    table().getByRole("columnheader", { name: "Country" }),
   ).toHaveCount(0);
 
   await page.reload();
@@ -645,7 +654,7 @@ test("hidden columns stay hidden after a reload", async () => {
     table().getByRole("columnheader", { name: "City" }),
   ).toBeVisible();
   await expect(
-    table().getByRole("columnheader", { name: "Partner" }),
+    table().getByRole("columnheader", { name: "Country" }),
   ).toHaveCount(0);
 });
 
@@ -665,6 +674,143 @@ test("a selected contact whose email is cleared drops out of the request", async
   await expect(
     page.getByRole("button", { name: "Request addresses", exact: true }),
   ).toBeVisible();
+});
+
+test("the Name cell shows one line for the household", async () => {
+  await seedContact({
+    bookId,
+    fullName: "x",
+    email: "jen@example.test",
+    household: {
+      firstName: "Jen",
+      lastName: "Holloway",
+      partnerFirstName: "Mark",
+      partnerLastName: "Holloway",
+      kids: [{ first: "Zoe", last: "Holloway" }, { first: "Max" }],
+    },
+  });
+  await seedContact({
+    bookId,
+    fullName: "x",
+    household: {
+      firstName: "Priya",
+      lastName: "Raman",
+      partnerFirstName: "Daniel",
+      partnerLastName: "Okafor",
+      kids: [{ first: "Asha", last: "Okafor" }],
+    },
+  });
+  await seedContact({ bookId, fullName: "Cher", partnerName: "Sonny" });
+  await openDashboard();
+
+  await expect(
+    table().getByRole("columnheader", { name: "Partner" }),
+  ).toHaveCount(0);
+  await expect(bodyRow("Jen & Mark Holloway")).toContainText("· 2 kids");
+  await expect(bodyRow("Priya Raman & Daniel Okafor")).toContainText("· 1 kid");
+  // Contacts saved as one string are marked until someone splits them.
+  await expect(bodyRow("Cher & Sonny")).toContainText("(not split yet)");
+  await expect(bodyRow("Jen & Mark Holloway")).not.toContainText("not split yet");
+});
+
+test("the household panel edits a kid by keyboard and Esc keeps the draft", async () => {
+  await openDashboard();
+  await bodyRow("Jen & Mark Holloway").locator("td").nth(3).click();
+  await page.keyboard.press("Enter");
+  const name = table().getByRole("button", { name: /Jen & Mark Holloway/ });
+  await expect(name).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("dialog", { name: "Household" });
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByRole("textbox", { name: "Contact first name" }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    panel.getByRole("textbox", { name: "Contact last name" }),
+  ).toBeFocused();
+  // Max follows the contact's last name until edited.
+  await expect(
+    panel.getByRole("textbox", { name: "Child 2 last name" }),
+  ).toHaveValue("Holloway");
+  await panel.getByRole("textbox", { name: "Child 2 first name" }).fill("Maxine");
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(name).toBeFocused();
+  await expect(table().getByRole("button", { name: "Save" })).toBeVisible();
+
+  await page.keyboard.press("Enter");
+  await expect(
+    panel.getByRole("textbox", { name: "Child 2 first name" }),
+  ).toHaveValue("Maxine");
+  await panel.getByRole("textbox", { name: "Child 2 first name" }).press("Enter");
+  await expect(table().getByRole("textbox")).toHaveCount(0);
+  await expect(bodyRow("Jen & Mark Holloway")).toBeFocused();
+
+  expect(await getContactNamesByEmail("jen@example.test")).toMatchObject({
+    kidsNames: "Zoe, Maxine",
+    kids: [
+      { first: "Zoe", last: "Holloway" },
+      { first: "Maxine", last: "Holloway" },
+    ],
+  });
+});
+
+test("Esc twice from the household panel cancels the row", async () => {
+  await openDashboard();
+  await bodyRow("Jen & Mark Holloway").locator("td").nth(3).dblclick();
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("dialog", { name: "Household" });
+  await panel.getByRole("button", { name: "Remove partner" }).click();
+  await page.keyboard.press("Escape");
+  await expect(
+    table().getByRole("button", { name: /^Jen Holloway/ }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(table().getByRole("textbox")).toHaveCount(0);
+  await expect(bodyRow("Jen & Mark Holloway")).toBeVisible();
+});
+
+test("splitting a legacy row waits for the required names", async () => {
+  await openDashboard();
+  await bodyRow("Cher & Sonny").locator("td").nth(3).dblclick();
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("dialog", { name: "Household" });
+  await expect(panel).toContainText("Saved as one name: Cher · Sonny");
+  await expect(
+    panel.getByRole("textbox", { name: "Contact first name" }),
+  ).toHaveValue("Cher");
+  const last = panel.getByRole("textbox", { name: "Contact last name" });
+  await expect(last).toHaveValue("");
+  await last.press("Enter");
+  // Not saved: the panel stays open on the error.
+  await expect(panel.getByText("Add a last name.")).toBeVisible();
+  await expect(last).toBeFocused();
+
+  await last.fill("Sarkisian");
+  await expect(panel.getByText("Add a last name.")).toHaveCount(0);
+  await last.press("Enter");
+  await expect(table().getByRole("textbox")).toHaveCount(0);
+  const row = bodyRow("Cher & Sonny Sarkisian");
+  await expect(row).toBeVisible();
+  await expect(row).not.toContainText("not split yet");
+});
+
+test("Sort by last name puts unsplit contacts last", async () => {
+  await openDashboard();
+  await page.getByRole("button", { name: "Sort" }).click();
+  await page.getByRole("menuitemradio", { name: "Last name" }).click();
+  await expect(page.getByRole("button", { name: "Sort: Last name" })).toBeVisible();
+  await expect(table().locator("tbody tr")).toHaveText([
+    /Bea Brown/,
+    /Jen & Mark Holloway/,
+    /Priya Raman & Daniel Okafor/,
+    /Cher & Sonny Sarkisian/,
+    /Ada Lovelace/,
+    /Cole Abernathy/,
+  ]);
 });
 
 let clockInstalled = false;

@@ -30,6 +30,7 @@ import {
   type ColumnVisibilityState,
   type Header,
   type Row,
+  type SortFn,
   type SubscribeSource,
 } from "@tanstack/react-table";
 import {
@@ -39,15 +40,30 @@ import {
 import { patchContact } from "@/app/dashboard/contacts/actions";
 import {
   changedValues,
+  draftFromNames,
+  draftToValues,
+  householdEdited,
+  householdPatchInput,
   moveCursor,
+  namesFromValues,
   parseStoredLayout,
+  sheetName,
   STATUS_RANK,
+  validateHousehold,
+  type HouseholdDraft,
   type RowKey,
   type SheetField,
   type SheetRow,
   type SheetValues,
   type StatusKey,
 } from "@/lib/contacts-sheet";
+import { compareLastName, lastNameKey, type StoredNames } from "@/lib/names";
+import { type HouseholdFieldErrors } from "@/lib/validation/household";
+import {
+  HouseholdLabel,
+  HouseholdNameCell,
+  UnsplitDot,
+} from "./household-panel";
 
 const chipBase =
   "inline-flex items-center rounded-full border px-2 py-px text-xs font-medium whitespace-nowrap";
@@ -93,8 +109,6 @@ type FieldColumn = {
 };
 
 const FIELD_COLUMNS: FieldColumn[] = [
-  { field: "full_name", label: "Name", size: 170, maxLength: 200 },
-  { field: "partner_name", label: "Partner", size: 110, maxLength: 200 },
   { field: "email", label: "Email", size: 200, maxLength: 320 },
   { field: "address_line1", label: "Street", size: 160, maxLength: 200 },
   { field: "city", label: "City", size: 110, maxLength: 120 },
@@ -108,10 +122,32 @@ const FIELD_BY_ID = new Map<string, FieldColumn>(
 );
 
 const COLUMN_LABELS: Record<string, string> = {
+  full_name: "Name",
   ...Object.fromEntries(FIELD_COLUMNS.map((c) => [c.field, c.label])),
   status: "Status",
   updated: "Updated",
 };
+
+/** "full_name" keeps the Name column's id so saved widths still apply. */
+const NAME_COLUMN = "full_name";
+/** Hidden column behind the "Last name" sort. */
+const LAST_NAME_COLUMN = "last_name";
+
+const COLUMN_IDS = [
+  "select",
+  NAME_COLUMN,
+  ...FIELD_COLUMNS.map((c) => c.field),
+  "status",
+  "updated",
+  LAST_NAME_COLUMN,
+  "actions",
+];
+
+const sortFn_lastName: SortFn<typeof features, SheetRow> = (a, b, columnId) =>
+  compareLastName(
+    a.getValue(columnId) as { first: string; last: string },
+    b.getValue(columnId) as { first: string; last: string },
+  );
 
 const features = tableFeatures({
   rowSortingFeature,
@@ -136,6 +172,14 @@ const columns = helper.columns([
     enableResizing: false,
     enableHiding: false,
   }),
+  helper.accessor((row) => sheetName(row.names).line, {
+    id: NAME_COLUMN,
+    header: "Name",
+    size: 220,
+    minSize: 100,
+    sortFn: "text",
+    enableHiding: false,
+  }),
   ...FIELD_COLUMNS.map((c) =>
     helper.accessor((row) => row.values[c.field] || undefined, {
       id: c.field,
@@ -144,7 +188,6 @@ const columns = helper.columns([
       minSize: 60,
       sortFn: "text",
       sortUndefined: "last",
-      enableHiding: c.field !== "full_name",
     }),
   ),
   helper.accessor((row) => STATUS_RANK[row.status], {
@@ -162,6 +205,14 @@ const columns = helper.columns([
     minSize: 80,
     sortFn: "basic",
     sortDescFirst: true,
+  }),
+  // Never shown: unsplit contacts have no key and sort after everyone else.
+  helper.accessor((row) => lastNameKey(row.names), {
+    id: LAST_NAME_COLUMN,
+    sortFn: sortFn_lastName,
+    sortUndefined: "last",
+    enableHiding: false,
+    enableResizing: false,
   }),
   helper.display({
     id: "actions",
@@ -191,6 +242,7 @@ function useStoredLayout() {
     try {
       stored = parseStoredLayout(
         window.localStorage.getItem(LAYOUT_STORAGE_KEY),
+        { columnIds: COLUMN_IDS },
       );
     } catch {}
     // eslint-disable-next-line react-hooks/set-state-in-effect -- storage only exists after hydration
@@ -261,8 +313,11 @@ type EditState = { id: string; error?: string; stalled?: boolean };
 type SavedOverlay = {
   id: string;
   values: Partial<SheetValues>;
+  names?: StoredNames;
   rows: SheetRow[];
 };
+
+type SortChoice = "default" | "last_name";
 
 export function ContactsTable({ rows }: { rows: SheetRow[] }) {
   const router = useRouter();
@@ -298,7 +353,10 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
       enableRowSelection: (row) => row.original.values.email !== "",
       columnResizeMode: "onEnd",
       state: {
-        columnVisibility: layout.columnVisibility,
+        columnVisibility: {
+          ...layout.columnVisibility,
+          [LAST_NAME_COLUMN]: false,
+        },
         columnSizing: layout.columnSizing,
       },
       onColumnVisibilityChange: layout.setColumnVisibility,
@@ -339,7 +397,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
     if (editing) {
       rowRefs.current
         .get(editing.id)
-        ?.querySelector<HTMLInputElement>("input[data-cell-input]")
+        ?.querySelector<HTMLElement>("[data-cell-input]")
         ?.focus();
       return;
     }
@@ -358,7 +416,11 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
     if (refocus) setRefocusId(id);
   }
 
-  function saveEdit(row: SheetTableRow, draft: Partial<SheetValues>) {
+  function saveEdit(
+    row: SheetTableRow,
+    draft: Partial<SheetValues>,
+    household: HouseholdDraft | null,
+  ) {
     if (savingRef.current) return;
     if (sendingRef.current) {
       setEditState((current) =>
@@ -368,7 +430,11 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
       return;
     }
     const patch = changedValues(row.original.values, draft);
-    if (Object.keys(patch).length === 0) {
+    const names =
+      household && householdEdited(row.original.names, household)
+        ? draftToValues(household)
+        : null;
+    if (Object.keys(patch).length === 0 && names === null) {
       finishEdit(row.id);
       return;
     }
@@ -384,7 +450,12 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
     void (async () => {
       let error: string | undefined;
       try {
-        error = (await patchContact(row.id, patch)).error;
+        error = (
+          await patchContact(row.id, {
+            values: patch,
+            household: names ? householdPatchInput(names) : undefined,
+          })
+        ).error;
       } catch {
         error = SAVE_FAILED;
       }
@@ -396,16 +467,22 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
         setEditState({ id: row.id, error });
       } else if (error) {
         setNotice(
-          `Your change to ${row.original.values.full_name} wasn't saved. ${error}`,
+          `Your change to ${row.original.names.fullName} wasn't saved. ${error}`,
         );
       } else {
         setNotice((current) => (current === SAVE_PENDING ? null : current));
-        setSaved({ id: row.id, values: patch, rows });
+        setSaved({
+          id: row.id,
+          values: patch,
+          names: names ? namesFromValues(names) : undefined,
+          rows,
+        });
         const active = document.activeElement;
         const focusInRow =
           active === null ||
           active === document.body ||
-          Boolean(rowRefs.current.get(row.id)?.contains(active));
+          Boolean(rowRefs.current.get(row.id)?.contains(active)) ||
+          Boolean(active.closest("[data-household-panel]"));
         if (stillEditing) finishEdit(row.id, { refocus: focusInRow });
       }
     })();
@@ -484,6 +561,14 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
       </p>
     );
 
+  const sorting = table.state.sorting;
+  const sortChoice: SortChoice | null =
+    sorting.length === 0
+      ? "default"
+      : sorting[0]?.id === LAST_NAME_COLUMN
+        ? "last_name"
+        : null;
+
   const selectedCount = selectedIds.length;
   const hideableColumns = table
     .getAllLeafColumns()
@@ -551,6 +636,52 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
           <span className="text-sm text-muted-foreground">Sending…</span>
         ) : null}
         <span className="flex-1" />
+        <Menu.Root>
+          <Menu.Trigger className={buttonClasses}>
+            {sortChoice === "last_name" ? "Sort: Last name" : "Sort"}
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner
+              sideOffset={6}
+              align="end"
+              className="z-50 outline-none"
+            >
+              <Menu.Popup className="min-w-44 rounded-lg border border-border bg-card p-1 text-sm text-foreground shadow-md outline-none">
+                <Menu.RadioGroup
+                  value={sortChoice}
+                  onValueChange={(value: SortChoice) =>
+                    table.setSorting(
+                      value === "last_name"
+                        ? [{ id: LAST_NAME_COLUMN, desc: false }]
+                        : [],
+                    )
+                  }
+                >
+                  {(
+                    [
+                      ["default", "First name"],
+                      ["last_name", "Last name"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <Menu.RadioItem
+                      key={value}
+                      value={value}
+                      className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 outline-none select-none data-highlighted:bg-muted"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="flex size-4 items-center justify-center"
+                      >
+                        <Menu.RadioItemIndicator className="size-1.5 rounded-full bg-foreground" />
+                      </span>
+                      {label}
+                    </Menu.RadioItem>
+                  ))}
+                </Menu.RadioGroup>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
         <div className="hidden md:block">
           <Menu.Root>
             <Menu.Trigger className={buttonClasses}>Columns</Menu.Trigger>
@@ -686,7 +817,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
                       {...shared}
                       isSaving={isSaving}
                       canCancel={!isSaving || Boolean(editing.stalled)}
-                      onSave={(draft) => saveEdit(row, draft)}
+                      onSave={(draft, household) => saveEdit(row, draft, household)}
                       onCancel={() => finishEdit(row.id)}
                     />
                   ) : (
@@ -697,6 +828,11 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
                         saved?.id === row.id && saved.rows === rows
                           ? { ...row.original.values, ...saved.values }
                           : row.original.values
+                      }
+                      names={
+                        saved?.id === row.id && saved.rows === rows
+                          ? (saved.names ?? row.original.names)
+                          : row.original.names
                       }
                       isActive={row.id === activeRowId}
                       focusOnMount={row.id === refocusId}
@@ -736,7 +872,8 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
           className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card md:hidden"
         >
           {sortedRows.map((row) => {
-            const { values } = row.original;
+            const { values, names } = row.original;
+            const name = sheetName(names);
             const place = [values.address_line1, values.city]
               .filter(Boolean)
               .join(", ");
@@ -747,7 +884,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
               >
                 <input
                   type="checkbox"
-                  aria-label={`Select ${values.full_name}`}
+                  aria-label={`Select ${names.fullName}`}
                   checked={row.getIsSelected()}
                   disabled={!row.getCanSelect()}
                   onChange={() => row.toggleSelected()}
@@ -757,8 +894,11 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
                   href={`/dashboard/contacts/${row.id}`}
                   className="min-w-0 flex-1"
                 >
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {values.full_name}
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    {name.split ? null : <UnsplitDot />}
+                    <span className="flex min-w-0 items-baseline">
+                      <HouseholdLabel line={name.line} kids={name.kids} />
+                    </span>
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {place || "No address yet"}
@@ -871,7 +1011,7 @@ function SelectCell({ row, isSelected }: Pick<RowProps, "row" | "isSelected">) {
         type="checkbox"
         // The row is the Tab stop; Space on the row toggles this.
         tabIndex={-1}
-        aria-label={`Select ${row.original.values.full_name}`}
+        aria-label={`Select ${row.original.names.fullName}`}
         checked={isSelected}
         disabled={!row.getCanSelect()}
         title={
@@ -912,6 +1052,7 @@ function ViewRow({
   isSelected,
   setRef,
   values,
+  names,
   isActive,
   focusOnMount,
   onRefocused,
@@ -920,6 +1061,7 @@ function ViewRow({
   onKeyDown,
 }: RowProps & {
   values: SheetValues;
+  names: StoredNames;
   isActive: boolean;
   focusOnMount: boolean;
   onRefocused: () => void;
@@ -959,6 +1101,28 @@ function ViewRow({
         if (id === "status" || id === "updated") {
           return <StaticCell key={cell.id} row={row} columnId={id} />;
         }
+        if (id === NAME_COLUMN) {
+          const name = sheetName(names);
+          return (
+            <td key={cell.id} className={cellClasses}>
+              <span className="flex min-w-0 items-center gap-1.5">
+                {name.split ? null : <UnsplitDot />}
+                <Link
+                  href={`/dashboard/contacts/${row.id}`}
+                  tabIndex={-1}
+                  className="truncate font-medium text-foreground underline-offset-2 hover:underline"
+                >
+                  {name.line}
+                </Link>
+                {name.kids ? (
+                  <span className="shrink-0 text-muted-foreground">
+                    · {name.kids}
+                  </span>
+                ) : null}
+              </span>
+            </td>
+          );
+        }
         if (field) {
           const value = values[field.field];
           return (
@@ -966,17 +1130,7 @@ function ViewRow({
               key={cell.id}
               className={`${cellClasses} truncate text-foreground/80`}
             >
-              {field.field === "full_name" ? (
-                <Link
-                  href={`/dashboard/contacts/${row.id}`}
-                  tabIndex={-1}
-                  className="font-medium text-foreground underline-offset-2 hover:underline"
-                >
-                  {value}
-                </Link>
-              ) : (
-                value || <span className="text-muted-foreground/50">—</span>
-              )}
+              {value || <span className="text-muted-foreground/50">—</span>}
             </td>
           );
         }
@@ -985,7 +1139,7 @@ function ViewRow({
             <button
               type="button"
               tabIndex={-1}
-              aria-label={`Edit ${values.full_name}`}
+              aria-label={`Edit ${names.fullName}`}
               onClick={onEdit}
               className="h-7 rounded-md px-2 text-xs font-medium text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 hover:bg-muted hover:text-foreground"
             >
@@ -1010,18 +1164,36 @@ function EditingRow({
 }: RowProps & {
   isSaving: boolean;
   canCancel: boolean;
-  onSave: (draft: Partial<SheetValues>) => void;
+  onSave: (draft: Partial<SheetValues>, household: HouseholdDraft | null) => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<Partial<SheetValues>>({});
-  const { values } = row.original;
-  const firstFieldId = cells.find((cell) => FIELD_BY_ID.has(cell.column.id))
-    ?.column.id;
+  // Null until the panel first opens; closing it keeps the draft.
+  const [household, setHousehold] = useState<HouseholdDraft | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [householdErrors, setHouseholdErrors] =
+    useState<HouseholdFieldErrors | null>(null);
+  const { values, names } = row.original;
+  const firstCellId = cells.find(
+    (cell) => cell.column.id === NAME_COLUMN || FIELD_BY_ID.has(cell.column.id),
+  )?.column.id;
+
+  function save() {
+    if (household && householdEdited(names, household)) {
+      const result = validateHousehold(draftToValues(household));
+      if (!result.ok) {
+        setHouseholdErrors(result.errors);
+        setPanelOpen(true);
+        return;
+      }
+    }
+    onSave(draft, household);
+  }
 
   function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      onSave(draft);
+      save();
     }
   }
 
@@ -1050,6 +1222,30 @@ function EditingRow({
         if (id === "status" || id === "updated") {
           return <StaticCell key={cell.id} row={row} columnId={id} />;
         }
+        if (id === NAME_COLUMN) {
+          return (
+            <td key={cell.id} className={`${cellClasses} px-1`}>
+              <HouseholdNameCell
+                names={names}
+                draft={household}
+                onOpen={() => setHousehold((current) => current ?? draftFromNames(names))}
+                onDraftChange={(next) => {
+                  setHousehold(next);
+                  if (householdErrors) {
+                    const result = validateHousehold(draftToValues(next));
+                    setHouseholdErrors(result.ok ? null : result.errors);
+                  }
+                }}
+                open={panelOpen}
+                onOpenChange={setPanelOpen}
+                errors={householdErrors}
+                isSaving={isSaving}
+                onSave={save}
+                autoFocus={id === firstCellId}
+              />
+            </td>
+          );
+        }
         if (field) {
           return (
             <td key={cell.id} className={`${cellClasses} px-1`}>
@@ -1057,7 +1253,7 @@ function EditingRow({
                 data-cell-input
                 aria-label={field.label}
                 maxLength={field.maxLength}
-                autoFocus={id === firstFieldId}
+                autoFocus={id === firstCellId}
                 readOnly={isSaving}
                 value={draft[field.field] ?? values[field.field]}
                 onChange={(event) =>
@@ -1078,7 +1274,7 @@ function EditingRow({
               <button
                 type="button"
                 aria-disabled={isSaving}
-                onClick={() => onSave(draft)}
+                onClick={save}
                 className="h-7 rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground hover:bg-primary/80 aria-disabled:opacity-50"
               >
                 {isSaving ? "Saving…" : "Save"}

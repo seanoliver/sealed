@@ -18,6 +18,8 @@ type HouseholdFieldsProps = {
   defaults: HouseholdValues;
   enabled: Pick<EnabledFields, "partner_name" | "kids_names">;
   errors?: HouseholdFieldErrors;
+  /** "owner" words the rows about the contact rather than "you". */
+  audience?: "recipient" | "owner";
 };
 
 const errorClasses = "text-xs text-red-700 dark:text-red-300";
@@ -159,6 +161,7 @@ export function HouseholdFields({
   defaults,
   enabled,
   errors = {},
+  audience = "recipient",
 }: HouseholdFieldsProps) {
   const [firstName, setFirstName] = useState(defaults.first_name);
   const [lastName, setLastName] = useState(defaults.last_name);
@@ -178,7 +181,9 @@ export function HouseholdFields({
   return (
     <>
       <div className="flex flex-col gap-1.5">
-        <span className={labelClasses}>Your name</span>
+        <span className={labelClasses}>
+          {audience === "owner" ? "Name" : "Your name"}
+        </span>
         <div className="grid grid-cols-2 gap-2">
           <NameInput
             id="first_name"
@@ -227,7 +232,7 @@ export function HouseholdFields({
           hint={
             !partner.lastEdited && lastName !== "" ? (
               <p className="text-xs text-muted-foreground">
-                Same last name as you ·{" "}
+                {audience === "owner" ? "Same last name" : "Same last name as you"} ·{" "}
                 <button
                   type="button"
                   onClick={() => {

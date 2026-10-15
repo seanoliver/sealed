@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { getContactWithEvents } from "@/lib/queries/contacts";
 import { ContactForm } from "@/components/contact-form";
+import { householdPrefill } from "@/lib/names";
 import { updateContact } from "../actions";
 import { DeleteContactButton } from "./delete-contact-button";
 
@@ -60,6 +61,7 @@ export default async function ContactDetailPage({
           action={updateContact}
           contactId={contact.id}
           submitLabel="Save changes"
+          household={householdPrefill(contact)}
           defaults={{
             full_name: contact.fullName,
             partner_name: contact.partnerName ?? "",
