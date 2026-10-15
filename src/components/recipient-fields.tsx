@@ -30,8 +30,7 @@ type RecipientFieldsProps = {
   defaults: TokenUpdateValues;
   enabled: EnabledFields;
   emailHint?: string;
-  /** Renders the household builder in place of the legacy name fields. */
-  household?: { defaults: HouseholdValues; errors?: HouseholdFieldErrors };
+  household: { defaults: HouseholdValues; errors?: HouseholdFieldErrors };
 };
 
 type FieldProps = {
@@ -69,52 +68,6 @@ function Field({
   );
 }
 
-/** Legacy display-string name fields, still used by /u/[token]. */
-function LegacyNameFields({
-  defaults: v,
-  enabled,
-}: {
-  defaults: TokenUpdateValues;
-  enabled: EnabledFields;
-}) {
-  return (
-    <>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="full_name" className={labelClasses}>
-          Full name
-        </label>
-        <input
-          id="full_name"
-          name="full_name"
-          type="text"
-          required
-          maxLength={200}
-          defaultValue={v.full_name}
-          className={inputClasses}
-        />
-      </div>
-
-      {enabled.partner_name ? (
-        <Field
-          name="partner_name"
-          label="Partner name"
-          value={v.partner_name}
-          maxLength={200}
-        />
-      ) : null}
-      {enabled.kids_names ? (
-        <Field
-          name="kids_names"
-          label="Kids' names"
-          value={v.kids_names}
-          maxLength={2000}
-          hint="Comma separated."
-        />
-      ) : null}
-    </>
-  );
-}
-
 /** The shared field layout for live recipient forms and inert previews. */
 export function RecipientFields({
   defaults: v,
@@ -124,15 +77,11 @@ export function RecipientFields({
 }: RecipientFieldsProps) {
   return (
     <>
-      {household ? (
-        <HouseholdFields
-          defaults={household.defaults}
-          enabled={enabled}
-          errors={household.errors}
-        />
-      ) : (
-        <LegacyNameFields defaults={v} enabled={enabled} />
-      )}
+      <HouseholdFields
+        defaults={household.defaults}
+        enabled={enabled}
+        errors={household.errors}
+      />
       <Field
         name="email"
         label="Email"

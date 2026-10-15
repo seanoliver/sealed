@@ -128,9 +128,8 @@ const COLUMN_LABELS: Record<string, string> = {
   updated: "Updated",
 };
 
-/** "full_name" keeps the Name column's id so saved widths still apply. */
+// Keep the "full_name" id so saved column widths still apply.
 const NAME_COLUMN = "full_name";
-/** Hidden column behind the "Last name" sort. */
 const LAST_NAME_COLUMN = "last_name";
 
 const COLUMN_IDS = [
@@ -206,7 +205,6 @@ const columns = helper.columns([
     sortFn: "basic",
     sortDescFirst: true,
   }),
-  // Never shown: unsplit contacts have no key and sort after everyone else.
   helper.accessor((row) => lastNameKey(row.names), {
     id: LAST_NAME_COLUMN,
     sortFn: sortFn_lastName,

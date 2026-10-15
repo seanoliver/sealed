@@ -93,7 +93,6 @@ export async function seedContact(opts: {
   stateRegion?: string;
   postalCode?: string;
   country?: string;
-  /** Structured names; the DB trigger derives the display strings from them. */
   household?: {
     firstName: string;
     lastName: string;

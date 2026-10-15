@@ -21,8 +21,6 @@ type Fixture = {
   kids: { kids: Kid[] | null; family_last: string | null; expected: string | null }[];
 };
 
-// The same JSON drives the pgTAP parity test, so both derivations are
-// checked against one set of expectations.
 function loadFixture(): Fixture {
   const sql = readFileSync(
     path.resolve(__dirname, "../../supabase/tests/database/03_household_names.sql"),

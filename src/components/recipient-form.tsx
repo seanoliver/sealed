@@ -32,7 +32,6 @@ import {
 export type RecipientFormState = {
   error?: string;
   values?: TokenUpdateValues;
-  /** Household builder only. */
   household?: HouseholdValues;
   fieldErrors?: HouseholdFieldErrors;
 };
@@ -49,11 +48,7 @@ type RecipientFormProps = {
   pendingLabel: string;
   /** Optional helper copy under the email input (e.g. "Optional — ..."). */
   emailHint?: string;
-  /**
-   * Collect names with the household builder, prefilled with these values,
-   * instead of the legacy fields.
-   */
-  household?: HouseholdValues;
+  household: HouseholdValues;
 };
 
 export function RecipientForm({
@@ -93,14 +88,10 @@ export function RecipientForm({
         defaults={v}
         enabled={enabled}
         emailHint={emailHint}
-        household={
-          household
-            ? {
-                defaults: state.household ?? household,
-                errors: state.fieldErrors,
-              }
-            : undefined
-        }
+        household={{
+          defaults: state.household ?? household,
+          errors: state.fieldErrors,
+        }}
       />
 
       <TurnstileWidget />

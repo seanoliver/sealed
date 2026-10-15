@@ -209,7 +209,6 @@ test("changing the slug requires acknowledging the link-break warning", async ()
 
 test("adds a contact via the form", async () => {
   await page.getByRole("link", { name: "Add contact" }).click();
-  // Owner forms always offer partner and kids rows.
   await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
   await page.locator("#first_name").fill("Ada");
   await page.getByRole("button", { name: "Add contact" }).click();

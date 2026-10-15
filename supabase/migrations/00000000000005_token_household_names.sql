@@ -1,7 +1,3 @@
--- /u/[token] reads and writes structured household names. The legacy
--- display-string keys still work; private.sync_contact_names keeps the two
--- forms consistent either way.
-
 set lock_timeout = '5s';
 
 create or replace function private.get_contact_for_token(p_token text)
@@ -28,13 +24,8 @@ returns jsonb language sql security definer set search_path = '' as $$
     and t.used_at is null
 $$;
 
--- Structured keys, each gated like its display string:
---   first_name + last_name (both non-empty) replace the contact's own name;
---   partner_first_name / partner_last_name (partner_name enabled) replace the
---     partner, and an empty partner_first_name clears it;
---   kids (kids_names enabled) replaces the kids, and [] or null clears them.
--- Display strings are written alongside so a cleared group also clears its
--- string (the trigger alone only derives from a set group).
+-- Write the display strings too: the trigger never clears one when its
+-- partner or kids group is removed.
 create or replace function private.apply_token_update(p_token text, p_payload jsonb)
 returns boolean language plpgsql security definer set search_path = '' as $$
 declare

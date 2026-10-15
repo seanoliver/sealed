@@ -19,11 +19,8 @@ export function contactInputToRow(d: ContactInput) {
   };
 }
 
-/**
- * Household names → structured columns plus the display strings the
- * contacts_sync_names trigger would derive. Writing both keeps a removed
- * partner or kid group from leaving its display string behind.
- */
+// Write the display strings too: the trigger never clears one when its
+// partner or kids group is removed.
 export function householdToRow(h: HouseholdInput) {
   return {
     firstName: h.first_name,
@@ -37,7 +34,6 @@ export function householdToRow(h: HouseholdInput) {
   };
 }
 
-/** Every column except names. */
 export function contactDetailsToRow(d: ContactDetailsInput) {
   return {
     email: d.email ?? null,

@@ -6,21 +6,21 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
-import { contactInputToRow as toRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { formatPerson, type Kid } from "@/lib/names";
-import {
-  TOKEN_UPDATE_FIELDS,
-  type TokenUpdateField,
-} from "@/lib/validation/contact";
 import {
   dropDisabledFields,
-  isHouseholdPayload,
   parseSubmissionPayload,
-  type SubmissionPayload,
 } from "@/lib/validation/submission";
+import {
+  changedFields,
+  definedFields,
+  mergeUpdate,
+  rowToSnapshot,
+  toInsertRow,
+  type Snapshot,
+} from "./merge";
 
 /**
  * Review-queue actions. `submissions.payload` is ATTACKER-CONTROLLED jsonb
@@ -45,151 +45,6 @@ const INVALID_PAYLOAD =
   "This submission contains invalid data and can't be approved — reject it instead.";
 const DUPLICATE_EMAIL =
   "You already have a contact with this email — use Apply update on the matching card or reject this one.";
-
-const NAME_FIELDS = [
-  "first_name",
-  "last_name",
-  "partner_first_name",
-  "partner_last_name",
-  "kids",
-] as const;
-
-/** Every contact field a submission can write, for audit diffs. */
-const SNAPSHOT_FIELDS = [...TOKEN_UPDATE_FIELDS, ...NAME_FIELDS] as const;
-type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
-
-/** Field snapshot keyed by schema names. No `notes`: it can never arrive via a submission. */
-type Snapshot = Record<TokenUpdateField, string | null> & {
-  first_name: string | null;
-  last_name: string | null;
-  partner_first_name: string | null;
-  partner_last_name: string | null;
-  kids: Kid[] | null;
-};
-
-function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
-  return {
-    full_name: row.fullName,
-    partner_name: row.partnerName,
-    kids_names: row.kidsNames,
-    email: row.email,
-    birthday: row.birthday,
-    address_line1: row.addressLine1,
-    address_line2: row.addressLine2,
-    city: row.city,
-    state_region: row.stateRegion,
-    postal_code: row.postalCode,
-    country: row.country,
-    first_name: row.firstName,
-    last_name: row.lastName,
-    partner_first_name: row.partnerFirstName,
-    partner_last_name: row.partnerLastName,
-    kids: row.kids,
-  };
-}
-
-// jsonb reorders object keys, so kids compare with sorted keys.
-const canonical = (value: unknown) =>
-  JSON.stringify(value, (_key, v: unknown) =>
-    v !== null && typeof v === "object" && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
-      : v,
-  );
-const sameValue = (a: unknown, b: unknown) => canonical(a) === canonical(b);
-
-/** Non-null fields only — keeps create diffs compact. */
-function definedFields(snap: Snapshot): Partial<Snapshot> {
-  const out: Partial<Record<SnapshotField, unknown>> = {};
-  for (const field of SNAPSHOT_FIELDS) {
-    if (snap[field] !== null) out[field] = snap[field];
-  }
-  return out as Partial<Snapshot>;
-}
-
-type SnapshotDiff = { before: Partial<Snapshot>; after: Partial<Snapshot> };
-
-/** Changed fields only, or undefined for a no-op merge (no audit row). */
-function changedFields(
-  before: Snapshot,
-  after: Snapshot,
-): SnapshotDiff | undefined {
-  const diff = {
-    before: {} as Partial<Record<SnapshotField, unknown>>,
-    after: {} as Partial<Record<SnapshotField, unknown>>,
-  };
-  let changed = false;
-  for (const field of SNAPSHOT_FIELDS) {
-    if (!sameValue(before[field], after[field])) {
-      diff.before[field] = before[field];
-      diff.after[field] = after[field];
-      changed = true;
-    }
-  }
-  return changed ? (diff as SnapshotDiff) : undefined;
-}
-
-/** Schema field name → contacts column name, for the merge update. */
-const FIELD_TO_COLUMN = {
-  full_name: "fullName",
-  partner_name: "partnerName",
-  kids_names: "kidsNames",
-  email: "email",
-  birthday: "birthday",
-  address_line1: "addressLine1",
-  address_line2: "addressLine2",
-  city: "city",
-  state_region: "stateRegion",
-  postal_code: "postalCode",
-  country: "country",
-  first_name: "firstName",
-  last_name: "lastName",
-  partner_first_name: "partnerFirstName",
-  partner_last_name: "partnerLastName",
-  kids: "kids",
-} as const satisfies Record<SnapshotField, keyof typeof contacts.$inferInsert>;
-
-/**
- * Contact columns for a new contact. fullName is NOT NULL in the insert
- * type; for household payloads the trigger re-derives it (and the partner
- * and kids display strings) from the structured names.
- */
-function toInsertRow(payload: SubmissionPayload) {
-  if (!isHouseholdPayload(payload)) return toRow(payload);
-  const {
-    first_name,
-    last_name,
-    partner_first_name,
-    partner_last_name,
-    kids,
-    ...rest
-  } = payload;
-  return {
-    ...toRow({
-      ...rest,
-      full_name: formatPerson({ first: first_name, last: last_name }) ?? "",
-    }),
-    firstName: first_name,
-    lastName: last_name,
-    partnerFirstName: partner_first_name ?? null,
-    partnerLastName: partner_last_name ?? null,
-    kids: kids ?? null,
-  };
-}
-
-/**
- * Fields a merge writes: present keys only. A submitted partner is written
- * as a whole group, so a partner with no last name clears the old one.
- */
-function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
-  const patch: Partial<Record<SnapshotField, unknown>> = {};
-  for (const [key, value] of Object.entries(payload)) {
-    if (value !== undefined) patch[key as SnapshotField] = value;
-  }
-  if (isHouseholdPayload(payload) && payload.partner_first_name !== undefined) {
-    patch.partner_last_name = payload.partner_last_name ?? null;
-  }
-  return patch as Partial<Snapshot>;
-}
 
 /**
  * Audit append — the ONLY sanctioned dbAdmin use in this module.
@@ -392,10 +247,7 @@ export async function approveMerge(
       // as absent and can never CLEAR a column. This intentionally differs
       // from token updates, where a present-but-empty key means "clear".
       const before = rowToSnapshot(existing);
-      const patch = mergePatch(gated);
-      const changed = SNAPSHOT_FIELDS.filter(
-        (field) => field in patch && !sameValue(before[field], patch[field]),
-      );
+      const set = mergeUpdate(before, gated);
 
       // Concurrency gate: atomically flip pending → approved after all the
       // read-only checks and BEFORE the contact write; a concurrent approval
@@ -405,14 +257,12 @@ export async function approveMerge(
         return { kind: "not_found" };
       }
 
-      if (changed.length === 0) {
+      if (!set) {
         return { kind: "ok", contactId: existing.id, diff: undefined };
       }
-      const set: Partial<Record<string, unknown>> = {};
-      for (const field of changed) set[FIELD_TO_COLUMN[field]] = patch[field];
       const [row] = await tx
         .update(contacts)
-        .set(set as Partial<typeof contacts.$inferInsert>)
+        .set(set)
         .where(
           and(eq(contacts.id, existing.id), eq(contacts.bookId, book.id)),
         )

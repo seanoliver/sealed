@@ -131,7 +131,6 @@ export async function submitToBook(
   // 5. Validate. Same limits as the SQL CHECK constraints — class-22 errors
   //    (which can echo values into logs) stay unreachable, and the Zod
   //    max-lengths keep the payload far below submit_to_book's 64KB guard.
-  //    The owner name is only needed for the last-name error copy.
   let book: PublicBook | null;
   try {
     book = await getPublicBook(slug);
@@ -158,8 +157,7 @@ export async function submitToBook(
   //    (where a present-but-empty key means "clear the column"), submit_to_
   //    book stores the payload verbatim as a NEW pending submission — empty
   //    keys carry no meaning there and would only pad attacker-controlled
-  //    stored data, so they are dropped. The payload uses the household
-  //    shape that parseSubmissionPayload expects at approval.
+  //    stored data, so they are dropped.
   const payload: Record<string, unknown> = {};
   for (const [field, value] of Object.entries({ ...household.data, ...details.data })) {
     if (value !== undefined) payload[field] = value;

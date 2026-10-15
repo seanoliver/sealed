@@ -26,7 +26,6 @@ const addClasses =
   "inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground";
 const rowLabelClasses = "w-16 shrink-0 text-xs font-medium text-muted-foreground";
 
-/** Amber "not split yet" marker for a contact whose names are one display string. */
 export function UnsplitDot() {
   return (
     <span
@@ -42,7 +41,6 @@ export function UnsplitDot() {
   );
 }
 
-/** The household line with its muted kids count, as the Name cell shows it. */
 export function HouseholdLabel({
   line,
   kids,
@@ -126,11 +124,6 @@ type HouseholdNameCellProps = {
   autoFocus: boolean;
 };
 
-/**
- * The editing row's Name cell: a button that opens the household panel.
- * The draft lives in the row, so closing the panel (Esc, Done, a click
- * outside) keeps the changes; the row's Save writes them.
- */
 export function HouseholdNameCell({
   names,
   draft,

@@ -18,7 +18,6 @@ type ContactFormProps = {
     formData: FormData,
   ) => Promise<ContactFormState>;
   defaults: ContactFormValues;
-  /** Name rows; the display-name strings in `defaults` are not rendered. */
   household: HouseholdValues;
   /** Present on the edit page; posted as a hidden field. */
   contactId?: string;

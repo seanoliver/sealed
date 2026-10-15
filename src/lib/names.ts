@@ -1,13 +1,3 @@
-/**
- * Household name helpers. formatPerson and formatKids must match
- * private.format_person / private.format_kids in
- * supabase/migrations/00000000000004_household_names.sql exactly: the
- * database derives the stored display strings, and these produce the same
- * strings before a row exists (review queue, insert placeholders). The
- * shared fixture in supabase/tests/database/03_household_names.sql guards
- * both sides.
- */
-
 import { KIDS_MAX, type HouseholdValues } from "@/lib/validation/household";
 
 export type Kid = { first: string; last?: string };
@@ -15,7 +5,8 @@ export type Kid = { first: string; last?: string };
 const present = (s: string | null | undefined): s is string =>
   s !== null && s !== undefined && s !== "";
 
-/** "First Last", skipping absent parts; null when both are absent. */
+// formatPerson and formatKids must match private.format_person / format_kids
+// in migration 0004. The fixture in 03_household_names.sql checks both.
 export function formatPerson({
   first,
   last,
@@ -27,10 +18,6 @@ export function formatPerson({
   return parts.length > 0 ? parts.join(" ") : null;
 }
 
-/**
- * Kids who share `familyLast` (or have no last name) appear by first name
- * only; everyone else by full name.
- */
 export function formatKids({
   kids,
   familyLast,
@@ -47,7 +34,6 @@ export function formatKids({
   return joined === "" ? null : joined;
 }
 
-/** Legacy prefill: the last word is the last name ("Mary Ann Smith" → Mary Ann / Smith). */
 export function naiveSplit(fullName: string): { first: string; last: string } {
   const words = fullName.trim().split(/\s+/).filter((w) => w !== "");
   if (words.length <= 1) return { first: words[0] ?? "", last: "" };
@@ -57,7 +43,6 @@ export function naiveSplit(fullName: string): { first: string; last: string } {
   };
 }
 
-/** Legacy prefill: "Zoe, Max and Ivy" → ["Zoe", "Max", "Ivy"]. */
 export function splitKids(kidsNames: string): string[] {
   return kidsNames
     .split(/,|\s+and\s+/i)
@@ -65,7 +50,6 @@ export function splitKids(kidsNames: string): string[] {
     .filter((name) => name !== "");
 }
 
-/** A contact's names as stored: display strings plus structured groups (null when unsplit). */
 export type StoredNames = {
   fullName: string;
   partnerName: string | null;
@@ -95,11 +79,6 @@ function partnerPerson(names: StoredNames): Person | null {
   return present(names.partnerName) ? naiveSplit(names.partnerName) : null;
 }
 
-/**
- * One line for the household: "Jen & Mark Holloway" when the partner shares
- * the last name (or has none), "Priya Raman & Daniel Okafor" when not, and
- * the contact's own name when there is no partner.
- */
 export function householdLine(names: StoredNames): string {
   const partner = partnerPerson(names);
   if (partner === null) return names.fullName;
@@ -124,11 +103,6 @@ export function kidsSummary(count: number): string | null {
   return count === 1 ? "1 kid" : `${count} kids`;
 }
 
-/**
- * Form prefill. Stored structure wins; a legacy contact gets naiveSplit /
- * splitKids guesses, which are only stored if the form is submitted. Kids
- * (and a legacy one-word partner) follow the contact's last name.
- */
 export function householdPrefill(
   names: StoredNames,
   { partner = true, kids = true }: { partner?: boolean; kids?: boolean } = {},
@@ -158,7 +132,6 @@ export function householdPrefill(
   };
 }
 
-/** Sort key for "Last name"; undefined for an unsplit contact. */
 export function lastNameKey(names: StoredNames): Person | undefined {
   return isSplit(names) ? contactPerson(names) : undefined;
 }

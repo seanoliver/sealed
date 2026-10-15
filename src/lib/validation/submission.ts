@@ -20,14 +20,8 @@ export type EnabledFields = {
   birthday: boolean;
 };
 
-/**
- * STRICT approval parse. /b/[slug] stores the household shape (first/last
- * names, partner, kids array); submissions queued before it store legacy
- * display strings (full_name, partner_name, kids_names). A payload carrying
- * either household name key is parsed as a household payload only (its
- * stray legacy name keys are stripped), matching the display precedence in
- * parseSubmissionForDisplay.
- */
+// Household name keys win over legacy name keys. parseSubmissionForDisplay
+// must use the same precedence, or the review card shows another name.
 export const householdPayloadSchema = tokenUpdateSchema
   .omit({ full_name: true, partner_name: true, kids_names: true })
   .extend(householdShape({ ownerName: "the owner" }))
@@ -104,7 +98,6 @@ export const submissionDisplaySchema = z.object({
   kids: z.array(z.unknown()).optional().catch(undefined),
 });
 
-/** What the review page renders: display strings only, household names already formatted. */
 export type SubmissionDisplayFields = Partial<Record<TokenUpdateField, string>>;
 
 function capDisplay(value: string | null): string | undefined {
@@ -134,13 +127,6 @@ const GATED_KEYS: Record<keyof EnabledFields, readonly string[]> = {
   birthday: ["birthday"],
 };
 
-/**
- * Fields the book has DISABLED are removed entirely — a smuggled
- * `kids_names` or `kids` on a kids-disabled book must neither display nor
- * merge. Shared by the review page (lenient display parse) and the approve
- * actions (strict submissionPayloadSchema parse), so the two paths can
- * never disagree about gating.
- */
 export function dropDisabledFields<T extends object>(
   data: T,
   enabled: EnabledFields,

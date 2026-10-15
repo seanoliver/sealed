@@ -16,8 +16,6 @@ function records(csv: string): string[] {
 describe("contactsToCsv", () => {
   it("emits exactly the canonical header row for zero rows", () => {
     expect(contactsToCsv([])).toBe(`${HEADER}\r\n`);
-    // The canonical CONTACT_FIELDS the importer reads, in order, with the
-    // structured name columns after the display names (import ignores them).
     expect(CSV_COLUMNS.filter((c) => (CONTACT_FIELDS as readonly string[]).includes(c))).toEqual([
       ...CONTACT_FIELDS,
     ]);
@@ -154,7 +152,6 @@ describe("contactsToCsv", () => {
 
     const { valid, errors } = parseContactsCsv(contactsToCsv(rows));
 
-    // The import reads the display names; the structured columns are ignored.
     const displayRow = Object.fromEntries(
       Object.entries(rows[0]).filter(([column]) => !/_(first|last)_name$|^(first|last)_name$/.test(column)),
     );

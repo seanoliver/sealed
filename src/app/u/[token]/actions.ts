@@ -31,11 +31,6 @@ export type TokenUpdateState = RecipientFormState;
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-/**
- * The book owner's name, for the last-name error copy only. Looked up on
- * that error path rather than bound into the action, so the token flow is
- * unchanged.
- */
 async function ownerNameForToken(token: string): Promise<string | null> {
   try {
     const rows = await dbAdmin.execute(
@@ -112,13 +107,11 @@ export async function submitTokenUpdate(
   }
 
   // 5. Payload keys = exactly the fields the form rendered (present in
-  //    formData): a present key with "" (or [] for kids) clears the column,
-  //    an absent key (field disabled for this book) leaves it untouched. The
-  //    partner_section / kids_section markers say the household builder
-  //    rendered those groups, so a removed partner or kid row clears it. A
-  //    hostile client CAN inject extra keys here, but apply_token_update
-  //    re-gates disabled fields against books.enabled_fields server-side, so
-  //    they are inert.
+  //    formData): a present key with "" clears the column, an absent key
+  //    (field disabled for this book) leaves it untouched. A hostile client
+  //    CAN inject extra keys here, but apply_token_update re-gates disabled
+  //    fields against books.enabled_fields server-side, so they are inert.
+  //    Test the section markers: a removed partner row posts no partner keys.
   const names = household.data;
   const payload: Record<string, unknown> = {
     first_name: names.first_name,

@@ -122,7 +122,6 @@ type ParsedContactForm =
   | { ok: true; details: ContactDetailsInput; household: HouseholdInput }
   | { ok: false; state: ContactFormState };
 
-/** The owner form: household rows plus every other field. */
 function parseContactForm(formData: FormData): ParsedContactForm {
   const values = readContactForm(formData);
   const household = parseHouseholdForm(formData);
@@ -294,7 +293,7 @@ const DETAIL_FIELDS = CONTACT_FIELDS.filter(
 );
 type DetailField = (typeof DETAIL_FIELDS)[number];
 
-/** Names change only through `household`, never the display strings. */
+// No name fields here: writing full_name alone clears the structured names.
 const patchSchema = z.strictObject({
   values: z
     .strictObject(
@@ -308,7 +307,6 @@ const patchSchema = z.strictObject({
 
 export type ContactPatch = {
   values?: Partial<Record<DetailField, string>>;
-  /** The whole household, replacing the stored names (see householdSchema). */
   household?: z.input<ReturnType<typeof householdSchema>>;
 };
 

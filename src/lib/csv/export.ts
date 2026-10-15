@@ -4,11 +4,6 @@ import { CONTACT_FIELDS, type ContactField } from "@/lib/validation/contact";
 // access) — like import.ts it is pure string logic; the export route handler
 // does the server-only work.
 
-/**
- * Export columns: the canonical CONTACT_FIELDS (what parseContactsCsv reads)
- * with the structured name columns after the display names. The importer
- * ignores the structured columns; the display names round-trip.
- */
 export const CSV_COLUMNS = [
   "full_name",
   "partner_name",

@@ -85,7 +85,6 @@ test("prefills enabled fields; a disabled field is absent AND unleaked", async (
   await expect(
     page.getByRole("heading", { name: /Update your address for/ }),
   ).toBeVisible();
-  // A legacy contact: the stored display strings are split into a guess.
   await expect(page.locator("#first_name")).toHaveValue("Tess");
   await expect(page.locator("#last_name")).toHaveValue("Token");
   await expect(page.locator("#partner_first")).toHaveValue("Pat");
@@ -126,7 +125,6 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   await expect(row).toContainText("Updated"); // outranks the raw send status
   await expect(row).toContainText("Porto");
 
-  // Submitting stored the split names; the disabled kids are untouched.
   const names = await getContactNamesByEmail("tess@e2e.test");
   expect(names).toMatchObject({
     firstName: "Tess",
@@ -213,7 +211,6 @@ test.describe("with partner and kids enabled", () => {
 
     await expect(page.locator("#first_name")).toHaveValue("Jen");
     await expect(page.locator("#last_name")).toHaveValue("Holloway");
-    // A one-word partner and the kids follow the contact's last name.
     await expect(page.locator("#partner_first")).toHaveValue("Mark");
     await expect(page.locator("#partner_last")).toHaveValue("Holloway");
     await expect(page.locator("#kid_0_first")).toHaveValue("Zoe");
@@ -224,7 +221,6 @@ test.describe("with partner and kids enabled", () => {
     await page.getByRole("button", { name: "Add a child" }).click();
     await page.locator("#kid_1_first").fill("Ivy");
 
-    // The recipient's own last name is required, with the owner's name.
     await page.locator("#last_name").fill("");
     await waitForTurnstile(page);
     await page.getByRole("button", { name: "Update my details" }).click();

@@ -710,7 +710,6 @@ test("the Name cell shows one line for the household", async () => {
   ).toHaveCount(0);
   await expect(bodyRow("Jen & Mark Holloway")).toContainText("· 2 kids");
   await expect(bodyRow("Priya Raman & Daniel Okafor")).toContainText("· 1 kid");
-  // Contacts saved as one string are marked until someone splits them.
   await expect(bodyRow("Cher & Sonny")).toContainText("(not split yet)");
   await expect(bodyRow("Jen & Mark Holloway")).not.toContainText("not split yet");
 });
@@ -732,7 +731,6 @@ test("the household panel edits a kid by keyboard and Esc keeps the draft", asyn
   await expect(
     panel.getByRole("textbox", { name: "Contact last name" }),
   ).toBeFocused();
-  // Max follows the contact's last name until edited.
   await expect(
     panel.getByRole("textbox", { name: "Child 2 last name" }),
   ).toHaveValue("Holloway");
@@ -788,7 +786,6 @@ test("splitting a legacy row waits for the required names", async () => {
   const last = panel.getByRole("textbox", { name: "Contact last name" });
   await expect(last).toHaveValue("");
   await last.press("Enter");
-  // Not saved: the panel stays open on the error.
   await expect(panel.getByText("Add a last name.")).toBeVisible();
   await expect(last).toBeFocused();
 

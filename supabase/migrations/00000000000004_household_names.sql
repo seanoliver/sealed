@@ -1,8 +1,5 @@
--- Structured household names. full_name, partner_name, and kids_names stay
--- as display strings; private.sync_contact_names keeps each one derived from
--- its structured group. src/lib/names.ts mirrors the format functions, and
--- the parity fixture in supabase/tests/database/03_household_names.sql is
--- shared with src/lib/names.test.ts.
+-- format_person and format_kids must match src/lib/names.ts. The fixture in
+-- 03_household_names.sql checks both.
 
 set lock_timeout = '5s';
 
@@ -41,14 +38,11 @@ alter table public.contacts drop constraint contacts_kids_names_check;
 alter table public.contacts add constraint contacts_kids_names_check
   check (char_length(kids_names) <= 2000);
 
--- "First Last", skipping absent parts; null when both are absent.
 create or replace function private.format_person(p_first text, p_last text)
 returns text language sql immutable set search_path = '' as $$
   select nullif(concat_ws(' ', nullif(p_first, ''), nullif(p_last, '')), '')
 $$;
 
--- Kids who share p_family_last (or have no last name) appear by first name
--- only; everyone else by full name. Joined with ", " in array order.
 create or replace function private.format_kids(p_kids jsonb, p_family_last text)
 returns text language sql immutable set search_path = '' as $$
   select nullif(string_agg(
@@ -60,10 +54,7 @@ returns text language sql immutable set search_path = '' as $$
   from jsonb_array_elements(coalesce(p_kids, '[]'::jsonb)) with ordinality k
 $$;
 
--- Per group: a write that changes the display string but not the structured
--- group clears the group; otherwise a set group overwrites the display string.
--- SECURITY DEFINER: client roles have no USAGE on schema private, so the
--- calls to private.format_* would fail for an RLS-scoped writer.
+-- SECURITY DEFINER: without it, RLS-scoped writers cannot call private.format_*.
 create or replace function private.sync_contact_names()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin

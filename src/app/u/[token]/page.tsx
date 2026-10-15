@@ -118,9 +118,7 @@ export default async function TokenUpdatePage({
   // PII: a disabled field's stored value must not reach the client AT ALL —
   // form props are embedded in the RSC payload, so passing it would leak it
   // into the page source even though no input renders it. Blank, not just
-  // hidden. householdPrefill leaves out the partner and kids when disabled;
-  // the legacy name strings are never sent (the household builder replaces
-  // them).
+  // hidden. Pass the enabled flags to householdPrefill for the same reason.
   const household = householdPrefill(
     {
       fullName: contact.full_name ?? "",

@@ -33,7 +33,6 @@ export const contactSchema = z.object({
 });
 export type ContactInput = z.infer<typeof contactSchema>;
 
-/** Everything but names, which come from the household builder on owner forms. */
 export const contactDetailsSchema = contactSchema.omit({
   full_name: true,
   partner_name: true,
@@ -85,10 +84,6 @@ export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];
 /** contactSchema minus notes; unknown keys (incl. a smuggled `notes`) are stripped. */
 export const tokenUpdateSchema = contactSchema.omit({ notes: true });
 
-/**
- * Recipient fields other than names: the household builder collects names
- * on /b/[slug] and /u/[token].
- */
 export const TOKEN_DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
   (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",
 );
@@ -101,7 +96,6 @@ export const tokenDetailSchema = tokenUpdateSchema.omit({
 /** Raw token-form values (all strings), echoed back through action state. */
 export type TokenUpdateValues = Record<TokenUpdateField, string>;
 
-/** Detail fields as typed; name fields stay blank (the household builder echoes those). */
 export function readTokenDetails(formData: FormData): TokenUpdateValues {
   return Object.fromEntries(
     TOKEN_UPDATE_FIELDS.map((field) => [

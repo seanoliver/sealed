@@ -1,14 +1,6 @@
 import { z } from "zod";
 
-/**
- * The household builder: the contact's own first and last name, an optional
- * partner, and up to KIDS_MAX kids. Caps mirror the SQL CHECKs in
- * 00000000000004_household_names.sql (name parts, valid_kids).
- *
- * Recipient surfaces (/b/[slug], /u/[token]) pass the book owner's name for
- * the error copy; owner surfaces omit it.
- */
-
+// Caps must match the CHECK constraints in migration 0004.
 export const NAME_MAX = 80;
 export const KIDS_MAX = 10;
 
@@ -35,8 +27,6 @@ const kidSchema = z.strictObject({
   last: optionalName,
 });
 
-/** Shared by the form schema and the stored-payload schema in submission.ts. */
-/** Omit ownerName on owner surfaces (dashboard), where the copy is not "your". */
 export type HouseholdVoice = { ownerName?: string };
 
 export function householdShape({ ownerName }: HouseholdVoice = {}) {
@@ -59,7 +49,6 @@ export function householdShape({ ownerName }: HouseholdVoice = {}) {
   };
 }
 
-/** A partner last name with no partner first name has no row to belong to. */
 export function requirePartnerFirstName(
   data: { partner_first_name?: string; partner_last_name?: string },
   ctx: z.RefinementCtx,
@@ -81,10 +70,8 @@ export function householdSchema(voice: HouseholdVoice = {}) {
 
 export type HouseholdInput = z.infer<ReturnType<typeof householdSchema>>;
 
-/** One added partner/kid row as typed (raw strings). */
 export type HouseholdRow = { first: string; last: string };
 
-/** Raw household form values, echoed back through action state on error. */
 export type HouseholdValues = {
   first_name: string;
   last_name: string;
@@ -109,11 +96,6 @@ export type HouseholdFormResult =
 const text = (value: FormDataEntryValue | null) =>
   typeof value === "string" ? value : "";
 
-/**
- * The household rows as typed, for echoing back on any error. The partner
- * and kids sections only count when their hidden markers (partner_section,
- * kids_section) were rendered, i.e. the book enables them.
- */
 export function readHouseholdValues(formData: FormData): HouseholdValues {
   const partnerFirst = formData.get("partner_first_name");
   const kidLasts = formData.getAll("kid_last").map(text);
@@ -133,7 +115,6 @@ export function readHouseholdValues(formData: FormData): HouseholdValues {
   };
 }
 
-/** Read and validate the household section of a form. */
 export function parseHouseholdForm(
   formData: FormData,
   voice: HouseholdVoice = {},

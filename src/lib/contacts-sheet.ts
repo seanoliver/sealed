@@ -19,7 +19,6 @@ import {
 
 export type StatusKey = SendStatus | "updated";
 
-/** Text cells; names live in `names` and edit through the household panel. */
 export type SheetField = Extract<
   keyof ContactFormValues,
   | "email"
@@ -118,10 +117,6 @@ export function moveCursor(
   return Math.min(Math.max(target, 0), count - 1);
 }
 
-/**
- * The saved column layout. With `columnIds`, entries for columns the sheet no
- * longer has (e.g. the old Partner column) are dropped.
- */
 export function parseStoredLayout(
   raw: string | null,
   { columnIds }: { columnIds?: readonly string[] } = {},
@@ -165,7 +160,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** What the Name cell shows: the household line, a kids count, and whether names are split. */
 export function sheetName(names: StoredNames): {
   line: string;
   kids: string | null;
@@ -178,7 +172,6 @@ export function sheetName(names: StoredNames): {
   };
 }
 
-/** A partner or kid row in the panel; `lastEdited: false` follows the contact's last name. */
 export type PanelRow = { first: string; last: string; lastEdited: boolean };
 
 export type HouseholdDraft = {
@@ -215,11 +208,8 @@ export function draftToValues(draft: HouseholdDraft): HouseholdValues {
   };
 }
 
-/**
- * Whether saving should write the household. An unsplit contact's draft is a
- * proposed split, so opening its panel counts as an edit.
- */
 export function householdEdited(names: StoredNames, draft: HouseholdDraft): boolean {
+  // An unsplit contact's draft is a proposed split, so it always saves.
   if (lastNameKey(names) === undefined) return true;
   return (
     JSON.stringify(draftToValues(draft)) !==
@@ -227,7 +217,6 @@ export function householdEdited(names: StoredNames, draft: HouseholdDraft): bool
   );
 }
 
-/** The household as patchContact's `household` input (raw strings; the server trims). */
 export function householdPatchInput(values: HouseholdValues) {
   return {
     first_name: values.first_name,
@@ -251,7 +240,6 @@ export function validateHousehold(
   return { ok: false, errors };
 }
 
-/** Names as the trigger would store them, for showing a draft before it is saved. */
 export function namesFromValues(values: HouseholdValues): StoredNames {
   const first = values.first_name.trim();
   const last = values.last_name.trim();

@@ -43,7 +43,6 @@ insert into public.books (id, owner_id, slug, enabled_fields) values
   ('10000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000c1', 'names-book',
    '{"partner_name": true, "kids_names": true, "birthday": false}');
 
--- insert: structured groups overwrite whatever display strings were passed
 insert into public.contacts (id, book_id, full_name, first_name, last_name,
   partner_first_name, partner_last_name, kids) values
   ('20000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-0000000000c1',
@@ -55,7 +54,6 @@ select results_eq(
   $$ values ('Jane Smith', 'Sam Lee', 'Zoe, Max Jones') $$,
   'insert derives every display string from its structured group');
 
--- legacy insert: no structured fields, display strings kept as written
 insert into public.contacts (id, book_id, full_name, partner_name, kids_names) values
   ('20000000-0000-0000-0000-0000000000c2', '10000000-0000-0000-0000-0000000000c1',
    'Old Style', 'Pat', 'A, B and C');
@@ -65,8 +63,6 @@ select results_eq(
   $$ values ('Old Style', 'Pat', 'A, B and C', null::text, null::jsonb) $$,
   'legacy insert keeps display strings and leaves structured fields null');
 
--- update: changing a structured group re-derives, even if a stale display
--- string is written alongside it
 update public.contacts set first_name = 'Janet', full_name = 'stale'
 where id = '20000000-0000-0000-0000-0000000000c1';
 select results_eq(
@@ -74,7 +70,6 @@ select results_eq(
   $$ values ('Janet Smith') $$,
   'a structured change wins over a display string written in the same update');
 
--- a family last-name change re-derives the kids display string
 update public.contacts set last_name = 'Jones'
 where id = '20000000-0000-0000-0000-0000000000c1';
 select results_eq(
@@ -83,7 +78,6 @@ select results_eq(
   $$ values ('Janet Jones', 'Zoe Smith, Max') $$,
   'kids display follows the contact''s last name');
 
--- editing a display string alone clears only its structured group
 update public.contacts set partner_name = 'Samantha'
 where id = '20000000-0000-0000-0000-0000000000c1';
 select results_eq(
@@ -108,7 +102,6 @@ select results_eq(
   $$ values ('J. Jones', null::text, null::text) $$,
   'editing full_name clears first and last name');
 
--- an unrelated update leaves structured groups and display strings alone
 insert into public.contacts (id, book_id, full_name, first_name, last_name, kids) values
   ('20000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-0000000000c1',
    'x', 'Ann', 'Lee', '[{"first": "Bo", "last": "Lee"}]');
@@ -120,8 +113,6 @@ select results_eq(
   $$ values ('Ann Lee', 'Bo', 'Ann', '[{"first": "Bo", "last": "Lee"}]'::jsonb) $$,
   'an unrelated update keeps names in sync');
 
--- /u token updates still write legacy display strings; the trigger keeps
--- them consistent with the structured groups
 insert into public.update_tokens (contact_id, token_hash, expires_at) values
   ('20000000-0000-0000-0000-0000000000c3', extensions.digest('namestoken', 'sha256'), now() + interval '1 day'),
   ('20000000-0000-0000-0000-0000000000c3', extensions.digest('namestoken2', 'sha256'), now() + interval '1 day');
@@ -141,7 +132,6 @@ select results_eq(
   $$ values ('Annie Lee', null::text, null::text) $$,
   'a token update that edits full_name clears first and last name');
 
--- valid_kids and length caps
 select ok(private.valid_kids(
   (select jsonb_agg(jsonb_build_object('first', 'K' || i)) from generate_series(1, 10) i)),
   'valid_kids accepts 10 kids');
@@ -171,7 +161,6 @@ select throws_ok(
      where id = '20000000-0000-0000-0000-0000000000c3' $$,
   '23514', null, 'kids_names is capped at 2000 characters');
 
--- the RLS-scoped owner path can write structured names
 create or replace function tests.authenticate_as(uid text) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated')::text, true);

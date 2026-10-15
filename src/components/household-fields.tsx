@@ -18,7 +18,6 @@ type HouseholdFieldsProps = {
   defaults: HouseholdValues;
   enabled: Pick<EnabledFields, "partner_name" | "kids_names">;
   errors?: HouseholdFieldErrors;
-  /** "owner" words the rows about the contact rather than "you". */
   audience?: "recipient" | "owner";
 };
 
@@ -152,11 +151,6 @@ function PersonRow({
   );
 }
 
-/**
- * The household builder: the recipient's own name, then an optional partner
- * and kids. Rows are controlled state so a failed submit keeps them; added
- * rows' last names follow the recipient's last name until edited.
- */
 export function HouseholdFields({
   defaults,
   enabled,

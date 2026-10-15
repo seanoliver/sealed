@@ -203,7 +203,6 @@ describe("household drafts", () => {
     expect(
       householdEdited(holloway, { ...draft, kids: draft.kids.slice(0, 1) }),
     ).toBe(true);
-    // Opening an unsplit contact proposes a split, which counts as an edit.
     expect(householdEdited(listRow, draftFromNames(listRow))).toBe(true);
   });
 
