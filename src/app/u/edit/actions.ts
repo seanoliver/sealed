@@ -22,8 +22,12 @@ import {
 // Type-only import from a client module — erased at compile time, so no
 // client code is pulled into this server action bundle.
 import { type RecipientFormState } from "@/components/recipient-form";
-import { INVALID_LINK_MESSAGE } from "../notice";
-import { UPDATE_TOKEN_COOKIE } from "../update-token-cookie";
+import { INVALID_LINK_MESSAGE, TIMED_OUT_MESSAGE } from "../notice";
+import {
+  REF_SHAPE,
+  readUpdateToken,
+  updateTokenCookieName,
+} from "../update-token-cookie";
 
 export type TokenUpdateState = RecipientFormState;
 
@@ -42,19 +46,28 @@ function readTokenForm(formData: FormData): TokenUpdateValues {
  * NOT a precondition). The raw token is never logged anywhere in this flow.
  */
 export async function submitTokenUpdate(
+  ref: string,
   _prevState: TokenUpdateState,
   formData: FormData,
 ): Promise<TokenUpdateState> {
+  const submitted = readTokenForm(formData);
+  if (!REF_SHAPE.test(ref)) {
+    return { error: INVALID_LINK_MESSAGE, values: submitted };
+  }
   const cookieStore = await cookies();
-  const token = cookieStore.get(UPDATE_TOKEN_COOKIE)?.value ?? "";
+  const token = readUpdateToken(cookieStore, ref);
+  if (token === null) {
+    return { error: TIMED_OUT_MESSAGE, values: submitted };
+  }
+  const clearCookie = () =>
+    cookieStore.delete({ name: updateTokenCookieName(ref), path: "/u" });
 
   // 1. Token shape gate — same regex as the page; malformed tokens cost no
   //    DB work and get the same generic copy as dead ones.
   if (!TOKEN_SHAPE.test(token)) {
-    return { error: INVALID_LINK_MESSAGE };
+    return { error: INVALID_LINK_MESSAGE, values: submitted };
   }
 
-  const submitted = readTokenForm(formData);
   const ip = await requestIp();
 
   // 2. Rate limit submits per IP: 10/hour. Fail CLOSED on a rate-limiter
@@ -117,9 +130,10 @@ export async function submitTokenUpdate(
     return { error: GENERIC_ERROR, values: submitted };
   }
   if (!applied) {
+    clearCookie();
     return { error: INVALID_LINK_MESSAGE, values: submitted };
   }
 
-  cookieStore.delete({ name: UPDATE_TOKEN_COOKIE, path: "/u" });
+  clearCookie();
   redirect("/u/thanks");
 }

@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import {
   UPDATE_FORM_PATH,
-  UPDATE_TOKEN_COOKIE,
+  tokenRef,
+  updateTokenCookieName,
   updateTokenCookieOptions,
 } from "../update-token-cookie";
 
@@ -16,21 +17,20 @@ export async function GET(
   const target = request.nextUrl.clone();
   target.pathname = UPDATE_FORM_PATH;
   target.search = "";
+  const valid = TOKEN_SHAPE.test(token);
+  if (valid) target.searchParams.set("ref", tokenRef(token));
+
   const res = NextResponse.redirect(target, 303);
   res.headers.set("Cache-Control", "no-store");
   res.headers.set("Referrer-Policy", "no-referrer");
-
-  if (TOKEN_SHAPE.test(token)) {
+  if (valid) {
     res.cookies.set(
-      UPDATE_TOKEN_COOKIE,
+      updateTokenCookieName(tokenRef(token)),
       token,
       updateTokenCookieOptions({
         secure: request.nextUrl.protocol === "https:",
       }),
     );
-  } else {
-    // Otherwise a token from an earlier link would open that contact instead.
-    res.cookies.set(UPDATE_TOKEN_COOKIE, "", { path: "/u", maxAge: 0 });
   }
   return res;
 }

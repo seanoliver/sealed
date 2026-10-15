@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { generateToken } from "@/lib/tokens";
-import { UPDATE_TOKEN_COOKIE } from "../update-token-cookie";
+import {
+  readUpdateToken,
+  tokenRef,
+  updateTokenCookieName,
+} from "../update-token-cookie";
 import { GET } from "./route";
 
 function visit(
@@ -14,17 +18,19 @@ function visit(
 }
 
 describe("GET /u/[token]", () => {
-  it("moves a well-formed token into an HttpOnly cookie and redirects to a token-free URL", async () => {
+  it("moves a well-formed token into a per-link HttpOnly cookie and redirects to a token-free URL", async () => {
     const { token } = generateToken();
+    const ref = tokenRef(token);
     const res = await visit(token);
 
     expect(res.status).toBe(303);
-    const location = res.headers.get("location") ?? "";
-    expect(new URL(location).pathname).toBe("/u/edit");
-    expect(location).not.toContain(token);
+    const location = new URL(res.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/u/edit");
+    expect(location.searchParams.get("ref")).toBe(ref);
+    expect(location.href).not.toContain(token);
 
     const setCookie = res.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${UPDATE_TOKEN_COOKIE}=${token}`);
+    expect(setCookie).toContain(`${updateTokenCookieName(ref)}=${token}`);
     expect(setCookie).toMatch(/HttpOnly/i);
     expect(setCookie).toMatch(/Path=\/u(;|$)/);
     expect(setCookie).toMatch(/SameSite=Lax/i);
@@ -40,15 +46,46 @@ describe("GET /u/[token]", () => {
     expect(res.headers.get("set-cookie") ?? "").not.toMatch(/Secure/i);
   });
 
-  it("clears any held token when the path is malformed, still redirecting", async () => {
+  it("sends a malformed link to the form page with no ref and sets no cookie", async () => {
     const res = await visit("not-a-real-token");
 
     expect(res.status).toBe(303);
-    expect(new URL(res.headers.get("location") ?? "").pathname).toBe(
-      "/u/edit",
-    );
-    const setCookie = res.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${UPDATE_TOKEN_COOKIE}=;`);
-    expect(setCookie).not.toContain("not-a-real-token");
+    const location = new URL(res.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/u/edit");
+    expect(location.search).toBe("");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+});
+
+describe("readUpdateToken", () => {
+  const jar = (entries: Record<string, string>) => ({
+    get: (name: string) =>
+      name in entries ? { value: entries[name] } : undefined,
+  });
+
+  it("returns the token held for its own ref", () => {
+    const { token } = generateToken();
+    const ref = tokenRef(token);
+    expect(readUpdateToken(jar({ [updateTokenCookieName(ref)]: token }), ref)).toBe(token);
+  });
+
+  it("ignores another link's cookie", () => {
+    const a = generateToken().token;
+    const b = generateToken().token;
+    const refA = tokenRef(a);
+    expect(
+      readUpdateToken(jar({ [updateTokenCookieName(tokenRef(b))]: b }), refA),
+    ).toBeNull();
+  });
+
+  it("rejects a cookie whose token does not hash to the ref", () => {
+    const a = generateToken().token;
+    const b = generateToken().token;
+    const refA = tokenRef(a);
+    expect(readUpdateToken(jar({ [updateTokenCookieName(refA)]: b }), refA)).toBeNull();
+  });
+
+  it("rejects a malformed ref", () => {
+    expect(readUpdateToken(jar({}), "../x")).toBeNull();
   });
 });

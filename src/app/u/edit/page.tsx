@@ -13,8 +13,8 @@ import { hashedIpKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { RecipientForm } from "@/components/recipient-form";
-import { InvalidLinkNotice, Notice } from "../notice";
-import { UPDATE_TOKEN_COOKIE } from "../update-token-cookie";
+import { InvalidLinkNotice, Notice, TimedOutNotice } from "../notice";
+import { REF_SHAPE, readUpdateToken } from "../update-token-cookie";
 import { submitTokenUpdate } from "./actions";
 
 /**
@@ -59,8 +59,17 @@ const tokenDataSchema = z.object({
  * Recipient update page. Unauthenticated and token-gated: no session (excluded
  * from the proxy matcher), no auth calls. The DOM contains ONLY display values — never owner/book/contact ids.
  */
-export default async function TokenUpdatePage() {
-  const token = (await cookies()).get(UPDATE_TOKEN_COOKIE)?.value ?? "";
+export default async function TokenUpdatePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ref?: string | string[] }>;
+}) {
+  const { ref } = await searchParams;
+  if (typeof ref !== "string" || !REF_SHAPE.test(ref)) {
+    return <InvalidLinkNotice />;
+  }
+  const token = readUpdateToken(await cookies(), ref);
+  if (token === null) return <TimedOutNotice />;
 
   // 1. Shape gate FIRST: anything that isn't exactly 43 base64url chars gets
   //    the generic page with ZERO DB work (no rate-limit row, no lookup).
@@ -139,7 +148,7 @@ export default async function TokenUpdatePage() {
         {/* Never bind the token as an action arg: bound args round-trip
             through the client in cleartext. */}
         <RecipientForm
-          action={submitTokenUpdate}
+          action={submitTokenUpdate.bind(null, ref)}
           defaults={defaults}
           enabled={enabled_fields}
           submitLabel="Update my details"

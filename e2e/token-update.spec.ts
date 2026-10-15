@@ -3,6 +3,7 @@ import {
   cleanupUser,
   clearRateLimits,
   generateToken,
+  getContactRow,
   getUserIdByEmail,
   seedBook,
   seedContact,
@@ -25,6 +26,7 @@ const slug = uniqueSlug("token-book");
 
 let ownerPage: Page;
 let token: string;
+let bookId: string;
 
 test.beforeAll(async ({ browser }) => {
   // Token views/submits are IP-rate-limited; reset so repeated suite runs
@@ -35,7 +37,7 @@ test.beforeAll(async ({ browser }) => {
   await signupAndLogin(ownerPage, ownerEmail);
 
   const ownerId = await getUserIdByEmail(ownerEmail);
-  const bookId = await seedBook({
+  bookId = await seedBook({
     ownerId,
     slug,
     displayName: "Token Owner",
@@ -143,6 +145,51 @@ test("a used link renders the generic invalid page", async ({ browser }) => {
     page.getByRole("heading", { name: "Link not available" }),
   ).toBeVisible();
   await expect(page.locator("#full_name")).toHaveCount(0);
+  await context.close();
+});
+
+test("two links open in one browser each update their own contact", async ({
+  browser,
+}) => {
+  const annId = await seedContact({ bookId, fullName: "Ann Two", city: "Evora" });
+  const benId = await seedContact({ bookId, fullName: "Ben Two", city: "Tavira" });
+  const annToken = await seedUpdateToken(annId);
+  const benToken = await seedUpdateToken(benId);
+
+  const context = await browser.newContext();
+  const annPage = await context.newPage();
+  await annPage.goto(`/u/${annToken}`);
+  await expect(annPage.locator("#full_name")).toHaveValue("Ann Two");
+  const benPage = await context.newPage();
+  await benPage.goto(`/u/${benToken}`);
+  await expect(benPage.locator("#full_name")).toHaveValue("Ben Two");
+
+  await annPage.locator("#city").fill("Braga");
+  await waitForTurnstile(annPage);
+  await annPage.getByRole("button", { name: "Update my details" }).click();
+  await expect(annPage).toHaveURL(/\/u\/thanks$/);
+  expect((await getContactRow(annId)).city).toBe("Braga");
+  expect((await getContactRow(benId)).city).toBe("Tavira");
+
+  await benPage.locator("#city").fill("Faro");
+  await waitForTurnstile(benPage);
+  await benPage.getByRole("button", { name: "Update my details" }).click();
+  await expect(benPage).toHaveURL(/\/u\/thanks$/);
+  expect((await getContactRow(benId)).city).toBe("Faro");
+  await context.close();
+});
+
+test("the form page without its cookie says it timed out", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto("/u/edit?ref=0123456789abcdef");
+  await expect(page.getByRole("heading", { name: "Page timed out" })).toBeVisible();
+  await page.goto("/u/edit");
+  await expect(
+    page.getByRole("heading", { name: "Link not available" }),
+  ).toBeVisible();
   await context.close();
 });
 
