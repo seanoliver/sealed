@@ -33,16 +33,20 @@ export async function requestAccess(
   // Supabase sends at most 30 auth emails an hour for the whole project, so
   // one client or one address must not be able to use them all. The email
   // limit runs after Turnstile: otherwise anyone could use up a victim's budget.
-  const ipLimit = await withinLimit(hashedRateLimitKey("request-access", ip), 5);
-  if (ipLimit !== true) return ipLimit;
+  const ipLimited = await limitError(hashedRateLimitKey("request-access", ip), 5);
+  if (ipLimited) return ipLimited;
 
   const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
   if (!(await verifyTurnstile(turnstileResponse, ip))) {
     return { status: "error", message: "Verification failed. Please try again." };
   }
 
-  const emailLimit = await withinLimit(hashedRateLimitKey("request-access-email", email.toLowerCase()), 3);
-  if (emailLimit !== true) return emailLimit;
+  // Lowercased so every spelling of an address shares one bucket.
+  const emailLimited = await limitError(
+    hashedRateLimitKey("request-access-email", email.toLowerCase()),
+    3,
+  );
+  if (emailLimited) return emailLimited;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
@@ -59,9 +63,10 @@ export async function requestAccess(
   return { status: "sent", email };
 }
 
-async function withinLimit(key: string, max: number): Promise<true | RequestAccessState> {
+/** Returns the error state to show when the hourly limit is used up or cannot be checked, else null. */
+async function limitError(key: string, max: number): Promise<RequestAccessState | null> {
   try {
-    if (await checkRateLimit(key, max, 3600)) return true;
+    if (await checkRateLimit(key, max, 3600)) return null;
   } catch (err) {
     logDbError("[ra] [requestAccess] rate-limit check failed", err);
     return { status: "error", message: GENERIC_ERROR };
