@@ -5,7 +5,7 @@ The shared language for an owner collecting and maintaining private contact info
 ## Language
 
 **Sealed**:
-The product and open-source project. Sealed is the brand; it contains an owner’s address book but is not itself synonymous with that collection.
+The product. Sealed is the brand; it contains an owner’s address book but is not itself synonymous with that collection.
 _Avoid_: Address Book as the product name
 
 **Address book**:

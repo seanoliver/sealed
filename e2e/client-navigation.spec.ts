@@ -167,7 +167,7 @@ test("a search with the same number of results also closes the confirmation", as
 
 test("a search clears selections", async () => {
   await page.goto("/dashboard");
-  await page.getByLabel("Select Grace Hopper").check();
+  await page.getByRole("table", { name: "Contacts" }).getByLabel("Select Grace Hopper").check();
   await expect(
     page.getByRole("button", { name: "Request addresses (1)" }),
   ).toBeVisible();
@@ -175,7 +175,7 @@ test("a search clears selections", async () => {
   await page.getByLabel("Search contacts").fill("grace");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page).toHaveURL(/\/dashboard\?q=grace$/);
-  await expect(page.getByLabel("Select Grace Hopper")).not.toBeChecked();
+  await expect(page.getByRole("table", { name: "Contacts" }).getByLabel("Select Grace Hopper")).not.toBeChecked();
   await expect(
     page.getByRole("button", { name: "Request addresses", exact: true }),
   ).toBeVisible();

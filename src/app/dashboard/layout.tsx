@@ -14,7 +14,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
   return (
     <div className="flex min-h-full flex-1 flex-col bg-background">
       <header className="border-b border-border/80 bg-card/80 backdrop-blur">
-        <nav className="mx-auto flex min-h-16 w-full max-w-4xl flex-wrap items-center gap-1 px-4 py-2">
+        <nav className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center gap-1 px-4 py-2">
           <Link href="/dashboard" className="mr-4 flex items-center gap-2">
             <SealedWordmark />
             <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold uppercase leading-snug tracking-wide text-accent-foreground">
