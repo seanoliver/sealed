@@ -22,21 +22,30 @@ describe("suggestLinkName", () => {
 });
 
 describe("authDisplayName", () => {
+  const google = { app_metadata: { provider: "google" } };
+
+  it.each([
+    ["email", { app_metadata: { provider: "email" } }],
+    ["missing", {}],
+  ])("ignores metadata names when the provider is %s", (_label, app) => {
+    expect(authDisplayName({ ...app, user_metadata: { full_name: "Chosen Name" } })).toBe("");
+  });
+
   it("uses a genuine full name from identity-provider metadata", () => {
-    expect(authDisplayName({ user_metadata: { full_name: "  Ada Lovelace  " } })).toBe(
+    expect(authDisplayName({ ...google, user_metadata: { full_name: "  Ada Lovelace  " } })).toBe(
       "Ada Lovelace",
     );
   });
 
   it("accepts the provider's name field when full_name is absent", () => {
-    expect(authDisplayName({ user_metadata: { name: "Grace" } })).toBe("Grace");
+    expect(authDisplayName({ ...google, user_metadata: { name: "Grace" } })).toBe("Grace");
   });
 
   it("does not guess a name from an email claim", () => {
-    expect(authDisplayName({ email: "sean.oliver@example.com" })).toBe("");
+    expect(authDisplayName({ ...google, email: "sean.oliver@example.com" })).toBe("");
   });
 
   it("ignores malformed or empty metadata", () => {
-    expect(authDisplayName({ user_metadata: { full_name: "  ", name: 42 } })).toBe("");
+    expect(authDisplayName({ ...google, user_metadata: { full_name: "  ", name: 42 } })).toBe("");
   });
 });

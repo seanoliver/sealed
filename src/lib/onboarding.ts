@@ -18,6 +18,9 @@ export function suggestLinkName(email: string): string {
 
 /** Read only genuine human-name claims supplied by an identity provider. */
 export function authDisplayName(claims: Record<string, unknown>): string {
+  // Matches private.handle_new_user: any other provider lets the signer-up choose the name.
+  const app = claims.app_metadata as { provider?: unknown } | undefined;
+  if (app?.provider !== "google") return "";
   const metadata = claims.user_metadata;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return "";

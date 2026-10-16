@@ -1,6 +1,6 @@
 set lock_timeout = '5s';
 
--- Email sign-ups ignore user metadata: a direct signUp for an approved address
+-- Only Google's names are trusted: a direct signUp for an approved address
 -- could otherwise choose the display name that address's recipients will see.
 create or replace function private.handle_new_user()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -9,12 +9,12 @@ begin
   values (
     new.id,
     case
-      when new.raw_app_meta_data ->> 'provider' = 'email' then ''
-      else left(coalesce(
+      when new.raw_app_meta_data ->> 'provider' = 'google' then left(coalesce(
         new.raw_user_meta_data ->> 'full_name',
         new.raw_user_meta_data ->> 'name',
         ''
       ), 200)
+      else ''
     end
   );
   return new;

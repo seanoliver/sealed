@@ -77,12 +77,15 @@ describe("verifyTurnstile", () => {
 
   it("gives siteverify a 5-second timeout", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
-    const fetchMock = mockFetchJson({ success: true });
-    await verifyTurnstile("resp-token");
-    expect(timeout).toHaveBeenCalledWith(5000);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.signal).toBe(timeout.mock.results[0].value);
-    timeout.mockRestore();
+    try {
+      const fetchMock = mockFetchJson({ success: true });
+      await verifyTurnstile("resp-token");
+      expect(timeout).toHaveBeenCalledWith(5000);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal).toBe(timeout.mock.results[0].value);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("fails closed on an empty response token without calling out", async () => {

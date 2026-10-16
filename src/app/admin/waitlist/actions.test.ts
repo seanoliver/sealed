@@ -136,13 +136,28 @@ describe("approveEmail", () => {
   it("reports a missing APP_URL, logs which variable, and changes nothing", async () => {
     vi.stubEnv("APP_URL", "");
     await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
-      error: "Invitations aren’t set up on this deployment. Check APP_URL and SUPABASE_SECRET_KEY.",
+      error: "Invitations aren’t set up on this deployment. Check SUPABASE_SECRET_KEY.",
     });
     expect(console.error).toHaveBeenCalledWith(
       "[wl] [approveEmail] Missing required environment variable: APP_URL",
     );
     expect(dbAdmin.execute).not.toHaveBeenCalled();
     expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("refills the direct form on a setup error", async () => {
+    vi.stubEnv("APP_URL", "");
+    await expect(approveEmail({}, form("new@example.test", "direct"))).resolves.toMatchObject({
+      email: "new@example.test",
+    });
+  });
+
+  it("logs a generic line when setup throws something other than an Error", async () => {
+    vi.mocked(createAdminAuthClient).mockImplementation(() => {
+      throw "boom";
+    });
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toHaveProperty("error");
+    expect(console.error).toHaveBeenCalledWith("[wl] [approveEmail] configuration error");
   });
 
   it("reports a missing secret key the same way", async () => {

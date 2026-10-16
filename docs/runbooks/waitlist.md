@@ -46,7 +46,7 @@ The hook is enabled but the function is missing or not executable by `supabase_a
 
 ### "Invitations aren't set up on this deployment"
 
-`APP_URL` or `SUPABASE_SECRET_KEY` is missing. The function log line `[wl] [approveEmail] Missing required environment variable: <name>` names it. Set it on the Production target and redeploy. Nothing was approved.
+`SUPABASE_SECRET_KEY` is missing. The function log line `[wl] [approveEmail] Missing required environment variable: SUPABASE_SECRET_KEY` confirms it. Set it on the Production target and redeploy. Nothing was approved. A missing `APP_URL` or `RATE_LIMIT_SECRET` stops every server page at startup instead.
 
 ### Approved, but "the invitation email failed"
 

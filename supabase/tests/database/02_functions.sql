@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(21);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'own@test.dev');
 update public.profiles set display_name = 'Sean O' where id = '00000000-0000-0000-0000-0000000000a1';
@@ -85,12 +85,18 @@ select private.check_rate_limit('k2', 1, 60);
 select results_eq($$select key from private.rate_limits where key in ('stale', 'recent')$$,
   array['recent'], 'a rate-limit call deletes rows older than two days');
 
+select has_index('private', 'rate_limits', 'rate_limits_window_start_idx', 'rate_limits is indexed on window_start');
+
 insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values
   ('00000000-0000-0000-0000-0000000000b1', 'mail@test.dev', '{"provider": "email"}', '{"full_name": "Chosen Name"}'),
-  ('00000000-0000-0000-0000-0000000000b2', 'goog@test.dev', '{"provider": "google"}', '{"full_name": "Google Name"}');
+  ('00000000-0000-0000-0000-0000000000b2', 'goog@test.dev', '{"provider": "google"}', '{"full_name": "Google Name"}'),
+  ('00000000-0000-0000-0000-0000000000b3', 'name@test.dev', '{"provider": "google"}', '{"name": "Only Name"}'),
+  ('00000000-0000-0000-0000-0000000000b4', 'long@test.dev', '{"provider": "google"}', jsonb_build_object('full_name', repeat('x', 250))),
+  ('00000000-0000-0000-0000-0000000000b5', 'none@test.dev', '{}', '{"full_name": "No Provider"}');
 select results_eq($$select display_name from public.profiles
-    where id in ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b2') order by id$$,
-  array['', 'Google Name'], 'email sign-ups ignore metadata names; Google sign-ups keep them');
+    where id::text like '00000000-0000-0000-0000-0000000000b%' order by id$$,
+  array['', 'Google Name', 'Only Name', repeat('x', 200), ''],
+  'only Google sign-ups keep a metadata name, from full_name or name, capped at 200');
 
 select * from finish();
 rollback;
