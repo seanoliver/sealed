@@ -26,7 +26,9 @@ export async function approveEmail(
   // Checked before approving, so a misconfigured deploy changes nothing.
   const appUrl = requiredEnv("APP_URL");
   const authAdmin = createAdminAuthClient();
-  const email = parseEmailField(formData)?.toLowerCase();
+  // No lowercasing here: private.approve_waitlist_email and Supabase Auth both
+  // normalize the address.
+  const email = parseEmailField(formData);
   if (!email) return { error: "Enter a valid email address." };
 
   let newlyApproved = false;

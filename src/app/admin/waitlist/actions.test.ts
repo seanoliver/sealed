@@ -40,14 +40,14 @@ describe("approveEmail", () => {
     vi.clearAllMocks();
   });
 
-  it("approves, sends the invitation and records it", async () => {
+  it("approves, sends the invitation and records it, leaving case to SQL and Auth", async () => {
     await expect(approveEmail({}, form("New@Example.test"))).resolves.toEqual({
-      message: "Approved new@example.test. Invitation sent.",
+      message: "Approved New@Example.test. Invitation sent.",
     });
-    expect(generateLink).toHaveBeenCalledWith({ type: "magiclink", email: "new@example.test" });
+    expect(generateLink).toHaveBeenCalledWith({ type: "magiclink", email: "New@Example.test" });
     expect(sendNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: "new@example.test",
+        to: "New@Example.test",
         subject: "You’re invited to Sealed",
         text: expect.stringContaining(
           "Sign in: https://app.example/auth/confirm?token_hash=hash123&type=signup",
