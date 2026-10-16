@@ -34,11 +34,8 @@ function turnstileGlobal(): TurnstileGlobal | undefined {
 }
 
 /**
- * Explicit rendering, because implicit mode only scans the page once: a
- * remounted form would get no widget and fail verification on every submit.
- *
- * Responses are single-use at siteverify, so pass the form's action state as
- * `resetOn`: each new state after a submit gets a fresh response.
+ * Keep explicit rendering: implicit mode scans the page once, so a remounted form gets no widget.
+ * Pass the action state as `resetOn`; siteverify consumes each response.
  */
 export function TurnstileWidget({
   resetOn,

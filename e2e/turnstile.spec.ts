@@ -4,10 +4,6 @@ import { uniqueEmail } from "./helpers";
 
 type TurnstileCalls = { renders: number; resets: number; removes: number };
 
-/**
- * Replaces Cloudflare's script with a stub that fires the token callback at
- * once and records every render/reset/remove, so widget lifecycle is observable.
- */
 async function stubTurnstile(page: Page): Promise<void> {
   await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
     route.fulfill({
@@ -60,10 +56,8 @@ test("the widget resets after a failed submit and is replaced on a different ema
   await submit.click();
   await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText("Enter a valid email address.");
   await expect.poll(() => calls(page)).toEqual({ renders: 1, resets: 1, removes: 0 });
-  // The stub, like a fresh challenge, does not fire the callback by itself.
   await expect(submit).toBeDisabled();
 
-  // A real widget fires its callback once the new challenge is solved.
   await page.evaluate(() => (window as unknown as { __ts: { solve: () => void } }).__ts.solve());
   await expect(submit).toBeEnabled();
   await page.getByLabel("Email address").fill(email);
