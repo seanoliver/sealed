@@ -13,6 +13,7 @@ Keep sign-up invite-only in production, and approve people from the waitlist.
 
 - The `*_waitlist.sql` migration is applied to production (the deploy workflow does this on merge).
 - `ADMIN_EMAILS` is set on the `sealed` Vercel project (Production target) and includes your email.
+- `SUPABASE_SECRET_KEY` is set on the same target (Supabase dashboard, **Project Settings → API Keys → Secret keys**). Without it, approving fails with "Missing required environment variable: SUPABASE_SECRET_KEY" and changes nothing.
 - A Supabase Management API token with access to the production project.
 
 ## Enable the gate (once)
@@ -30,12 +31,12 @@ curl -fsS -X PATCH "https://api.supabase.com/v1/projects/ivwrvilpjhqhmlzwgyot/co
 
 ## Approve people
 
-Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email. **Send invitation** approves an email that has not asked yet. An approved email whose invitation failed shows **Resend invitation**.
+Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email with a sign-in link. The link expires after the project's OTP lifetime; an expired link lands on the entry page, where the person enters their email to get a new one. **Send invitation** approves an email that has not asked yet. An approved email whose invitation failed shows **Resend invitation**.
 
 ## Verification
 
 - Request access at sealed.page with an email that is not approved. The page says "Your request is in", no email arrives, and the email appears under **Waiting**.
-- Approve it. The invitation arrives, and requesting access again sends a sign-in link that creates the account.
+- Approve it. The invitation arrives, and its link signs in and creates the account. Requesting access again also sends a working sign-in link.
 
 ## Failure recovery
 

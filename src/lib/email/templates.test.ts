@@ -124,12 +124,26 @@ describe("healthCheckFailedEmail", () => {
 });
 
 describe("waitlistApprovedEmail", () => {
-  it("links to the sign-in page in html and text, escaping the URL", () => {
+  it("links to the sign-in URL in html and text, escaping it", () => {
     const { subject, html, text } = waitlistApprovedEmail({
-      signInUrl: "https://app.example/?a=1&b=2",
+      signInUrl: "https://app.example/auth/confirm?token_hash=a&type=magiclink",
+      appUrl: "https://app.example",
     });
     expect(subject).toBe("You’re invited to Sealed");
-    expect(html).toContain('href="https://app.example/?a=1&amp;b=2"');
-    expect(text).toContain("Sign in: https://app.example/?a=1&b=2");
+    expect(html).toContain(
+      'href="https://app.example/auth/confirm?token_hash=a&amp;type=magiclink"',
+    );
+    expect(text).toContain(
+      "Sign in: https://app.example/auth/confirm?token_hash=a&type=magiclink",
+    );
+  });
+
+  it("says where to get a new link once this one expires", () => {
+    const { html, text } = waitlistApprovedEmail({
+      signInUrl: "https://app.example/auth/confirm?token_hash=a&type=magiclink",
+      appUrl: "https://app.example",
+    });
+    expect(html).toContain('<a href="https://app.example"');
+    expect(text).toContain("go to https://app.example and enter this email address");
   });
 });

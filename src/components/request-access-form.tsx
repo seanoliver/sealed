@@ -38,7 +38,7 @@ function RequestAccessForm({
     state.status === "error"
       ? state.message
       : error
-        ? "That sign-in link didn’t work. Request a new one below."
+        ? "That sign-in link didn’t work. It may have expired or already been used. Enter your email to get a new one."
         : undefined;
   useTurnstileResetOnError(state.status === "error" ? state.message : undefined);
 

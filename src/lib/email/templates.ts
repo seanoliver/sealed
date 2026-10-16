@@ -138,20 +138,25 @@ This alert contains no error details by design.
 
 export interface WaitlistApprovedEmailInput {
   signInUrl: string;
+  /** Where to request a new link once signInUrl has expired. */
+  appUrl: string;
 }
 
-/** Sent when an email is approved. The sign-in page sends the actual magic link. */
+/** Sent when an email is approved. signInUrl signs the person in directly. */
 export function waitlistApprovedEmail({
   signInUrl,
+  appUrl,
 }: WaitlistApprovedEmailInput): EmailContent {
   const subject = "You’re invited to Sealed";
   const url = escapeHtml(signInUrl);
+  const entryUrl = escapeHtml(appUrl);
 
   const html = `<div style="margin:0 auto;max-width:520px;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:15px;line-height:1.6">
   <p style="margin:0 0 24px;font-size:17px;font-weight:700">Sealed</p>
   <p style="margin:0 0 16px">Hi,</p>
-  <p style="margin:0 0 16px">Your invitation to the Sealed beta is ready. Sign in with this email address to create your address book.</p>
+  <p style="margin:0 0 16px">You’re in. Your invitation to the Sealed beta is ready. Use this link to sign in and create your address book.</p>
   <p style="margin:0 0 24px"><a href="${url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Sign in to Sealed</a></p>
+  <p style="margin:0 0 16px;color:#6b7280;font-size:13px">For your security, this link stops working after a while. If it has, go to <a href="${entryUrl}" style="color:#6b7280">${entryUrl}</a> and enter this email address to get a new one.</p>
   <p style="margin:0;color:#6b7280;font-size:13px">If the button doesn&#39;t work, copy and paste this address into your browser:<br>${url}</p>
 </div>`;
 
@@ -159,9 +164,11 @@ export function waitlistApprovedEmail({
 
 Hi,
 
-Your invitation to the Sealed beta is ready. Sign in with this email address to create your address book.
+You’re in. Your invitation to the Sealed beta is ready. Use this link to sign in and create your address book.
 
 Sign in: ${signInUrl}
+
+For your security, this link stops working after a while. If it has, go to ${appUrl} and enter this email address to get a new one.
 `;
 
   return { subject, html, text };

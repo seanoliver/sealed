@@ -5,7 +5,8 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // dbAdmin bypasses RLS: restrict imports of the admin module to the
+  // dbAdmin bypasses RLS and the Supabase admin client bypasses Auth:
+  // restrict imports of both admin modules to the
   // sanctioned call sites (private.* definer calls, token minting, webhook
   // status updates). Everything owner-facing goes through withRls.
   {
@@ -20,6 +21,11 @@ const eslintConfig = defineConfig([
               message:
                 "dbAdmin bypasses RLS. Use withRls from @/lib/db for owner-facing data access; dbAdmin is only for private.* SECURITY DEFINER calls, update_token minting, and webhook status updates (see the allowlisted paths in eslint.config.mjs).",
             },
+            {
+              group: ["**/supabase/admin"],
+              message:
+                "The Supabase admin client holds the secret key and bypasses Auth checks. Only the allowlisted admin paths in eslint.config.mjs may import it.",
+            },
           ],
         },
       ],
@@ -32,8 +38,9 @@ const eslintConfig = defineConfig([
       "src/app/u/**",
       "src/app/b/**",
       "src/app/dashboard/actions.ts",
-      // Sanctioned: the waitlist is private-schema only; every call is gated
-      // by requireAdmin (ADMIN_EMAILS).
+      // Sanctioned: the waitlist is private-schema only, and the invitation's
+      // sign-in link needs the Auth admin API; every call is gated by
+      // requireAdmin (ADMIN_EMAILS).
       "src/app/admin/**",
       // Sanctioned: the public permalink surface is unauthenticated (no
       // claims for withRls); this module selects ONLY title/owner name/

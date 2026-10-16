@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireAdmin } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { sendNotification } from "@/lib/email/resend";
+import { createAdminAuthClient } from "@/lib/supabase/admin";
 import { approveEmail } from "./actions";
 
 vi.mock("@/lib/auth", () => ({ requireAdmin: vi.fn() }));
 vi.mock("@/lib/db/admin", () => ({ dbAdmin: { execute: vi.fn() } }));
 vi.mock("@/lib/email/resend", () => ({ sendNotification: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminAuthClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
+const generateLink = vi.fn();
 
 function form(email: string): FormData {
   const data = new FormData();
@@ -21,6 +25,13 @@ describe("approveEmail", () => {
     vi.mocked(requireAdmin).mockResolvedValue({ sub: "admin" });
     vi.mocked(dbAdmin.execute).mockResolvedValue([{ approved: true }] as never);
     vi.mocked(sendNotification).mockResolvedValue(true);
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "hash123", verification_type: "signup" } },
+      error: null,
+    });
+    vi.mocked(createAdminAuthClient).mockReturnValue({
+      auth: { admin: { generateLink } },
+    } as unknown as ReturnType<typeof createAdminAuthClient>);
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -33,10 +44,30 @@ describe("approveEmail", () => {
     await expect(approveEmail({}, form("New@Example.test"))).resolves.toEqual({
       message: "Approved new@example.test. Invitation sent.",
     });
+    expect(generateLink).toHaveBeenCalledWith({ type: "magiclink", email: "new@example.test" });
     expect(sendNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "new@example.test", subject: "You’re invited to Sealed" }),
+      expect.objectContaining({
+        to: "new@example.test",
+        subject: "You’re invited to Sealed",
+        text: expect.stringContaining(
+          "Sign in: https://app.example/auth/confirm?token_hash=hash123&type=signup",
+        ),
+      }),
     );
     expect(dbAdmin.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a failed sign-in link like a failed email, sending nothing", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: null, user: null },
+      error: { name: "AuthApiError", status: 500 },
+    });
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error:
+        "Approved new@example.test, but the invitation email failed. Use Resend invitation to try again.",
+    });
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(dbAdmin.execute).toHaveBeenCalledTimes(1);
   });
 
   it("resends for an email that was already approved", async () => {

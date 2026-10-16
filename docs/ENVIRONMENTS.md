@@ -110,6 +110,7 @@ Required production Vercel variables:
 - `CRON_SECRET` (random, at least 16 characters)
 - `HEALTH_ALERT_EMAIL` (recommended)
 - `ADMIN_EMAILS` (who can approve beta invitations at `/admin/waitlist`)
+- `SUPABASE_SECRET_KEY` (server only; approving an email fails with a clear error without it)
 
 `EMAIL_DRY_RUN` must be absent in production. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
 

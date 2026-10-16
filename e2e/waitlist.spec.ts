@@ -95,6 +95,8 @@ test("an admin approves a waiting email, which can then sign up", async ({
     status: "approved",
     invited: true,
   });
+  // Generating the invitation's sign-in link creates the approved user.
+  expect(await authUserExists(approvedLater)).toBe(true);
 
   const visitor = await browser.newPage();
   await requestAccess(visitor, approvedLater);

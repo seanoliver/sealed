@@ -15,7 +15,7 @@ test("a failed magic link returns to the entry page with an error", async ({ pag
 
   await expect(page).toHaveURL(/\/\?error=1$/);
   await expect(
-    page.getByRole("alert").filter({ hasText: "That sign-in link didn’t work" }),
+    page.getByRole("alert").filter({ hasText: "It may have expired or already been used" }),
   ).toBeVisible();
   await cleanupUser(email);
 });
@@ -30,6 +30,6 @@ test("a provider fallback code at the site root reaches auth confirmation", asyn
   // the visitor stranded on the public homepage with a code in the URL.
   await expect(page).toHaveURL(/\/\?error=1$/);
   await expect(
-    page.getByRole("alert").filter({ hasText: "That sign-in link didn’t work" }),
+    page.getByRole("alert").filter({ hasText: "It may have expired or already been used" }),
   ).toBeVisible();
 });
