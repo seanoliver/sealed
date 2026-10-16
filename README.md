@@ -56,6 +56,7 @@ All of these live in `.env.local` (gitignored). See [.env.local.example](.env.lo
 | `APP_ENV` | Explicit runtime environment: `local` or `production`. Do not infer this from `NODE_ENV`; every Vercel deployment uses `NODE_ENV=production`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL. Used for **auth only** — the browser never touches Supabase data APIs. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon (publishable) key. Auth only, same as above. |
+| `SUPABASE_SECRET_KEY` | Supabase secret (or service-role) key. Server only; used by `/admin/waitlist` to generate the sign-in link in beta invitations. |
 | `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` | Local Supabase CLI Google Web OAuth client ID; export before starting Supabase. |
 | `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET` | Local Supabase CLI Google Web OAuth client secret; export before starting Supabase. |
 | `DATABASE_URL` | Direct Postgres connection for Drizzle (server only, never exposed to the client). In production: the transaction pooler on port 6543 with `sslmode=require`. |
@@ -66,6 +67,7 @@ All of these live in `.env.local` (gitignored). See [.env.local.example](.env.lo
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key. The example value is Cloudflare's public always-pass test key. |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key. The example value is Cloudflare's public always-pass test key. |
 | `APP_URL` | Canonical base URL of the deployment — used to build the links in outgoing emails. |
+| `ADMIN_EMAILS` | Comma-separated emails that can open `/admin/waitlist` to approve beta invitations. Everyone else gets a 404 there. |
 
 Required vars are asserted at server startup (`src/lib/env.ts`); a misconfigured deployment fails loudly with the list of missing names.
 

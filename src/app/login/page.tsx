@@ -1,13 +1,10 @@
-import type { Metadata } from "next";
-import { AuthPage } from "@/components/auth-page";
-
-export const metadata: Metadata = { title: "Log in" };
+import { redirect } from "next/navigation";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sent?: string; error?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { sent, error } = await searchParams;
-  return <AuthPage flow="login" sent={sent} error={error} />;
+  const { error } = await searchParams;
+  redirect(error ? "/?error=1" : "/");
 }

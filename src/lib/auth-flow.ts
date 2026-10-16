@@ -1,17 +1,17 @@
-import { z } from "zod";
-
-const authFlowSchema = z.enum(["login", "signup"]);
-
-export type AuthFlow = z.infer<typeof authFlowSchema>;
-
-/** Unknown or legacy callbacks retain the historical login fallback. */
-export function parseAuthFlow(value: unknown): AuthFlow {
-  const parsed = authFlowSchema.safeParse(value);
-  return parsed.success ? parsed.data : "login";
+export function authConfirmationUrl(baseUrl: string): string {
+  const url = new URL("/auth/confirm", baseUrl);
+  // The email templates append `&token_hash=…` to this URL, so it must already
+  // carry a query string. /auth/confirm ignores the value.
+  url.searchParams.set("flow", "login");
+  return url.toString();
 }
 
-export function authConfirmationUrl(baseUrl: string, flow: AuthFlow): string {
+export function signInLinkUrl(
+  baseUrl: string,
+  { tokenHash, type }: { tokenHash: string; type: string },
+): string {
   const url = new URL("/auth/confirm", baseUrl);
-  url.searchParams.set("flow", flow);
+  url.searchParams.set("token_hash", tokenHash);
+  url.searchParams.set("type", type);
   return url.toString();
 }

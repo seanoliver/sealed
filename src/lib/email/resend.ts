@@ -113,20 +113,21 @@ export async function sendAddressRequests(
 /**
  * Single transactional notification (e.g. "new submission" to a book owner).
  * Swallows send failures after logging name/message only — notifications are
- * fire-and-forget and must never fail the flow that triggered them. The
+ * fire-and-forget and must never fail the flow that triggered them. Resolves
+ * true when the email was accepted (or logged in dry-run). The
  * subject/body must never contain recipient-submitted data (the dry-run path
  * logs the subject).
  */
-export async function sendNotification(item: EmailItem): Promise<void> {
+export async function sendNotification(item: EmailItem): Promise<boolean> {
   if (isEmailDryRun()) {
     console.info(`[em] [dry-run] notification to ${item.to}: ${item.subject}`);
-    return;
+    return true;
   }
 
   const from = process.env.EMAIL_FROM;
   if (!from) {
     console.error("[em] [sendNotification] EMAIL_FROM is not set");
-    return;
+    return false;
   }
 
   try {
@@ -142,11 +143,14 @@ export async function sendNotification(item: EmailItem): Promise<void> {
       console.error(
         `[em] [sendNotification] send failed: ${error.name} ${error.message}`,
       );
+      return false;
     }
+    return true;
   } catch (err) {
     // Transport failure. Log only the error type — never the payload.
     console.error(
       `[em] [sendNotification] send threw: ${err instanceof Error ? err.name : typeof err}`,
     );
+    return false;
   }
 }

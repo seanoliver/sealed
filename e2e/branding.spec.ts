@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { approveEmail } from "./db";
 import {
   createBook,
   fetchDeliveredMessage,
+  requestAccess,
   signupAndLogin,
   uniqueEmail,
   uniqueSlug,
@@ -13,8 +15,9 @@ test.describe("Sealed branding", () => {
 
     await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
     await expect(page.getByText("Address Book", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Private beta · by invitation")).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Create your address book" }),
+      page.getByRole("heading", { name: "Request an invitation" }),
     ).toBeVisible();
   });
 
@@ -50,9 +53,6 @@ test.describe("Sealed branding", () => {
       "summary_large_image",
     );
 
-    await page.goto("/login");
-    await expect(page).toHaveTitle("Log in · Sealed");
-    await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
   });
 
   test("offers an installable Sealed web-app manifest", async ({ page }) => {
@@ -110,9 +110,8 @@ test.describe("Sealed branding", () => {
     page,
   }) => {
     const email = uniqueEmail("sealed-auth-mail");
-    await page.goto("/login");
-    await page.getByLabel("Email address").fill(email);
-    await page.getByRole("button", { name: "Send magic link" }).click();
+    await approveEmail(email);
+    await requestAccess(page, email);
 
     const message = await fetchDeliveredMessage(email);
     expect(message.Subject).toBe("Your Sealed sign-in link");
@@ -129,22 +128,14 @@ test.describe("Sealed branding", () => {
     );
   });
 
-  test("authentication pages present Sealed without renaming address books", async ({
-    page,
-  }) => {
-    await page.goto("/login");
-
-    await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
-    await expect(page.getByText("Enter the email you use for Sealed.")).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Create an address book" }),
-    ).toBeVisible();
-
-    await page.goto("/signup");
-    await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Create your address book" }),
-    ).toBeVisible();
+  test("old sign-in and sign-up links lead to the entry page", async ({ page }) => {
+    for (const path of ["/login", "/signup"]) {
+      await page.goto(path);
+      await expect(page).toHaveURL(/\/$/);
+      await expect(
+        page.getByRole("heading", { name: "Request an invitation" }),
+      ).toBeVisible();
+    }
   });
 
   test("owner pages keep the Sealed wordmark and address-book domain language", async ({
@@ -164,6 +155,9 @@ test.describe("Sealed branding", () => {
     await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Your address book" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("banner").getByText("Beta", { exact: true }),
     ).toBeVisible();
 
     await page.goto("/dashboard/settings");

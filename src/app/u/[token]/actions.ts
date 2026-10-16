@@ -9,7 +9,7 @@ import { sql } from "drizzle-orm";
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
-import { hashedIpKey, requestIp } from "@/lib/request-ip";
+import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import {
@@ -57,7 +57,7 @@ export async function submitTokenUpdate(
   //    outage — this surface would rather refuse than be unmetered.
   let allowed = false;
   try {
-    allowed = await checkRateLimit(hashedIpKey("token-submit", ip), 10, 3600);
+    allowed = await checkRateLimit(hashedRateLimitKey("token-submit", ip), 10, 3600);
   } catch (err) {
     logDbError("[tu] [submitTokenUpdate] rate-limit check failed", err);
     return { error: GENERIC_ERROR, values: submitted };

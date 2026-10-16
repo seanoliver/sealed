@@ -79,7 +79,7 @@ Every push to `main` deploys to production, with no manual step. After **CI** pa
 1. checks out the current head of `main`, which may be newer than the commit whose CI finished; the `main` ruleset only accepts PRs that are up to date and green, so every head has been tested,
 2. applies committed migrations with `supabase db push`,
 3. checks that production's migration versions match the repository's (`scripts/ci/migration-drift.sh`),
-4. builds and deploys that commit on Vercel, checks through the Vercel API that sealed.page serves the new deployment, and checks that `https://sealed.page/login` responds.
+4. builds and deploys that commit on Vercel, checks through the Vercel API that sealed.page serves the new deployment, and checks that `https://sealed.page/` responds.
 
 A migration therefore runs immediately before the code that needs it goes live, never ahead of review. The workflow can also be dispatched by hand to redeploy the head of `main`.
 
@@ -109,8 +109,14 @@ Required production Vercel variables:
 - real `TURNSTILE_SECRET_KEY`
 - `CRON_SECRET` (random, at least 16 characters)
 - `HEALTH_ALERT_EMAIL` (recommended)
+- `ADMIN_EMAILS` (who can approve beta invitations at `/admin/waitlist`)
+- `SUPABASE_SECRET_KEY` (server only; approving an email fails with a clear error without it)
 
 `EMAIL_DRY_RUN` must be absent in production. Even if it is accidentally set, the application refuses to dry-run when `APP_ENV=production`.
+
+### Invite-only sign-up
+
+Production Auth must have the before-user-created hook enabled, pointing at `pg-functions://postgres/private/before_user_created_hook`. Local Auth enables it in `supabase/config.toml`; hosted Auth is configured separately, see [the waitlist runbook](runbooks/waitlist.md). Without the hook, anyone can create an account.
 
 ### Scheduled health check
 
@@ -148,7 +154,7 @@ Production project variables and the GitHub migration credential are configured.
 
 Before considering an environment ready:
 
-- `/login` magic-link flow reaches `/auth/confirm` and then `/dashboard` or `/onboarding`.
+- The entry page's magic-link flow reaches `/auth/confirm` and then `/dashboard` or `/onboarding`.
 - Google OAuth returns through `/auth/confirm`, not `/?code=...`.
 - New owners can complete onboarding.
 - Owners can create/edit/import/export contacts.
