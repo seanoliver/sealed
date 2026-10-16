@@ -5,13 +5,18 @@ import { hashedRateLimitKey } from "@/lib/request-ip";
 import { createClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { WAITLIST_REJECTION } from "@/lib/waitlist";
-import { requestAccess, type RequestAccessState } from "./actions";
+import { redirect } from "next/navigation";
+import { continueWithGoogle, requestAccess, type RequestAccessState } from "./actions";
 
 vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: vi.fn() }));
 vi.mock("@/lib/request-ip", () => ({
   requestIp: vi.fn(async () => "203.0.113.7"),
   hashedRateLimitKey: vi.fn((prefix: string, value: string) => `${prefix}:${value}`),
+}));
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("@/lib/request-origin", () => ({
+  currentRequestOrigin: vi.fn(async () => "https://app.example"),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
@@ -159,5 +164,26 @@ describe("requestAccess", () => {
     });
     expect(checkRateLimit).toHaveBeenCalledTimes(1);
     expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe("continueWithGoogle", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("redirects to /?error=1 when Supabase returns no OAuth URL", async () => {
+    const signInWithOAuth = vi.fn().mockResolvedValue({
+      data: { url: null },
+      error: { message: "boom" },
+    });
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { signInWithOAuth },
+    } as unknown as Awaited<ReturnType<typeof createClient>>);
+    vi.mocked(redirect).mockImplementation(() => {
+      throw new Error("NEXT_REDIRECT");
+    });
+
+    await expect(continueWithGoogle()).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith("/?error=1");
   });
 });

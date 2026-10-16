@@ -9,7 +9,14 @@ import {
   seedEmailSend,
   seedUpdateToken,
 } from "./db";
-import { signupAndLogin, uniqueEmail, uniqueSlug, waitForTurnstile } from "./helpers";
+import {
+  calls,
+  signupAndLogin,
+  stubTurnstile,
+  uniqueEmail,
+  uniqueSlug,
+  waitForTurnstile,
+} from "./helpers";
 
 /**
  * The /u/[token] recipient-update surface. The owner signs up through the
@@ -100,10 +107,22 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
 }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
+  await stubTurnstile(page);
   await page.goto(`/u/${token}`);
 
-  await page.locator("#city").fill("Porto");
+  // An address the browser accepts but the server rejects: the action returns
+  // an error state, so the widget must reset exactly once. The failed submit
+  // does not consume the token.
   await waitForTurnstile(page);
+  await page.locator("#email").fill("nobody@localhost");
+  await page.getByRole("button", { name: "Update my details" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/u/${token}$`));
+  await expect.poll(() => calls(page)).toMatchObject({ resets: 1 });
+
+  // A corrected retry succeeds.
+  await page.locator("#email").fill("");
+  await page.locator("#city").fill("Porto");
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(/\/u\/thanks$/);
   await expect(

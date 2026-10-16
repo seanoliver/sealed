@@ -1,43 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { cleanupUser, clearRequestAccessLimits } from "./db";
-import { uniqueEmail } from "./helpers";
-
-type TurnstileCalls = { renders: number; resets: number; removes: number };
-
-async function stubTurnstile(page: Page): Promise<void> {
-  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
-    route.fulfill({
-      contentType: "application/javascript",
-      body: `
-        window.__ts = { renders: [], resets: [], removes: [], solve: () => {} };
-        let next = 0;
-        window.turnstile = {
-          render(el, opts) {
-            const id = "stub-" + next++;
-            const input = document.createElement("input");
-            input.type = "hidden";
-            input.name = "cf-turnstile-response";
-            input.value = "stub-token";
-            el.closest("form").appendChild(input);
-            window.__ts.renders.push(id);
-            window.__ts.solve = opts.callback;
-            opts.callback();
-            return id;
-          },
-          reset(id) { window.__ts.resets.push(id); },
-          remove(id) { window.__ts.removes.push(id); },
-        };
-      `,
-    }),
-  );
-}
-
-async function calls(page: Page): Promise<TurnstileCalls> {
-  return page.evaluate(() => {
-    const ts = (window as unknown as { __ts: Record<keyof TurnstileCalls, unknown[]> }).__ts;
-    return { renders: ts.renders.length, resets: ts.resets.length, removes: ts.removes.length };
-  });
-}
+import { calls, stubTurnstile, uniqueEmail } from "./helpers";
 
 test("the widget resets after a failed submit and is replaced on a different email", async ({
   page,

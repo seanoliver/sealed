@@ -141,3 +141,41 @@ export async function waitForTurnstile(page: Page): Promise<void> {
     page.locator('input[name="cf-turnstile-response"]'),
   ).toHaveValue(/.+/, { timeout: 20_000 });
 }
+
+export type TurnstileCalls = { renders: number; resets: number; removes: number };
+
+/** Replace the Cloudflare script with a stub that records render/reset/remove calls. */
+export async function stubTurnstile(page: Page): Promise<void> {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      body: `
+        window.__ts = { renders: [], resets: [], removes: [], solve: () => {} };
+        let next = 0;
+        window.turnstile = {
+          render(el, opts) {
+            const id = "stub-" + next++;
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "cf-turnstile-response";
+            input.value = "stub-token";
+            el.closest("form").appendChild(input);
+            window.__ts.renders.push(id);
+            window.__ts.solve = opts.callback;
+            opts.callback();
+            return id;
+          },
+          reset(id) { window.__ts.resets.push(id); },
+          remove(id) { window.__ts.removes.push(id); },
+        };
+      `,
+    }),
+  );
+}
+
+export async function calls(page: Page): Promise<TurnstileCalls> {
+  return page.evaluate(() => {
+    const ts = (window as unknown as { __ts: Record<keyof TurnstileCalls, unknown[]> }).__ts;
+    return { renders: ts.renders.length, resets: ts.resets.length, removes: ts.removes.length };
+  });
+}
