@@ -168,6 +168,17 @@ export async function seedPendingWaitlist(email: string): Promise<void> {
     on conflict (email) do nothing`;
 }
 
+export async function seedApprovedWaitlist(
+  email: string,
+  opts: { invited: boolean },
+): Promise<void> {
+  await seedPendingWaitlist(email);
+  await approveEmail(email);
+  if (opts.invited) {
+    await db`select private.mark_waitlist_invitation_sent(${email})`;
+  }
+}
+
 export async function getWaitlistRow(
   email: string,
 ): Promise<{ status: string; source: string; invited: boolean } | null> {

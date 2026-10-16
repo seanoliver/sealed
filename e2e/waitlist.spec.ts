@@ -3,6 +3,7 @@ import {
   authUserExists,
   cleanupUser,
   getWaitlistRow,
+  seedApprovedWaitlist,
   seedPendingWaitlist,
 } from "./db";
 import {
@@ -20,9 +21,11 @@ const ADMIN_EMAIL = "admin@e2e.test";
 const waitlisted = uniqueEmail("waitlisted");
 const approvedLater = uniqueEmail("approved-later");
 const secondRequest = uniqueEmail("second-request");
+const notInvited = uniqueEmail("not-invited");
+const alreadyInvited = uniqueEmail("already-invited");
 
 test.afterAll(async () => {
-  for (const email of [waitlisted, approvedLater, secondRequest]) {
+  for (const email of [waitlisted, approvedLater, secondRequest, notInvited, alreadyInvited]) {
     await cleanupUser(email);
   }
 });
@@ -40,7 +43,6 @@ test("an unapproved email joins the waitlist without an account or email", async
     invited: false,
   });
   expect(await authUserExists(waitlisted)).toBe(false);
-  await expectNoDeliveredMessage(waitlisted);
 
   await page.getByRole("button", { name: "Use a different email" }).click();
   await expect(page.getByLabel("Email address")).toHaveValue("");
@@ -50,6 +52,10 @@ test("an unapproved email joins the waitlist without an account or email", async
   await page.getByRole("button", { name: "Request access" }).click();
   await expect(page.getByRole("status")).toContainText(secondRequest);
   expect(await getWaitlistRow(secondRequest)).toMatchObject({ status: "pending" });
+
+  // Last: the fixed sleep can span a dev-server Fast Refresh that drops the
+  // client-only "sent" state, so nothing above may depend on it.
+  await expectNoDeliveredMessage(waitlisted);
 });
 
 test("a waitlisted Google sign-up shows its confirmation", async ({ page }) => {
@@ -111,4 +117,22 @@ test("an admin approves a waiting email, which can then sign up", async ({
   await visitor.goto(`${new URL(visitor.url()).origin}${link.pathname}${link.search}`);
   await expect(visitor).toHaveURL(/\/onboarding$/);
   await visitor.close();
+});
+
+test("the admin board offers Resend invitation only when none was sent", async ({
+  page,
+}) => {
+  await seedApprovedWaitlist(notInvited, { invited: false });
+  await seedApprovedWaitlist(alreadyInvited, { invited: true });
+  await signupAndLogin(page, ADMIN_EMAIL);
+
+  await page.goto("/admin/waitlist");
+  const approved = page.getByRole("region", { name: /^Approved/ }).getByRole("listitem");
+  await expect(
+    approved.filter({ hasText: notInvited }).getByRole("button", { name: "Resend invitation" }),
+  ).toBeVisible();
+  await expect(approved.filter({ hasText: alreadyInvited })).toContainText("Invitation sent");
+  await expect(
+    approved.filter({ hasText: alreadyInvited }).getByRole("button", { name: "Resend invitation" }),
+  ).toHaveCount(0);
 });

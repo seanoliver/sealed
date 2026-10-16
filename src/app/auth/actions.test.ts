@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkRateLimit } from "@/lib/db/rate-limit";
+import { hashedRateLimitKey } from "@/lib/request-ip";
 import { createClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { WAITLIST_REJECTION } from "@/lib/waitlist";
@@ -97,6 +98,16 @@ describe("requestAccess", () => {
     expect(checkRateLimit).toHaveBeenNthCalledWith(1, "request-access:203.0.113.7", 5, 3600);
     expect(checkRateLimit).toHaveBeenNthCalledWith(2, "request-access-email:a@example.test", 3, 3600);
     expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it("keys the per-email limit on the lowercased email", async () => {
+    await requestAccess(idle, form("A@Example.test"));
+    expect(checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      hashedRateLimitKey("request-access-email", "a@example.test"),
+      3,
+      3600,
+    );
   });
 
   it("stops at the client limit without checking Turnstile or the email limit", async () => {

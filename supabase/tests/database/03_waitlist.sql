@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(27);
+select plan(28);
 
 -- Start from an empty waitlist; the rollback at the end restores it.
 delete from private.waitlist;
@@ -35,6 +35,10 @@ select is(
   (select source from private.waitlist where email = 'new@example.test'),
   'email',
   'a repeat request keeps the original row');
+select is(
+  private.before_user_created_hook('{"user": {"email": "new@example.test"}}'),
+  '{"error": {"http_code": 403, "message": "sealed_waitlisted"}}'::jsonb,
+  'a pending email is still rejected on a repeat request');
 
 select is(
   private.before_user_created_hook('{"user": {"phone": "+15555550100"}}') -> 'error' ->> 'message',
