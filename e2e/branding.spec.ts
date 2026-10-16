@@ -156,6 +156,9 @@ test.describe("Sealed branding", () => {
     await expect(
       page.getByRole("heading", { name: "Your address book" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("banner").getByText("Beta", { exact: true }),
+    ).toBeVisible();
 
     await page.goto("/dashboard/settings");
     await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
