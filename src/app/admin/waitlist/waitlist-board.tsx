@@ -2,12 +2,13 @@
 
 import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
+import type { WaitlistSource, WaitlistStatus } from "@/lib/waitlist";
 import { approveEmail, type ApproveState } from "./actions";
 
 export type WaitlistEntry = {
   email: string;
-  status: "pending" | "approved";
-  source: "email" | "google";
+  status: WaitlistStatus;
+  source: WaitlistSource;
   requestedAt: string;
   invitationSentAt: string | null;
 };

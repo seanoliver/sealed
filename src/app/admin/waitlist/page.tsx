@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): see actions.ts.
 import { dbAdmin } from "@/lib/db/admin";
+import type { WaitlistSource, WaitlistStatus } from "@/lib/waitlist";
 import { WaitlistBoard, type WaitlistEntry } from "./waitlist-board";
 
 export const metadata: Metadata = { title: "Waitlist", robots: { index: false } };
@@ -11,8 +12,8 @@ export default async function WaitlistPage() {
   await requireAdmin();
   const rows = await dbAdmin.execute<{
     email: string;
-    status: "pending" | "approved";
-    source: "email" | "google";
+    status: WaitlistStatus;
+    source: WaitlistSource;
     requested_at: Date;
     invitation_sent_at: Date | null;
   }>(
