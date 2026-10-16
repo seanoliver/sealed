@@ -25,8 +25,10 @@ export async function approveEmail(
   // Checked before approving, so a misconfigured deploy changes nothing.
   const appUrl = requiredEnv("APP_URL");
   const authAdmin = createAdminAuthClient();
+  // Only the direct form refills its input; a row's hidden email must not land there.
+  const echo = formData.get("source") === "direct" ? { email: String(formData.get("email") ?? "") } : {};
   const email = parseEmailField(formData);
-  if (!email) return { error: "Enter a valid email address.", email: String(formData.get("email") ?? "") };
+  if (!email) return { error: "Enter a valid email address.", ...echo };
 
   let newlyApproved = false;
   try {
@@ -36,7 +38,7 @@ export async function approveEmail(
     newlyApproved = rows[0]?.approved === true;
   } catch (err) {
     logDbError("[wl] [approveEmail] approve failed", err);
-    return { error: "Could not approve that email.", email };
+    return { error: "Could not approve that email.", ...echo };
   }
 
   const sent = await sendInvitation({ email, appUrl, authAdmin });
@@ -51,7 +53,7 @@ export async function approveEmail(
   const approved = newlyApproved ? `Approved ${email}` : `${email} was already approved`;
   return sent
     ? { message: `${approved}. Invitation sent.` }
-    : { error: `${approved}, but the invitation email failed. Use Resend invitation to try again.`, email };
+    : { error: `${approved}, but the invitation email failed. Use Resend invitation to try again.`, ...echo };
 }
 
 // generateLink sends no email of its own, so invitations do not use Supabase's

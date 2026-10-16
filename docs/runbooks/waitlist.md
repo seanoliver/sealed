@@ -31,7 +31,7 @@ curl -fsS -X PATCH "https://api.supabase.com/v1/projects/ivwrvilpjhqhmlzwgyot/co
 
 ## Approve people
 
-Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email with a sign-in link. The link expires after the project's OTP lifetime; an expired link lands on the entry page, where the person enters their email to get a new one. **Send invitation** approves an email that has not asked yet. An approved email whose invitation failed shows **Resend invitation**.
+Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email with a sign-in link. The link expires after the project's OTP lifetime; an expired link lands on the entry page, where the person enters their email to get a new one. **Send invitation** approves an email that has not asked yet. Every approved row has **Resend invitation**, which emails a fresh link; the earlier link may stop working.
 
 ## Verification
 

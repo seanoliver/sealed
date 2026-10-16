@@ -38,6 +38,7 @@ export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
           Send an invitation directly
         </h2>
         <form action={formAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="source" value="direct" />
           <label htmlFor="invitation-email" className="sr-only">
             Email to send an invitation to
           </label>

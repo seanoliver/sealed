@@ -99,6 +99,12 @@ describe("requestAccess", () => {
     expect(console.error).toHaveBeenCalledWith(logged);
   });
 
+  it("echoes the email exactly as typed", async () => {
+    const data = form(" A@Example.test ");
+    data.delete("cf-turnstile-response");
+    await expect(requestAccess(idle, data)).resolves.toMatchObject({ email: " A@Example.test " });
+  });
+
   it("rejects an invalid email before any other check", async () => {
     await expect(requestAccess(idle, form("not-an-email"))).resolves.toEqual({
       status: "error",
@@ -144,8 +150,10 @@ describe("requestAccess", () => {
 
   it("stops at the client limit without checking Turnstile or the email limit", async () => {
     vi.mocked(checkRateLimit).mockResolvedValueOnce(false);
-    await expect(requestAccess(idle, form("a@example.test"))).resolves.toMatchObject({
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "error",
+      message: "Too many requests. Please try again later.",
+      email: "a@example.test",
     });
     expect(checkRateLimit).toHaveBeenCalledTimes(1);
     expect(verifyTurnstile).not.toHaveBeenCalled();
@@ -153,8 +161,10 @@ describe("requestAccess", () => {
 
   it("fails closed when the limiter is unavailable", async () => {
     vi.mocked(checkRateLimit).mockRejectedValue(new Error("connection refused"));
-    await expect(requestAccess(idle, form("a@example.test"))).resolves.toMatchObject({
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "error",
+      message: "Something went wrong. Please try again.",
+      email: "a@example.test",
     });
     expect(signInWithOtp).not.toHaveBeenCalled();
   });

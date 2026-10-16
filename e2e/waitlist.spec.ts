@@ -146,6 +146,12 @@ test("an admin invites an unlisted email directly", async ({ page }) => {
   await signupAndLogin(page, ADMIN_EMAIL);
 
   await page.goto("/admin/waitlist");
+  const input = page.getByLabel("Email to send an invitation to");
+  await input.fill("nobody@localhost");
+  await page.getByRole("button", { name: "Send invitation", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText("Enter a valid email address.");
+  await expect(input).toHaveValue("nobody@localhost");
+
   await page.getByLabel("Email to send an invitation to").fill(invitedDirectly);
   await page.getByRole("button", { name: "Send invitation", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(
