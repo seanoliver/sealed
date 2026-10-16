@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+
 -- Email sign-ups ignore user metadata: a direct signUp for an approved address
 -- could otherwise choose the display name that address's recipients will see.
 create or replace function private.handle_new_user()
