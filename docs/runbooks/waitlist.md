@@ -1,7 +1,7 @@
 # Run the beta waitlist
 
 **Status:** Current
-**Last verified:** not yet verified in production
+**Last verified:** production on 2026-10-16 (gate rejects unapproved sign-ups; an approval sent an invitation whose link signed in)
 **Owner:** Maintainers
 **Related:** [#30](https://github.com/seanoliver/sealed/issues/30), [Security model](../SECURITY.md#invite-only-sign-up), [Environments](../ENVIRONMENTS.md#invite-only-sign-up)
 
@@ -13,7 +13,7 @@ Keep sign-up invite-only in production, and approve people from the waitlist.
 
 - The `*_waitlist.sql` migration is applied to production (the deploy workflow does this on merge).
 - `ADMIN_EMAILS` is set on the `sealed` Vercel project (Production target) and includes your email.
-- `SUPABASE_SECRET_KEY` is set on the same target (Supabase dashboard, **Project Settings → API Keys → Secret keys**). Without it, approving fails with "Missing required environment variable: SUPABASE_SECRET_KEY" and changes nothing.
+- `SUPABASE_SECRET_KEY` is set on the same target (Supabase dashboard, **Project Settings → API Keys → Secret keys**, or `GET /v1/projects/<ref>/api-keys?reveal=true`). Do not copy it from `supabase projects api-keys`: the CLI masks secret keys, and a masked key makes every approval fail with `generateLink failed: AuthApiError 401` ([bug](../bugs/2026-10-16-supabase-cli-masked-secret-key.md)). Before saving, check it returns 200: `curl -s -o /dev/null -w '%{http_code}' "https://<ref>.supabase.co/auth/v1/admin/users?per_page=1" -H "apikey: $KEY"`. Without the variable, approving fails and changes nothing.
 - A Supabase Management API token with access to the production project.
 
 ## Enable the gate (once)
