@@ -90,7 +90,7 @@ test("an admin approves a waiting email, which can then sign up", async ({
       .getByRole("region", { name: /^Approved/ })
       .getByRole("listitem")
       .filter({ hasText: approvedLater }),
-  ).toContainText("Invited");
+  ).toContainText("Invitation sent");
   expect(await getWaitlistRow(approvedLater)).toMatchObject({
     status: "approved",
     invited: true,

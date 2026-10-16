@@ -9,7 +9,7 @@ export type WaitlistEntry = {
   status: "pending" | "approved";
   source: "email" | "google";
   requestedAt: string;
-  inviteSentAt: string | null;
+  invitationSentAt: string | null;
 };
 
 const initialState: ApproveState = {};
@@ -34,23 +34,23 @@ export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
         </p>
       ) : null}
 
-      <section aria-labelledby="invite-heading" className="flex flex-col gap-3">
-        <h2 id="invite-heading" className="text-lg font-semibold text-foreground">
-          Invite someone directly
+      <section aria-labelledby="invitation-heading" className="flex flex-col gap-3">
+        <h2 id="invitation-heading" className="text-lg font-semibold text-foreground">
+          Send an invitation directly
         </h2>
         <form action={formAction} className="flex flex-wrap items-center gap-2">
-          <label htmlFor="invite-email" className="sr-only">
-            Email to invite
+          <label htmlFor="invitation-email" className="sr-only">
+            Email to send an invitation to
           </label>
           <input
-            id="invite-email"
+            id="invitation-email"
             name="email"
             type="email"
             required
             placeholder="friend@example.com"
             className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/25"
           />
-          <ActionButton label="Invite" />
+          <ActionButton label="Send invitation" />
         </form>
       </section>
 
@@ -104,12 +104,12 @@ function EntryList({
                 <p className="text-sm text-muted-foreground">
                   {entry.status === "pending"
                     ? `${entry.source === "google" ? "Google" : "Email"} · ${dateFormat.format(new Date(entry.requestedAt))}`
-                    : entry.inviteSentAt
-                      ? `Invited ${dateFormat.format(new Date(entry.inviteSentAt))}`
+                    : entry.invitationSentAt
+                      ? `Invitation sent ${dateFormat.format(new Date(entry.invitationSentAt))}`
                       : "Invitation not sent"}
                 </p>
               </div>
-              {entry.status === "approved" && entry.inviteSentAt ? null : (
+              {entry.status === "approved" && entry.invitationSentAt ? null : (
                 <form action={formAction}>
                   <input type="hidden" name="email" value={entry.email} />
                   <ActionButton

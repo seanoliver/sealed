@@ -149,7 +149,7 @@ export async function getWaitlistRow(
   email: string,
 ): Promise<{ status: string; source: string; invited: boolean } | null> {
   const rows = await db`
-    select status, source, invite_sent_at is not null as invited
+    select status, source, invitation_sent_at is not null as invited
     from private.waitlist where email = ${email.toLowerCase()}`;
   return (rows[0] as { status: string; source: string; invited: boolean }) ?? null;
 }

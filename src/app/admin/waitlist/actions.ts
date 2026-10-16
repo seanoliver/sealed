@@ -44,9 +44,9 @@ export async function approveEmail(
   });
   if (sent) {
     try {
-      await dbAdmin.execute(sql`select private.mark_waitlist_invite_sent(${email})`);
+      await dbAdmin.execute(sql`select private.mark_waitlist_invitation_sent(${email})`);
     } catch (err) {
-      logDbError("[wl] [approveEmail] mark invite sent failed", err);
+      logDbError("[wl] [approveEmail] mark invitation sent failed", err);
     }
   }
   revalidatePath("/admin/waitlist");

@@ -59,9 +59,9 @@ select is(
   '{}'::jsonb,
   'pre-approved email may sign up');
 
-select private.mark_waitlist_invite_sent('INVITED@example.test');
+select private.mark_waitlist_invitation_sent('INVITED@example.test');
 select ok(
-  (select invite_sent_at is not null from private.waitlist where email = 'invited@example.test'),
+  (select invitation_sent_at is not null from private.waitlist where email = 'invited@example.test'),
   'invite send is recorded');
 
 -- list_waitlist: pending first, then by request time (no re-sorting here)
@@ -70,7 +70,7 @@ update private.waitlist set requested_at = now() - interval '2 days' where email
 update private.waitlist set requested_at = now() - interval '1 day' where email = 'invited@example.test';
 insert into private.waitlist (email, source, requested_at) values ('late@example.test', 'email', now());
 select is(
-  (select array_agg(email order by n) from private.list_waitlist() with ordinality as t(email, status, source, requested_at, approved_at, invite_sent_at, n)),
+  (select array_agg(email order by n) from private.list_waitlist() with ordinality as t(email, status, source, requested_at, approved_at, invitation_sent_at, n)),
   array['g@example.test', 'late@example.test', 'new@example.test', 'invited@example.test'],
   'list_waitlist returns pending oldest first, then approved oldest first');
 
@@ -97,8 +97,8 @@ select ok(not has_function_privilege('anon', 'private.approve_waitlist_email(tex
 select ok(not has_function_privilege('anon', 'private.list_waitlist()', 'execute')
           and not has_function_privilege('authenticated', 'private.list_waitlist()', 'execute'),
   'client roles cannot list the waitlist');
-select ok(not has_function_privilege('anon', 'private.mark_waitlist_invite_sent(text)', 'execute')
-          and not has_function_privilege('authenticated', 'private.mark_waitlist_invite_sent(text)', 'execute'),
+select ok(not has_function_privilege('anon', 'private.mark_waitlist_invitation_sent(text)', 'execute')
+          and not has_function_privilege('authenticated', 'private.mark_waitlist_invitation_sent(text)', 'execute'),
   'client roles cannot mark invitations sent');
 
 -- passwords never persist

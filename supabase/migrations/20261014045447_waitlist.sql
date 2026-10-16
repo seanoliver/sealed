@@ -6,7 +6,7 @@ create table private.waitlist (
   source text not null check (source in ('email', 'google')),
   requested_at timestamptz not null default now(),
   approved_at timestamptz,
-  invite_sent_at timestamptz
+  invitation_sent_at timestamptz
 );
 
 -- The app matches the reject message (src/lib/waitlist.ts); change both together.
@@ -39,9 +39,9 @@ returns table (
   source text,
   requested_at timestamptz,
   approved_at timestamptz,
-  invite_sent_at timestamptz
+  invitation_sent_at timestamptz
 ) language sql security definer set search_path = '' as $$
-  select email, status, source, requested_at, approved_at, invite_sent_at
+  select email, status, source, requested_at, approved_at, invitation_sent_at
   from private.waitlist
   order by status = 'approved', requested_at;
 $$;
@@ -59,9 +59,9 @@ begin
   return found;
 end $$;
 
-create or replace function private.mark_waitlist_invite_sent(p_email text)
+create or replace function private.mark_waitlist_invitation_sent(p_email text)
 returns void language sql security definer set search_path = '' as $$
-  update private.waitlist set invite_sent_at = now() where email = lower(trim(p_email));
+  update private.waitlist set invitation_sent_at = now() where email = lower(trim(p_email));
 $$;
 
 -- Sealed is passwordless. Without this, anyone could sign up with a password
@@ -83,7 +83,7 @@ revoke all on table private.waitlist from public, anon, authenticated;
 revoke execute on function private.before_user_created_hook(jsonb) from public, anon, authenticated;
 revoke execute on function private.list_waitlist() from public, anon, authenticated;
 revoke execute on function private.approve_waitlist_email(text) from public, anon, authenticated;
-revoke execute on function private.mark_waitlist_invite_sent(text) from public, anon, authenticated;
+revoke execute on function private.mark_waitlist_invitation_sent(text) from public, anon, authenticated;
 revoke execute on function private.strip_password() from public, anon, authenticated;
 
 grant usage on schema private to supabase_auth_admin;

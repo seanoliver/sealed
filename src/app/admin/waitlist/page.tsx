@@ -14,16 +14,16 @@ export default async function WaitlistPage() {
     status: "pending" | "approved";
     source: "email" | "google";
     requested_at: Date;
-    invite_sent_at: Date | null;
+    invitation_sent_at: Date | null;
   }>(
-    sql`select email, status, source, requested_at, invite_sent_at from private.list_waitlist()`,
+    sql`select email, status, source, requested_at, invitation_sent_at from private.list_waitlist()`,
   );
   const entries: WaitlistEntry[] = rows.map((row) => ({
     email: row.email,
     status: row.status,
     source: row.source,
     requestedAt: new Date(row.requested_at).toISOString(),
-    inviteSentAt: row.invite_sent_at ? new Date(row.invite_sent_at).toISOString() : null,
+    invitationSentAt: row.invitation_sent_at ? new Date(row.invitation_sent_at).toISOString() : null,
   }));
 
   return (

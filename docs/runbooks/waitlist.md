@@ -30,7 +30,7 @@ curl -fsS -X PATCH "https://api.supabase.com/v1/projects/ivwrvilpjhqhmlzwgyot/co
 
 ## Approve people
 
-Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email. **Invite** approves an email that has not asked yet. An approved email whose invitation failed shows **Resend invitation**.
+Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved and sends the "You're invited to Sealed" email. **Send invitation** approves an email that has not asked yet. An approved email whose invitation failed shows **Resend invitation**.
 
 ## Verification
 
