@@ -49,7 +49,6 @@ export async function fetchDeliveredMessage(
   return message;
 }
 
-/** Assert Mailpit received nothing for `email` within a short window. */
 export async function expectNoDeliveredMessage(email: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 3_000));
   const query = encodeURIComponent(`to:${email}`);
@@ -67,7 +66,6 @@ export async function fetchMagicLink(email: string): Promise<string> {
   return link;
 }
 
-/** Request access through the real entry form at `/` and wait for the confirmation. */
 export async function requestAccess(page: Page, email: string): Promise<void> {
   await clearRequestAccessLimits();
   await page.goto("/");
@@ -77,8 +75,6 @@ export async function requestAccess(page: Page, email: string): Promise<void> {
   await expect(page.getByRole("heading", { name: "Your request is in" })).toBeVisible();
 }
 
-// Approve, request a magic link, and follow it from Mailpit. Existing owners
-// land on /dashboard; a new owner is redirected into /onboarding.
 export async function signupAndLogin(page: Page, email: string): Promise<void> {
   await approveEmail(email);
   await requestAccess(page, email);

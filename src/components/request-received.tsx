@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** The "Your request is in" confirmation, shared by the email form and the Google return. */
 export function RequestReceived({
   children,
   footer,

@@ -56,7 +56,6 @@ export function assertServerEnv(): void {
   }
 }
 
-/** Reads a server env var at the point of use, throwing a clear error when it is unset or blank. */
 export function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);

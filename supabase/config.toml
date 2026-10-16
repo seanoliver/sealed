@@ -286,8 +286,6 @@ max_frequency = "5s"
 # Force log out if the user has been inactive longer than the specified duration.
 # inactivity_timeout = "8h"
 
-# Invite-only beta: rejects sign-ups from emails that are not approved and
-# records them on private.waitlist (supabase/migrations/*_waitlist.sql).
 [auth.hook.before_user_created]
 enabled = true
 uri = "pg-functions://postgres/private/before_user_created_hook"

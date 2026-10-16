@@ -13,7 +13,7 @@ import {
   uniqueEmail,
 } from "./helpers";
 
-/** Matches ADMIN_EMAILS in .env.local.example. Kept between runs so concurrent runs share it safely. */
+/** Must match ADMIN_EMAILS in .env.local.example. */
 const ADMIN_EMAIL = "admin@e2e.test";
 
 const waitlisted = uniqueEmail("waitlisted");
@@ -71,7 +71,6 @@ test("an admin approves a waiting email, which can then sign up", async ({
   await seedPendingWaitlist(approvedLater);
   await signupAndLogin(page, ADMIN_EMAIL);
 
-  // A signed-in owner visiting the entry page goes straight to their book.
   await page.goto("/");
   await expect(page).toHaveURL(/\/(dashboard|onboarding)$/);
 

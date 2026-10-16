@@ -24,12 +24,6 @@ export async function requestIp(): Promise<string> {
   return firstForwardedIp(h.get("x-forwarded-for"));
 }
 
-/**
- * Rate-limit key: `${prefix}:${sha256hex(value)}`, where value is a client
- * IP or an email. Hashing keeps raw IPs and emails out of the
- * private.rate_limits table (PII minimization) while still giving
- * per-client buckets.
- */
 export function hashedRateLimitKey(prefix: string, value: string): string {
   return `${prefix}:${createHash("sha256").update(value).digest("hex")}`;
 }

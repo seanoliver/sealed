@@ -18,8 +18,6 @@ export type RequestAccessState =
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-// Approved, existing and waitlisted emails all get the same "sent" state;
-// a different response would reveal whether an email has an account.
 export async function requestAccess(
   _prevState: RequestAccessState,
   formData: FormData,
@@ -30,9 +28,7 @@ export async function requestAccess(
   }
   const ip = await requestIp();
 
-  // Supabase sends at most 30 auth emails an hour for the whole project, so
-  // one client or one address must not be able to use them all. The email
-  // limit runs after Turnstile: otherwise anyone could use up a victim's budget.
+  // The email limit must run after Turnstile, or a bot could use up any address's budget.
   const ipLimited = await limitError(hashedRateLimitKey("request-access", ip), 5);
   if (ipLimited) return ipLimited;
 
@@ -41,7 +37,6 @@ export async function requestAccess(
     return { status: "error", message: "Verification failed. Please try again." };
   }
 
-  // Lowercased so every spelling of an address shares one bucket.
   const emailLimited = await limitError(
     hashedRateLimitKey("request-access-email", email.toLowerCase()),
     3,
@@ -63,7 +58,6 @@ export async function requestAccess(
   return { status: "sent", email };
 }
 
-/** Returns the error state to show when the hourly limit is used up or cannot be checked, else null. */
 async function limitError(key: string, max: number): Promise<RequestAccessState | null> {
   try {
     if (await checkRateLimit(key, max, 3600)) return null;

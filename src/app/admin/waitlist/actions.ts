@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { signInLinkUrl } from "@/lib/auth-flow";
-// Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): the waitlist is
-// reachable only through private.* functions, and requireAdmin gates every call.
+// dbAdmin is allowlisted for this file: every action must call requireAdmin first.
 import { dbAdmin } from "@/lib/db/admin";
 import { sendNotification } from "@/lib/email/resend";
 import { waitlistApprovedEmail } from "@/lib/email/templates";
@@ -26,8 +25,6 @@ export async function approveEmail(
   // Checked before approving, so a misconfigured deploy changes nothing.
   const appUrl = requiredEnv("APP_URL");
   const authAdmin = createAdminAuthClient();
-  // No lowercasing here: private.approve_waitlist_email and Supabase Auth both
-  // normalize the address.
   const email = parseEmailField(formData);
   if (!email) return { error: "Enter a valid email address." };
 
@@ -57,13 +54,8 @@ export async function approveEmail(
     : { error: `${approved}, but the invitation email failed. Use Resend invitation to try again.` };
 }
 
-/**
- * Emails the invitation with a working sign-in link. generateLink creates the
- * (now approved) user if needed, so the before-user-created hook lets it
- * through, and it sends nothing itself, so it does not use Supabase's email
- * budget. The link expires after the project's OTP lifetime; /auth/confirm
- * sends an expired link back to the entry page to request a new one.
- */
+// generateLink sends no email of its own, so invitations do not use Supabase's
+// hourly auth email limit. Do not switch to signInWithOtp or inviteUserByEmail.
 async function sendInvitation({
   email,
   appUrl,

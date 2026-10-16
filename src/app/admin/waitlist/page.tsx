@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
-// Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): see actions.ts.
 import { dbAdmin } from "@/lib/db/admin";
 import type { WaitlistSource, WaitlistStatus } from "@/lib/waitlist";
 import { WaitlistBoard, type WaitlistEntry } from "./waitlist-board";

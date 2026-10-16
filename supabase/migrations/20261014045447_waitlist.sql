@@ -46,7 +46,6 @@ returns table (
   order by status = 'approved', requested_at;
 $$;
 
--- Returns false if the email was already approved.
 create or replace function private.approve_waitlist_email(p_email text)
 returns boolean language plpgsql security definer set search_path = '' as $$
 declare v_email text := lower(trim(p_email));

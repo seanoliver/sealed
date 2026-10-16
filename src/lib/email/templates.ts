@@ -138,11 +138,9 @@ This alert contains no error details by design.
 
 export interface WaitlistApprovedEmailInput {
   signInUrl: string;
-  /** Where to request a new link once signInUrl has expired. */
   appUrl: string;
 }
 
-/** Sent when an email is approved. signInUrl signs the person in directly. */
 export function waitlistApprovedEmail({
   signInUrl,
   appUrl,

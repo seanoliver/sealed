@@ -16,7 +16,6 @@ const otpTypeSchema = z.enum([
  * Auth confirmation endpoint (canonical @supabase/ssr pattern).
  * - Magic link / email OTP: ?token_hash=...&type=email → verifyOtp
  * - OAuth (Google) PKCE:    ?code=...                  → exchangeCodeForSession
- * - OAuth sign-up rejected by the waitlist hook: ?error_description=sealed_waitlisted
  * On success the session cookies are set and we land on /dashboard.
  */
 export async function GET(request: NextRequest) {

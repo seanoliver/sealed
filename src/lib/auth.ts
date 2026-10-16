@@ -21,7 +21,6 @@ export async function requireUser(): Promise<SessionClaims> {
   return claims;
 }
 
-/** Claims of a signed-in ADMIN_EMAILS member; everyone else gets a 404. */
 export async function requireAdmin(): Promise<SessionClaims> {
   const claims = await requireUser();
   const admins = (process.env.ADMIN_EMAILS ?? "")

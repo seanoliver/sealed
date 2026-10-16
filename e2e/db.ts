@@ -157,12 +157,10 @@ export async function cleanupUser(email: string): Promise<void> {
   await db`delete from private.waitlist where email = ${email.toLowerCase()}`;
 }
 
-/** Let an email through the invite-only gate (private.before_user_created_hook). */
 export async function approveEmail(email: string): Promise<void> {
   await db`select private.approve_waitlist_email(${email})`;
 }
 
-/** Record an email as waiting, as an unapproved sign-up attempt would. */
 export async function seedPendingWaitlist(email: string): Promise<void> {
   await db`
     insert into private.waitlist (email, source)

@@ -76,7 +76,6 @@ type StatusView = {
   title: string;
   empty: string;
   detail: (entry: WaitlistEntry) => string;
-  /** The row's button label, or null for no button. */
   action: (entry: WaitlistEntry) => string | null;
 };
 
