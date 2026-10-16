@@ -1,7 +1,5 @@
 set lock_timeout = '5s';
 
--- Only Google's names are trusted: a direct signUp for an approved address
--- could otherwise choose the display name that address's recipients will see.
 create or replace function private.handle_new_user()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
@@ -21,13 +19,15 @@ begin
 end $$;
 
 create index rate_limits_window_start_idx on private.rate_limits (window_start);
+delete from private.rate_limits where window_start < now() - interval '2 days';
 
--- Each call clears rows older than two days. A caller window of two days or
--- more would lose counts that still apply.
 create or replace function private.check_rate_limit(p_key text, p_max int, p_window_seconds int)
 returns boolean language plpgsql security definer set search_path = '' as $$
 declare v_ok boolean;
 begin
+  if p_window_seconds >= 172800 then
+    raise exception 'rate-limit window must be under two days, because older rows are deleted';
+  end if;
   delete from private.rate_limits where window_start < now() - interval '2 days';
   insert into private.rate_limits as r (key, count, window_start)
   values (p_key, 1, now())

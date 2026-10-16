@@ -31,8 +31,10 @@ export async function approveEmail(
     appUrl = requiredEnv("APP_URL");
     authAdmin = createAdminAuthClient();
   } catch (err) {
-    console.error(`[wl] [approveEmail] ${err instanceof Error ? err.message : "configuration error"}`);
-    return { error: "Invitations aren’t set up on this deployment. Check SUPABASE_SECRET_KEY.", ...echo };
+    const message = err instanceof Error ? err.message : "configuration error";
+    console.error(`[wl] [approveEmail] ${message}`);
+    const check = message.includes("SUPABASE_SECRET_KEY") ? "SUPABASE_SECRET_KEY" : "the function logs";
+    return { error: `Invitations aren’t set up on this deployment. Check ${check}.`, ...echo };
   }
   const email = parseEmailField(formData);
   if (!email) return { error: "Enter a valid email address.", ...echo };

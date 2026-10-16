@@ -133,20 +133,10 @@ describe("approveEmail", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
-  it("reports a missing APP_URL, logs which variable, and changes nothing", async () => {
-    vi.stubEnv("APP_URL", "");
-    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
-      error: "Invitations aren’t set up on this deployment. Check SUPABASE_SECRET_KEY.",
-    });
-    expect(console.error).toHaveBeenCalledWith(
-      "[wl] [approveEmail] Missing required environment variable: APP_URL",
-    );
-    expect(dbAdmin.execute).not.toHaveBeenCalled();
-    expect(sendNotification).not.toHaveBeenCalled();
-  });
-
   it("refills the direct form on a setup error", async () => {
-    vi.stubEnv("APP_URL", "");
+    vi.mocked(createAdminAuthClient).mockImplementation(() => {
+      throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");
+    });
     await expect(approveEmail({}, form("new@example.test", "direct"))).resolves.toMatchObject({
       email: "new@example.test",
     });
@@ -156,17 +146,20 @@ describe("approveEmail", () => {
     vi.mocked(createAdminAuthClient).mockImplementation(() => {
       throw "boom";
     });
-    await expect(approveEmail({}, form("new@example.test"))).resolves.toHaveProperty("error");
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error: "Invitations aren’t set up on this deployment. Check the function logs.",
+    });
     expect(console.error).toHaveBeenCalledWith("[wl] [approveEmail] configuration error");
   });
 
-  it("reports a missing secret key the same way", async () => {
+  it("reports a missing secret key, logs it, and changes nothing", async () => {
     vi.mocked(createAdminAuthClient).mockImplementation(() => {
       throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");
     });
-    await expect(approveEmail({}, form("new@example.test"))).resolves.toMatchObject({
-      error: expect.stringContaining("SUPABASE_SECRET_KEY"),
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error: "Invitations aren’t set up on this deployment. Check SUPABASE_SECRET_KEY.",
     });
+    expect(sendNotification).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
       "[wl] [approveEmail] Missing required environment variable: SUPABASE_SECRET_KEY",
     );

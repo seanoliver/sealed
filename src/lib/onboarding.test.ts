@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { UserIdentity } from "@supabase/supabase-js";
 import { authDisplayName, suggestLinkName } from "./onboarding";
 
 describe("suggestLinkName", () => {
@@ -22,30 +23,34 @@ describe("suggestLinkName", () => {
 });
 
 describe("authDisplayName", () => {
-  const google = { app_metadata: { provider: "google" } };
-
-  it.each([
-    ["email", { app_metadata: { provider: "email" } }],
-    ["missing", {}],
-  ])("ignores metadata names when the provider is %s", (_label, app) => {
-    expect(authDisplayName({ ...app, user_metadata: { full_name: "Chosen Name" } })).toBe("");
+  const identity = (provider: string, identity_data: Record<string, unknown>): UserIdentity => ({
+    id: provider,
+    user_id: "u1",
+    identity_id: provider,
+    provider,
+    identity_data,
   });
 
-  it("uses a genuine full name from identity-provider metadata", () => {
-    expect(authDisplayName({ ...google, user_metadata: { full_name: "  Ada Lovelace  " } })).toBe(
-      "Ada Lovelace",
-    );
+  it("uses the full name on a linked Google identity", () => {
+    expect(
+      authDisplayName([identity("email", {}), identity("google", { full_name: "  Ada Lovelace  " })]),
+    ).toBe("Ada Lovelace");
   });
 
-  it("accepts the provider's name field when full_name is absent", () => {
-    expect(authDisplayName({ ...google, user_metadata: { name: "Grace" } })).toBe("Grace");
+  it("prefers full_name over name", () => {
+    expect(authDisplayName([identity("google", { full_name: "Full", name: "Short" })])).toBe("Full");
   });
 
-  it("does not guess a name from an email claim", () => {
-    expect(authDisplayName({ ...google, email: "sean.oliver@example.com" })).toBe("");
+  it("accepts Google's name field when full_name is absent", () => {
+    expect(authDisplayName([identity("google", { name: "Grace" })])).toBe("Grace");
   });
 
-  it("ignores malformed or empty metadata", () => {
-    expect(authDisplayName({ ...google, user_metadata: { full_name: "  ", name: 42 } })).toBe("");
+  it("ignores names from any other identity", () => {
+    expect(authDisplayName([identity("email", { full_name: "Chosen Name" })])).toBe("");
+    expect(authDisplayName(undefined)).toBe("");
+  });
+
+  it("ignores malformed or empty identity data", () => {
+    expect(authDisplayName([identity("google", { full_name: "  ", name: 42 })])).toBe("");
   });
 });
