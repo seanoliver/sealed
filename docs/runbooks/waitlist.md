@@ -13,7 +13,7 @@ Keep sign-up invite-only in production, and approve people from the waitlist.
 
 - The `*_waitlist.sql` migration is applied to production (the deploy workflow does this on merge).
 - `ADMIN_EMAILS` is set on the `sealed` Vercel project (Production target) and includes your email.
-- `SUPABASE_SECRET_KEY` is set on the same target (Supabase dashboard, **Project Settings → API Keys → Secret keys**, or `GET /v1/projects/ivwrvilpjhqhmlzwgyot/api-keys?reveal=true`, the entry with `"type": "secret"`). Do not copy it from `supabase projects api-keys`: the CLI masks secret keys, and a masked key makes every approval fail with `generateLink failed: AuthApiError 401` ([bug](../bugs/2026-10-16-supabase-cli-masked-secret-key.md)). Before saving, run `read -rs KEY`, paste the key (nothing is echoed), and check it returns 200: `curl -s -o /dev/null -w '%{http_code}' "https://ivwrvilpjhqhmlzwgyot.supabase.co/auth/v1/admin/users?per_page=1" -H "apikey: $KEY"`. Without the variable, approving fails and changes nothing.
+- `SUPABASE_SECRET_KEY` is set on the same target (Supabase dashboard, **Project Settings → API Keys → Secret keys**, or `GET /v1/projects/ivwrvilpjhqhmlzwgyot/api-keys?reveal=true`, the entry with `"type": "secret"`). Do not copy it from `supabase projects api-keys`: the CLI masks secret keys, and a masked key makes every approval fail with `generateLink failed: AuthApiError 401` ([bug](../bugs/2026-10-16-supabase-cli-masked-secret-key.md)). Before saving, run `read -rs KEY`, paste the key (nothing is echoed), and check it returns 200: `curl -s -o /dev/null -w '%{http_code}' "https://ivwrvilpjhqhmlzwgyot.supabase.co/auth/v1/admin/users?per_page=1" -H "apikey: $KEY"`, then `unset KEY`. Without the variable, approving fails and changes nothing.
 - A Supabase Management API token with access to the production project.
 
 ## Enable the gate (once)
@@ -46,9 +46,10 @@ The hook is enabled but the function is missing or not executable by `supabase_a
 
 ### Approved, but "the invitation email failed"
 
-Check the production function logs for the `[wl] [approveEmail]` line.
+Check the production function logs for a `[wl] [approveEmail]` or `[em] [sendNotification]` line.
 
-- `generateLink failed: AuthApiError 401`: `SUPABASE_SECRET_KEY` is invalid, often a masked copy ([bug](../bugs/2026-10-16-supabase-cli-masked-secret-key.md)). Re-check it with the curl in Prerequisites, replace it, and redeploy.
-- Any other failure: Resend rejected the email or could not be reached. Check `EMAIL_FROM` and `RESEND_API_KEY`.
+- `[wl] [approveEmail] generateLink failed: AuthApiError 401`: `SUPABASE_SECRET_KEY` is invalid, often a masked copy ([bug](../bugs/2026-10-16-supabase-cli-masked-secret-key.md)). Re-check it with the curl in Prerequisites, replace it, and redeploy.
+- Any other `generateLink failed`: Supabase Auth rejected the request or could not be reached (the status is in the line, for example 429 or 5xx). Retry later.
+- `[em] [sendNotification] ...`: Resend rejected the email or could not be reached, or `EMAIL_FROM` is not set. Check `EMAIL_FROM` and `RESEND_API_KEY`.
 
 Then use **Resend invitation**.
