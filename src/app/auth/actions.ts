@@ -50,10 +50,10 @@ export async function requestAccess(
   });
   // Every send failure must look like success: only approved and existing
   // emails are ever sent mail, so an error here would reveal them.
-  if (error?.status === 429) {
-    console.warn(`[ra] [requestAccess] Supabase rate-limited the send: ${error.code ?? ""}`);
-  } else if (error && error.message !== WAITLIST_REJECTION) {
-    console.error(`[ra] [requestAccess] signInWithOtp failed: ${error.name} ${error.status ?? ""}`);
+  if (error && error.message !== WAITLIST_REJECTION) {
+    console.error(
+      `[ra] [requestAccess] signInWithOtp failed: ${error.name} ${error.status ?? ""} ${error.code ?? ""}`.trimEnd(),
+    );
   }
   return { status: "sent", email };
 }

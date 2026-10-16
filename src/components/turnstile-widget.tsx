@@ -1,54 +1,71 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 
 /**
- * Cloudflare Turnstile widget, implicit-rendering mode.
+ * Cloudflare Turnstile widget, explicit-rendering mode.
  *
  * This is the ONE sanctioned external script in the app. CSP note for
  * Task 18: `script-src` must allow https://challenges.cloudflare.com and
  * `frame-src` must allow it too (the widget renders its challenge in an
  * iframe from that origin). Nothing else external is permitted.
  *
- * api.js scans the DOM for `.cf-turnstile` and injects a hidden
- * `cf-turnstile-response` input into the ENCLOSING <form> — always render
- * this component inside the form it protects.
+ * Render this component inside the form it protects: the widget adds a hidden
+ * `cf-turnstile-response` input to the enclosing <form>.
  */
 
-type TurnstileGlobal = { reset?: () => void };
+type TurnstileGlobal = {
+  render: (container: HTMLElement, options: { sitekey: string }) => string;
+  reset: (widgetId: string) => void;
+  remove: (widgetId: string) => void;
+};
 
-/**
- * Reset the widget after a failed submit. Turnstile responses are single-use
- * at siteverify: without a reset, a user who hits a validation error and
- * resubmits would post the already-consumed response and fail verification
- * forever. Call with the action state's error each render.
- */
-export function useTurnstileResetOnError(error: string | undefined): void {
-  useEffect(() => {
-    if (!error) return;
-    const turnstile = (window as { turnstile?: TurnstileGlobal }).turnstile;
-    try {
-      turnstile?.reset?.();
-    } catch {
-      // Widget not rendered yet (script still loading) — nothing to reset.
-    }
-  }, [error]);
+function turnstileGlobal(): TurnstileGlobal | undefined {
+  return (window as { turnstile?: TurnstileGlobal }).turnstile;
 }
 
-export function TurnstileWidget() {
+/**
+ * Explicit rendering, because implicit mode only scans the page once: a
+ * remounted form would get no widget and fail verification on every submit.
+ *
+ * Responses are single-use at siteverify, so pass the form's action state as
+ * `resetOn`: each new state after a submit gets a fresh response.
+ */
+export function TurnstileWidget({ resetOn }: { resetOn?: unknown } = {}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [widgetId, setWidgetId] = useState<string>();
+  const initialResetOn = useRef(resetOn);
+
+  function renderWidget() {
+    const turnstile = turnstileGlobal();
+    const container = containerRef.current;
+    if (!turnstile || !container || container.childElementCount > 0) return;
+    setWidgetId(
+      turnstile.render(container, {
+        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
+      }),
+    );
+  }
+
+  useEffect(() => {
+    if (!widgetId) return;
+    return () => turnstileGlobal()?.remove(widgetId);
+  }, [widgetId]);
+
+  useEffect(() => {
+    if (!widgetId || resetOn === initialResetOn.current) return;
+    turnstileGlobal()?.reset(widgetId);
+  }, [resetOn, widgetId]);
+
   return (
     <>
       <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
-        async
-        defer
+        onReady={renderWidget}
       />
-      <div
-        className="cf-turnstile"
-        data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""}
-      />
+      <div ref={containerRef} />
     </>
   );
 }

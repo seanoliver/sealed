@@ -51,29 +51,33 @@ describe("requestAccess", () => {
     });
   });
 
+  it("reports waitlisted emails as sent without logging", async () => {
+    signInWithOtp.mockResolvedValue({
+      error: { name: "AuthApiError", message: WAITLIST_REJECTION, status: 403 },
+    });
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "sent",
+      email: "a@example.test",
+    });
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ["waitlisted", { message: WAITLIST_REJECTION, status: 403 }],
-    ["rate-limited by Supabase", { message: "email rate limit exceeded", status: 429 }],
-  ])("reports %s emails as sent", async (_label, error) => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    [
+      { message: "email rate limit exceeded", status: 429, code: "over_email_send_rate_limit" },
+      "[ra] [requestAccess] signInWithOtp failed: AuthApiError 429 over_email_send_rate_limit",
+    ],
+    [
+      { message: "Database error", status: 500 },
+      "[ra] [requestAccess] signInWithOtp failed: AuthApiError 500",
+    ],
+  ])("logs a failed send as an error and still reports it as sent", async (error, logged) => {
     signInWithOtp.mockResolvedValue({ error: { name: "AuthApiError", ...error } });
     await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "sent",
       email: "a@example.test",
     });
-  });
-
-  it("logs any other Supabase failure and still reports the email as sent", async () => {
-    signInWithOtp.mockResolvedValue({
-      error: { name: "AuthApiError", message: "Database error", status: 500 },
-    });
-    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
-      status: "sent",
-      email: "a@example.test",
-    });
-    expect(console.error).toHaveBeenCalledWith(
-      "[ra] [requestAccess] signInWithOtp failed: AuthApiError 500",
-    );
+    expect(console.error).toHaveBeenCalledWith(logged);
   });
 
   it("rejects an invalid email before any other check", async () => {

@@ -11,6 +11,7 @@ import {
   requestAccess,
   signupAndLogin,
   uniqueEmail,
+  waitForTurnstile,
 } from "./helpers";
 
 /** Must match ADMIN_EMAILS in .env.local.example. */
@@ -18,9 +19,10 @@ const ADMIN_EMAIL = "admin@e2e.test";
 
 const waitlisted = uniqueEmail("waitlisted");
 const approvedLater = uniqueEmail("approved-later");
+const secondRequest = uniqueEmail("second-request");
 
 test.afterAll(async () => {
-  for (const email of [waitlisted, approvedLater]) {
+  for (const email of [waitlisted, approvedLater, secondRequest]) {
     await cleanupUser(email);
   }
 });
@@ -42,6 +44,12 @@ test("an unapproved email joins the waitlist without an account or email", async
 
   await page.getByRole("button", { name: "Use a different email" }).click();
   await expect(page.getByLabel("Email address")).toHaveValue("");
+
+  await page.getByLabel("Email address").fill(secondRequest);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Request access" }).click();
+  await expect(page.getByRole("status")).toContainText(secondRequest);
+  expect(await getWaitlistRow(secondRequest)).toMatchObject({ status: "pending" });
 });
 
 test("a waitlisted Google sign-up shows its confirmation", async ({ page }) => {

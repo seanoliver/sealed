@@ -8,10 +8,7 @@ import {
 } from "@/app/auth/actions";
 import { RequestReceived } from "@/components/request-received";
 import { SubmitButton } from "@/components/submit-button";
-import {
-  TurnstileWidget,
-  useTurnstileResetOnError,
-} from "@/components/turnstile-widget";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 
 const initialState: RequestAccessState = { status: "idle" };
 
@@ -41,7 +38,6 @@ function RequestAccessForm({
       : error
         ? "That sign-in link didn’t work. It may have expired or already been used. Enter your email to get a new one."
         : undefined;
-  useTurnstileResetOnError(state.status === "error" ? state.message : undefined);
 
   if (state.status === "sent") {
     return (
@@ -97,7 +93,7 @@ function RequestAccessForm({
           placeholder="you@example.com"
           className="h-12 rounded-xl border border-input bg-background/60 px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25"
         />
-        <TurnstileWidget />
+        <TurnstileWidget resetOn={state} />
         <SubmitButton
           pendingLabel="Sending…"
           className="mt-1 h-12 rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/85"
