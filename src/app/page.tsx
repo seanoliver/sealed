@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { RequestAccess } from "@/components/request-access-form";
+import { RequestReceived } from "@/components/request-received";
 import { SealedWordmark } from "@/components/sealed-mark";
 import { currentUser } from "@/lib/auth";
 import { SITE_DESCRIPTION } from "@/lib/branding";
@@ -80,16 +81,10 @@ export default async function Home({
           </section>
           <section aria-label="Request an invitation" className="p-6 sm:p-11">
             {googleRequested ? (
-              <div className="flex flex-col gap-4">
-                <h2 className="font-serif text-3xl text-foreground">Your request is in</h2>
-                <div
-                  role="status"
-                  className="rounded-xl border border-green-500/25 bg-green-500/10 p-4 leading-relaxed text-foreground"
-                >
-                  You’re on the list, and your invitation will arrive at the
-                  email on your Google account.
-                </div>
-              </div>
+              <RequestReceived>
+                You’re on the list, and your invitation will arrive at the
+                email on your Google account.
+              </RequestReceived>
             ) : (
               <RequestAccess error={params.error === "1"} />
             )}

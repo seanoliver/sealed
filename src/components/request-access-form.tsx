@@ -6,6 +6,7 @@ import {
   requestAccess,
   type RequestAccessState,
 } from "@/app/auth/actions";
+import { RequestReceived } from "@/components/request-received";
 import { SubmitButton } from "@/components/submit-button";
 import {
   TurnstileWidget,
@@ -44,25 +45,22 @@ function RequestAccessForm({
 
   if (state.status === "sent") {
     return (
-      <div className="flex flex-col gap-4">
-        <h2 className="font-serif text-3xl text-foreground">Your request is in</h2>
-        <div
-          role="status"
-          className="rounded-xl border border-green-500/25 bg-green-500/10 p-4 leading-relaxed text-foreground"
-        >
-          Check <strong className="font-semibold">{state.email}</strong>. If
-          you’ve been invited, your sign-in link is on its way, and it can
-          take a few minutes to arrive. If not, you’re on the list, and your
-          invitation will arrive in the same inbox.
-        </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="w-fit text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        >
-          Use a different email
-        </button>
-      </div>
+      <RequestReceived
+        footer={
+          <button
+            type="button"
+            onClick={onReset}
+            className="w-fit text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >
+            Use a different email
+          </button>
+        }
+      >
+        Check <strong className="font-semibold">{state.email}</strong>. If
+        you’ve been invited, your sign-in link is on its way, and it can take a
+        few minutes to arrive. If not, you’re on the list, and your invitation
+        will arrive in the same inbox.
+      </RequestReceived>
     );
   }
 
