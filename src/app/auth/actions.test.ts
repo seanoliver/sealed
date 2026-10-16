@@ -63,14 +63,17 @@ describe("requestAccess", () => {
     });
   });
 
-  it("returns the generic error for any other Supabase failure", async () => {
+  it("logs any other Supabase failure and still reports the email as sent", async () => {
     signInWithOtp.mockResolvedValue({
       error: { name: "AuthApiError", message: "Database error", status: 500 },
     });
     await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
-      status: "error",
-      message: "Something went wrong. Please try again.",
+      status: "sent",
+      email: "a@example.test",
     });
+    expect(console.error).toHaveBeenCalledWith(
+      "[ra] [requestAccess] signInWithOtp failed: AuthApiError 500",
+    );
   });
 
   it("rejects an invalid email before any other check", async () => {
