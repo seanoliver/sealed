@@ -168,13 +168,16 @@ describe("requestAccess", () => {
 });
 
 describe("continueWithGoogle", () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(redirect).mockReset();
+  });
 
-  it("redirects to /?error=1 when Supabase returns no OAuth URL", async () => {
-    const signInWithOAuth = vi.fn().mockResolvedValue({
-      data: { url: null },
-      error: { message: "boom" },
-    });
+  it.each([
+    ["returns an error", { data: { url: "https://accounts.google.com/x" }, error: { message: "boom" } }],
+    ["returns no OAuth URL", { data: { url: null }, error: null }],
+  ])("redirects to /?error=1 when Supabase %s", async (_label, result) => {
+    const signInWithOAuth = vi.fn().mockResolvedValue(result);
     vi.mocked(createClient).mockResolvedValue({
       auth: { signInWithOAuth },
     } as unknown as Awaited<ReturnType<typeof createClient>>);

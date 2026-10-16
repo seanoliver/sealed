@@ -46,3 +46,17 @@ test("a blocked Turnstile script explains why Request access is disabled", async
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Request access" })).toBeDisabled();
 });
+
+test("a failed challenge explains itself and clears once a retry solves it", async ({ page }) => {
+  await stubTurnstile(page, { failChallenge: true });
+  await page.goto("/");
+
+  const alert = page.getByRole("alert").filter({ hasText: "verification check didn’t load" });
+  const submit = page.getByRole("button", { name: "Request access" });
+  await expect(alert).toBeVisible();
+  await expect(submit).toBeDisabled();
+
+  await page.evaluate(() => (window as unknown as { __ts: { solve: () => void } }).__ts.solve());
+  await expect(alert).toBeHidden();
+  await expect(submit).toBeEnabled();
+});
