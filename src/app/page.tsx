@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { RequestAccess } from "@/components/request-access-form";
+import Link from "next/link";
+import { RequestAccess, type SignInError } from "@/components/request-access-form";
 import { RequestReceived } from "@/components/request-received";
 import { SealedWordmark } from "@/components/sealed-mark";
 import { currentUser } from "@/lib/auth";
@@ -55,6 +56,10 @@ export default async function Home({
   const googleRequested =
     params.requested === "google" ||
     params.error_description === WAITLIST_REJECTION;
+  // Email links fail with error=1. Anything else, including a provider error
+  // that fell back to the Site URL, came from Google.
+  const signInError: SignInError | undefined =
+    params.error === "1" ? "link" : params.error ? "oauth" : undefined;
 
   return (
     <main className="flex flex-1 items-center px-5 py-12 sm:px-8">
@@ -81,12 +86,21 @@ export default async function Home({
           </section>
           <section aria-label="Request an invitation" className="p-6 sm:p-11">
             {googleRequested ? (
-              <RequestReceived>
+              <RequestReceived
+                footer={
+                  <Link
+                    href="/"
+                    className="w-fit text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                  >
+                    Back to sign in
+                  </Link>
+                }
+              >
                 You’re on the list, and your invitation will arrive at the
                 email on your Google account.
               </RequestReceived>
             ) : (
-              <RequestAccess error={params.error === "1"} />
+              <RequestAccess error={signInError} />
             )}
           </section>
         </div>

@@ -26,11 +26,28 @@ test("a provider fallback code at the site root reaches auth confirmation", asyn
   await page.goto("/?code=not-a-real-oauth-code");
 
   // The root hands the code to /auth/confirm. A deliberately invalid code then
-  // follows the confirmation route's generic failure path instead of leaving
-  // the visitor stranded on the public homepage with a code in the URL.
-  await expect(page).toHaveURL(/\/\?error=1$/);
+  // follows the Google failure path instead of leaving the visitor stranded on
+  // the public homepage with a code in the URL.
+  await expect(page).toHaveURL(/\/\?error=oauth$/);
   await expect(
-    page.getByRole("alert").filter({ hasText: "It may have expired or already been used" }),
+    page.getByRole("alert").filter({ hasText: "Google sign-in didn’t finish" }),
+  ).toBeVisible();
+});
+
+test("a cancelled Google consent returns to the entry page with the Google message", async ({
+  page,
+}) => {
+  await page.goto(
+    "/auth/confirm?flow=login&error=access_denied&error_description=The+resource+owner+or+authorization+server+denied+the+request",
+  );
+  await expect(page).toHaveURL(/\/\?error=oauth$/);
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Google sign-in didn’t finish" }),
+  ).toBeVisible();
+  // Supabase falls back to the Site URL when redirect_to is unusable.
+  await page.goto("/?error=access_denied&error_description=denied");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Google sign-in didn’t finish" }),
   ).toBeVisible();
 });
 

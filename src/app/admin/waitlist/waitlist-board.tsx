@@ -47,6 +47,7 @@ export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
             type="email"
             required
             placeholder="friend@example.com"
+            defaultValue={state.error ? state.email : undefined}
             className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/25"
           />
           <ActionButton label="Send invitation" />
@@ -76,7 +77,7 @@ type StatusView = {
   title: string;
   empty: string;
   detail: (entry: WaitlistEntry) => string;
-  action: (entry: WaitlistEntry) => string | null;
+  action: string;
 };
 
 const STATUS_VIEWS: Record<WaitlistStatus, StatusView> = {
@@ -85,7 +86,7 @@ const STATUS_VIEWS: Record<WaitlistStatus, StatusView> = {
     empty: "Nobody is waiting.",
     detail: (entry) =>
       `${entry.source === "google" ? "Google" : "Email"} · ${formatDate(entry.requestedAt)}`,
-    action: () => "Approve",
+    action: "Approve",
   },
   approved: {
     title: "Approved",
@@ -94,7 +95,7 @@ const STATUS_VIEWS: Record<WaitlistStatus, StatusView> = {
       entry.invitationSentAt
         ? `Invitation sent ${formatDate(entry.invitationSentAt)}`
         : "Invitation not sent",
-    action: (entry) => (entry.invitationSentAt ? null : "Resend invitation"),
+    action: "Resend invitation",
   },
 };
 
@@ -120,26 +121,21 @@ function EntryList({
         <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
         <ul className="divide-y rounded-xl border">
-          {entries.map((entry) => {
-            const action = view.action(entry);
-            return (
-              <li
-                key={entry.email}
-                className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-medium text-foreground">{entry.email}</p>
-                  <p className="text-sm text-muted-foreground">{view.detail(entry)}</p>
-                </div>
-                {action ? (
-                  <form action={formAction}>
-                    <input type="hidden" name="email" value={entry.email} />
-                    <ActionButton label={action} />
-                  </form>
-                ) : null}
-              </li>
-            );
-          })}
+          {entries.map((entry) => (
+            <li
+              key={entry.email}
+              className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <p className="font-medium text-foreground">{entry.email}</p>
+                <p className="text-sm text-muted-foreground">{view.detail(entry)}</p>
+              </div>
+              <form action={formAction}>
+                <input type="hidden" name="email" value={entry.email} />
+                <ActionButton label={view.action} />
+              </form>
+            </li>
+          ))}
         </ul>
       )}
     </section>

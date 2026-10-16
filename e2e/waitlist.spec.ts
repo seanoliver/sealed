@@ -69,6 +69,10 @@ test("a waitlisted Google sign-up shows its confirmation", async ({ page }) => {
   // Supabase falls back to the Site URL when redirect_to is unusable.
   await page.goto("/?error=access_denied&error_description=sealed_waitlisted");
   await expect(page.getByRole("status")).toContainText("You’re on the list, and your invitation will arrive");
+
+  await page.getByRole("link", { name: "Back to sign in" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Request an invitation" })).toBeVisible();
 });
 
 test("the waitlist admin page is hidden from other owners", async ({ page }) => {
@@ -120,7 +124,7 @@ test("an admin approves a waiting email, which can then sign up", async ({
   await visitor.close();
 });
 
-test("the admin board offers Resend invitation only when none was sent", async ({
+test("the admin board offers Resend invitation on every approved row", async ({
   page,
 }) => {
   await seedApprovedWaitlist(notInvited, { invited: false });
@@ -135,7 +139,7 @@ test("the admin board offers Resend invitation only when none was sent", async (
   await expect(approved.filter({ hasText: alreadyInvited })).toContainText("Invitation sent");
   await expect(
     approved.filter({ hasText: alreadyInvited }).getByRole("button", { name: "Resend invitation" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });
 
 test("an admin invites an unlisted email directly", async ({ page }) => {

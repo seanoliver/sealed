@@ -14,38 +14,36 @@ import { WAITLIST_REJECTION } from "@/lib/waitlist";
 export type RequestAccessState =
   | { status: "idle" }
   | { status: "sent"; email: string }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; email?: string };
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
-const VERIFICATION_FAILED: RequestAccessState = {
-  status: "error",
-  message: "Verification failed. Please try again.",
-};
+const VERIFICATION_FAILED = "Verification failed. Please try again.";
 
 export async function requestAccess(
   _prevState: RequestAccessState,
   formData: FormData,
 ): Promise<RequestAccessState> {
+  // React 19 resets uncontrolled inputs after an action, so errors echo the email back.
+  const typed = String(formData.get("email") ?? "");
+  const fail = (message: string): RequestAccessState => ({ status: "error", message, email: typed });
   const email = parseEmailField(formData);
-  if (!email) {
-    return { status: "error", message: "Enter a valid email address." };
-  }
+  if (!email) return fail("Enter a valid email address.");
   const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
   // Checked before the IP limit so a submit that beat the widget costs no budget.
-  if (!turnstileResponse) return VERIFICATION_FAILED;
+  if (!turnstileResponse) return fail(VERIFICATION_FAILED);
   const ip = await requestIp();
 
   // The email limit must run after Turnstile, or a bot could use up any address's budget.
   const ipLimited = await limitError(hashedRateLimitKey("request-access", ip), 5);
-  if (ipLimited) return ipLimited;
+  if (ipLimited) return fail(ipLimited);
 
-  if (!(await verifyTurnstile(turnstileResponse, ip))) return VERIFICATION_FAILED;
+  if (!(await verifyTurnstile(turnstileResponse, ip))) return fail(VERIFICATION_FAILED);
 
   const emailLimited = await limitError(
     hashedRateLimitKey("request-access-email", email.toLowerCase()),
     3,
   );
-  if (emailLimited) return emailLimited;
+  if (emailLimited) return fail(emailLimited);
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
@@ -62,14 +60,14 @@ export async function requestAccess(
   return { status: "sent", email };
 }
 
-async function limitError(key: string, max: number): Promise<RequestAccessState | null> {
+async function limitError(key: string, max: number): Promise<string | null> {
   try {
     if (await checkRateLimit(key, max, 3600)) return null;
   } catch (err) {
     logDbError("[ra] [requestAccess] rate-limit check failed", err);
-    return { status: "error", message: GENERIC_ERROR };
+    return GENERIC_ERROR;
   }
-  return { status: "error", message: "Too many requests. Please try again later." };
+  return "Too many requests. Please try again later.";
 }
 
 export async function continueWithGoogle() {
@@ -79,6 +77,6 @@ export async function continueWithGoogle() {
     provider: "google",
     options: { redirectTo: authConfirmationUrl(origin) },
   });
-  if (error || !data.url) redirect("/?error=1");
+  if (error || !data.url) redirect("/?error=oauth");
   redirect(data.url);
 }

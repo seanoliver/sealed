@@ -65,6 +65,7 @@ describe("approveEmail", () => {
     await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
       error:
         "Approved new@example.test, but the invitation email failed. Use Resend invitation to try again.",
+      email: "new@example.test",
     });
     expect(sendNotification).not.toHaveBeenCalled();
     expect(dbAdmin.execute).toHaveBeenCalledTimes(1);
@@ -82,6 +83,7 @@ describe("approveEmail", () => {
     await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
       error:
         "Approved new@example.test, but the invitation email failed. Use Resend invitation to try again.",
+      email: "new@example.test",
     });
     expect(dbAdmin.execute).toHaveBeenCalledTimes(1);
   });
@@ -99,6 +101,7 @@ describe("approveEmail", () => {
   it("rejects an invalid email before touching the database or Auth", async () => {
     await expect(approveEmail({}, form("nope"))).resolves.toEqual({
       error: "Enter a valid email address.",
+      email: "nope",
     });
     expect(dbAdmin.execute).not.toHaveBeenCalled();
     expect(generateLink).not.toHaveBeenCalled();
@@ -108,6 +111,7 @@ describe("approveEmail", () => {
     vi.mocked(dbAdmin.execute).mockRejectedValueOnce(new Error("boom"));
     await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
       error: "Could not approve that email.",
+      email: "new@example.test",
     });
     expect(sendNotification).not.toHaveBeenCalled();
   });

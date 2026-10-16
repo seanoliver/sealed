@@ -13,7 +13,7 @@ import { logDbError } from "@/lib/log";
 import { createAdminAuthClient } from "@/lib/supabase/admin";
 import { parseEmailField } from "@/lib/validation/email";
 
-export type ApproveState = { message?: string; error?: string };
+export type ApproveState = { message?: string; error?: string; email?: string };
 
 // Approves any email, listed or not. Re-running for an approved email resends
 // the invitation with a fresh sign-in link.
@@ -26,7 +26,7 @@ export async function approveEmail(
   const appUrl = requiredEnv("APP_URL");
   const authAdmin = createAdminAuthClient();
   const email = parseEmailField(formData);
-  if (!email) return { error: "Enter a valid email address." };
+  if (!email) return { error: "Enter a valid email address.", email: String(formData.get("email") ?? "") };
 
   let newlyApproved = false;
   try {
@@ -36,7 +36,7 @@ export async function approveEmail(
     newlyApproved = rows[0]?.approved === true;
   } catch (err) {
     logDbError("[wl] [approveEmail] approve failed", err);
-    return { error: "Could not approve that email." };
+    return { error: "Could not approve that email.", email };
   }
 
   const sent = await sendInvitation({ email, appUrl, authAdmin });
@@ -51,7 +51,7 @@ export async function approveEmail(
   const approved = newlyApproved ? `Approved ${email}` : `${email} was already approved`;
   return sent
     ? { message: `${approved}. Invitation sent.` }
-    : { error: `${approved}, but the invitation email failed. Use Resend invitation to try again.` };
+    : { error: `${approved}, but the invitation email failed. Use Resend invitation to try again.`, email };
 }
 
 // generateLink sends no email of its own, so invitations do not use Supabase's
