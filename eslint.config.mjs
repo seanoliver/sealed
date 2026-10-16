@@ -2,6 +2,17 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+const dbAdminImport = {
+  group: ["**/db/admin"],
+  message:
+    "dbAdmin bypasses RLS. Use withRls from @/lib/db for owner-facing data access; dbAdmin is only for private.* SECURITY DEFINER calls, update_token minting, and webhook status updates (see the allowlisted paths in eslint.config.mjs).",
+};
+const supabaseAdminImport = {
+  group: ["**/supabase/admin"],
+  message:
+    "The Supabase admin client holds the secret key and bypasses Auth checks. Only src/app/admin/** may import it.",
+};
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -14,20 +25,7 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": [
         "error",
-        {
-          patterns: [
-            {
-              group: ["**/db/admin"],
-              message:
-                "dbAdmin bypasses RLS. Use withRls from @/lib/db for owner-facing data access; dbAdmin is only for private.* SECURITY DEFINER calls, update_token minting, and webhook status updates (see the allowlisted paths in eslint.config.mjs).",
-            },
-            {
-              group: ["**/supabase/admin"],
-              message:
-                "The Supabase admin client holds the secret key and bypasses Auth checks. Only the allowlisted admin paths in eslint.config.mjs may import it.",
-            },
-          ],
-        },
+        { patterns: [dbAdminImport, supabaseAdminImport] },
       ],
     },
   },
@@ -38,10 +36,6 @@ const eslintConfig = defineConfig([
       "src/app/u/**",
       "src/app/b/**",
       "src/app/dashboard/actions.ts",
-      // Sanctioned: the waitlist is private-schema only, and the invitation's
-      // sign-in link needs the Auth admin API; every call is gated by
-      // requireAdmin (ADMIN_EMAILS).
-      "src/app/admin/**",
       // Sanctioned: the public permalink surface is unauthenticated (no
       // claims for withRls); this module selects ONLY title/owner name/
       // enabled-field flags by slug — never ids, counts, or contact data.
@@ -62,6 +56,15 @@ const eslintConfig = defineConfig([
       // themselves run through withRls).
       "src/app/dashboard/review/approve-race.test.ts",
     ],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [supabaseAdminImport] }],
+    },
+  },
+  // Sanctioned: the waitlist is private-schema only, and the invitation's
+  // sign-in link needs the Auth admin API; every call is gated by
+  // requireAdmin (ADMIN_EMAILS).
+  {
+    files: ["src/app/admin/**"],
     rules: { "no-restricted-imports": "off" },
   },
   // Override default ignores of eslint-config-next.
