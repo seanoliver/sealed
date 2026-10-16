@@ -46,6 +46,7 @@ export function TurnstileWidget({
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [widgetId, setWidgetId] = useState<string>();
+  const [failed, setFailed] = useState(false);
   const initialResetOn = useRef(resetOn);
   const onTokenChangeRef = useRef(onTokenChange);
   useEffect(() => {
@@ -59,9 +60,15 @@ export function TurnstileWidget({
     setWidgetId(
       turnstile.render(container, {
         sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
-        callback: () => onTokenChangeRef.current?.(true),
+        callback: () => {
+          setFailed(false);
+          onTokenChangeRef.current?.(true);
+        },
         "expired-callback": () => onTokenChangeRef.current?.(false),
-        "error-callback": () => onTokenChangeRef.current?.(false),
+        "error-callback": () => {
+          setFailed(true);
+          onTokenChangeRef.current?.(false);
+        },
       }),
     );
   }
@@ -83,8 +90,15 @@ export function TurnstileWidget({
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
         onReady={renderWidget}
+        onError={() => setFailed(true)}
       />
       <div ref={containerRef} />
+      {failed ? (
+        <p role="alert" className="text-sm text-destructive">
+          The verification check didn’t load. Allow challenges.cloudflare.com in
+          any content blocker, then reload the page.
+        </p>
+      ) : null}
     </>
   );
 }

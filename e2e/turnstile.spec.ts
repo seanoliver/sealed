@@ -71,3 +71,15 @@ test("the widget resets after a failed submit and is replaced on a different ema
   await expect(submit).toBeEnabled();
   await cleanupUser(email);
 });
+
+test("a blocked Turnstile script explains why Request access is disabled", async ({ page }) => {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
+    route.abort("blockedbyclient"),
+  );
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "verification check didn’t load" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request access" })).toBeDisabled();
+});
