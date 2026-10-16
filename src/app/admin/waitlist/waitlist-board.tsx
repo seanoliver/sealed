@@ -19,8 +19,6 @@ const initialState: ApproveState = {};
 // list and remounts, so per-row state would lose the result.
 export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
   const [state, formAction] = useActionState(approveEmail, initialState);
-  const pending = entries.filter((entry) => entry.status === "pending");
-  const approved = entries.filter((entry) => entry.status === "approved");
 
   return (
     <div className="flex flex-col gap-10">
@@ -55,18 +53,14 @@ export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
         </form>
       </section>
 
-      <EntryList
-        title="Waiting"
-        empty="Nobody is waiting."
-        entries={pending}
-        formAction={formAction}
-      />
-      <EntryList
-        title="Approved"
-        empty="No approvals yet."
-        entries={approved}
-        formAction={formAction}
-      />
+      {LIST_ORDER.map((status) => (
+        <EntryList
+          key={status}
+          view={STATUS_VIEWS[status]}
+          entries={entries.filter((entry) => entry.status === status)}
+          formAction={formAction}
+        />
+      ))}
     </div>
   );
 }
@@ -74,17 +68,49 @@ export function WaitlistBoard({ entries }: { entries: WaitlistEntry[] }) {
 // A fixed time zone keeps server and browser renders identical.
 const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
 
+function formatDate(iso: string): string {
+  return dateFormat.format(new Date(iso));
+}
+
+type StatusView = {
+  title: string;
+  empty: string;
+  detail: (entry: WaitlistEntry) => string;
+  /** The row's button label, or null for no button. */
+  action: (entry: WaitlistEntry) => string | null;
+};
+
+const STATUS_VIEWS: Record<WaitlistStatus, StatusView> = {
+  pending: {
+    title: "Waiting",
+    empty: "Nobody is waiting.",
+    detail: (entry) =>
+      `${entry.source === "google" ? "Google" : "Email"} · ${formatDate(entry.requestedAt)}`,
+    action: () => "Approve",
+  },
+  approved: {
+    title: "Approved",
+    empty: "No approvals yet.",
+    detail: (entry) =>
+      entry.invitationSentAt
+        ? `Invitation sent ${formatDate(entry.invitationSentAt)}`
+        : "Invitation not sent",
+    action: (entry) => (entry.invitationSentAt ? null : "Resend invitation"),
+  },
+};
+
+const LIST_ORDER: WaitlistStatus[] = ["pending", "approved"];
+
 function EntryList({
-  title,
-  empty,
+  view,
   entries,
   formAction,
 }: {
-  title: string;
-  empty: string;
+  view: StatusView;
   entries: WaitlistEntry[];
   formAction: (formData: FormData) => void;
 }) {
+  const { title, empty } = view;
   const headingId = `${title.toLowerCase()}-heading`;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
@@ -95,31 +121,26 @@ function EntryList({
         <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
         <ul className="divide-y rounded-xl border">
-          {entries.map((entry) => (
-            <li
-              key={entry.email}
-              className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <p className="font-medium text-foreground">{entry.email}</p>
-                <p className="text-sm text-muted-foreground">
-                  {entry.status === "pending"
-                    ? `${entry.source === "google" ? "Google" : "Email"} · ${dateFormat.format(new Date(entry.requestedAt))}`
-                    : entry.invitationSentAt
-                      ? `Invitation sent ${dateFormat.format(new Date(entry.invitationSentAt))}`
-                      : "Invitation not sent"}
-                </p>
-              </div>
-              {entry.status === "approved" && entry.invitationSentAt ? null : (
-                <form action={formAction}>
-                  <input type="hidden" name="email" value={entry.email} />
-                  <ActionButton
-                    label={entry.status === "pending" ? "Approve" : "Resend invitation"}
-                  />
-                </form>
-              )}
-            </li>
-          ))}
+          {entries.map((entry) => {
+            const action = view.action(entry);
+            return (
+              <li
+                key={entry.email}
+                className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-medium text-foreground">{entry.email}</p>
+                  <p className="text-sm text-muted-foreground">{view.detail(entry)}</p>
+                </div>
+                {action ? (
+                  <form action={formAction}>
+                    <input type="hidden" name="email" value={entry.email} />
+                    <ActionButton label={action} />
+                  </form>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
