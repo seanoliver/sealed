@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { hashedRateLimitKey } from "@/lib/request-ip";
@@ -10,7 +11,7 @@ vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: vi.fn() }));
 vi.mock("@/lib/request-ip", () => ({
   requestIp: vi.fn(async () => "203.0.113.7"),
-  hashedRateLimitKey: (prefix: string, value: string) => `${prefix}:${value}`,
+  hashedRateLimitKey: vi.fn((prefix: string, value: string) => `${prefix}:${value}`),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
@@ -50,6 +51,18 @@ describe("requestAccess", () => {
       email: "a@example.test",
       options: { emailRedirectTo: "https://app.example/auth/confirm?flow=login" },
     });
+  });
+
+  it("rate-limits on a sha256 of the email, never the raw address", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/request-ip")>("@/lib/request-ip");
+    vi.mocked(hashedRateLimitKey)
+      .mockImplementationOnce(actual.hashedRateLimitKey)
+      .mockImplementationOnce(actual.hashedRateLimitKey);
+    await requestAccess(idle, form("A@example.test"));
+    const digest = createHash("sha256").update("a@example.test").digest("hex");
+    const keys = vi.mocked(checkRateLimit).mock.calls.map(([key]) => key);
+    expect(keys).toContain(`request-access-email:${digest}`);
+    expect(keys.join()).not.toContain("example.test");
   });
 
   it("reports waitlisted emails as sent without logging", async () => {

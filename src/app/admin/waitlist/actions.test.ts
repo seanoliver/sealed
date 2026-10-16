@@ -86,6 +86,16 @@ describe("approveEmail", () => {
     expect(dbAdmin.execute).toHaveBeenCalledTimes(1);
   });
 
+  it("still reports success when recording the sent invitation fails", async () => {
+    vi.mocked(dbAdmin.execute)
+      .mockResolvedValueOnce([{ approved: true }] as never)
+      .mockRejectedValueOnce(new Error("boom"));
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      message: "Approved new@example.test. Invitation sent.",
+    });
+    expect(dbAdmin.execute).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects an invalid email before touching the database or Auth", async () => {
     await expect(approveEmail({}, form("nope"))).resolves.toEqual({
       error: "Enter a valid email address.",

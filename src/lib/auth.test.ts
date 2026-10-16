@@ -49,6 +49,6 @@ describe("requireAdmin", () => {
     vi.mocked(createClient).mockResolvedValue({
       auth: { getClaims: async () => ({ data: null, error: null }) },
     } as unknown as Awaited<ReturnType<typeof createClient>>);
-    await expect(requireAdmin()).rejects.toThrow("REDIRECT /");
+    await expect(requireAdmin()).rejects.toThrow(/^REDIRECT \/$/);
   });
 });

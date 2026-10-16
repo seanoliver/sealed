@@ -23,9 +23,10 @@ const approvedLater = uniqueEmail("approved-later");
 const secondRequest = uniqueEmail("second-request");
 const notInvited = uniqueEmail("not-invited");
 const alreadyInvited = uniqueEmail("already-invited");
+const invitedDirectly = uniqueEmail("invited-directly");
 
 test.afterAll(async () => {
-  for (const email of [waitlisted, approvedLater, secondRequest, notInvited, alreadyInvited]) {
+  for (const email of [waitlisted, approvedLater, secondRequest, notInvited, alreadyInvited, invitedDirectly]) {
     await cleanupUser(email);
   }
 });
@@ -135,4 +136,21 @@ test("the admin board offers Resend invitation only when none was sent", async (
   await expect(
     approved.filter({ hasText: alreadyInvited }).getByRole("button", { name: "Resend invitation" }),
   ).toHaveCount(0);
+});
+
+test("an admin invites an unlisted email directly", async ({ page }) => {
+  await signupAndLogin(page, ADMIN_EMAIL);
+
+  await page.goto("/admin/waitlist");
+  await page.getByLabel("Email to send an invitation to").fill(invitedDirectly);
+  await page.getByRole("button", { name: "Send invitation", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(
+    `Approved ${invitedDirectly}. Invitation sent.`,
+  );
+  await expect(
+    page
+      .getByRole("region", { name: /^Approved/ })
+      .getByRole("listitem")
+      .filter({ hasText: invitedDirectly }),
+  ).toContainText("Invitation sent");
 });

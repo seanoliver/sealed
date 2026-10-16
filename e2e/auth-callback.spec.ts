@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { approveEmail, cleanupUser } from "./db";
-import { fetchMagicLink, requestAccess, uniqueEmail } from "./helpers";
+import { fetchMagicLink, requestAccess, uniqueEmail, waitForTurnstile } from "./helpers";
 
 test("a failed magic link returns to the entry page with an error", async ({ page }) => {
   const email = uniqueEmail("link-error");
@@ -32,4 +32,25 @@ test("a provider fallback code at the site root reaches auth confirmation", asyn
   await expect(
     page.getByRole("alert").filter({ hasText: "It may have expired or already been used" }),
   ).toBeVisible();
+});
+
+test("the link-failed alert goes away after requesting access and using a different email", async ({
+  page,
+}) => {
+  const email = uniqueEmail("alert-clears");
+  await page.goto("/?error=1");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "That sign-in link didn’t work" }),
+  ).toBeVisible();
+
+  await page.getByLabel("Email address").fill(email);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Request access" }).click();
+  await expect(page.getByRole("heading", { name: "Your request is in" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Use a different email" }).click();
+  await expect(page.getByLabel("Email address")).toHaveValue("");
+  // Next's empty route announcer is also role=alert, so match only alerts with text.
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
+  await cleanupUser(email);
 });
