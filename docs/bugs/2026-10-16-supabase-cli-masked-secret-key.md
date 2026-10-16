@@ -4,7 +4,7 @@
 **Status:** Fixed
 **Severity:** Important
 **Last verified:** `411b5c2` on 2026-10-16
-**Related:** #52, #30, [Waitlist runbook](../runbooks/waitlist.md)
+**Related:** [PR #52](https://github.com/seanoliver/sealed/pull/52), [#30](https://github.com/seanoliver/sealed/issues/30), [Waitlist runbook](../runbooks/waitlist.md)
 
 ## Symptom
 
@@ -35,8 +35,9 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 Replaced the Vercel value with the real key from the Management API, then redeployed production through the deploy workflow:
 
 ```bash
-curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  "https://api.supabase.com/v1/projects/<ref>/api-keys?reveal=true"
+curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  "https://api.supabase.com/v1/projects/<ref>/api-keys?reveal=true" \
+  | jq -r '.[] | select(.type == "secret") | .api_key'
 ```
 
 No code changed.
@@ -48,8 +49,8 @@ No code changed.
 
 ## Recurrence guardrail
 
-The waitlist runbook now says to take the key from the dashboard or the `?reveal=true` endpoint, and to test it against the Auth admin API before saving it. There is no automated check. A deploy step that calls the admin API with the stored key would need the key in GitHub as well, which widens where it lives.
+The waitlist runbook now says to take the key from the dashboard or the `?reveal=true` endpoint and to test it against the Auth admin API before saving it. Its "invitation email failed" section now names this 401 as a cause. There is no automated check. A deploy step that calls the admin API with the stored key would need the key in GitHub as well, which widens where it lives.
 
 ## Follow-ups
 
-Approving marks the row approved before the invitation is sent, so a failed send leaves an approved row with no invitation. "Resend invitation" handles that, and #67 tracks the related admin follow-ups.
+Approving marks the row approved before the invitation is sent, so a failed send leaves an approved row with no invitation. "Resend invitation" handles that once the cause is fixed. Other waitlist follow-ups are in [#67](https://github.com/seanoliver/sealed/issues/67).
