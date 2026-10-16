@@ -12,13 +12,20 @@ import { TurnstileWidget } from "@/components/turnstile-widget";
 
 const initialState: RequestAccessState = { status: "idle" };
 
+export type SignInError = "link" | "oauth";
+
+const SIGN_IN_ERRORS: Record<SignInError, string> = {
+  link: "That sign-in link didn’t work. It may have expired or already been used. Enter your email to get a new one.",
+  oauth: "Google sign-in didn’t finish. Try again, or enter your email instead.",
+};
+
 /** Remounting the form (new key) is how "Use a different email" clears the action state. */
-export function RequestAccess({ error }: { error?: boolean }) {
+export function RequestAccess({ error }: { error?: SignInError }) {
   const [attempt, setAttempt] = useState(0);
   return (
     <RequestAccessForm
       key={attempt}
-      error={attempt === 0 && error}
+      error={attempt === 0 ? error : undefined}
       onReset={() => setAttempt((n) => n + 1)}
     />
   );
@@ -28,7 +35,7 @@ function RequestAccessForm({
   error,
   onReset,
 }: {
-  error?: boolean;
+  error?: SignInError;
   onReset: () => void;
 }) {
   const [state, formAction] = useActionState(requestAccess, initialState);
@@ -36,9 +43,7 @@ function RequestAccessForm({
   const message =
     state.status === "error"
       ? state.message
-      : error
-        ? "That sign-in link didn’t work. It may have expired or already been used. Enter your email to get a new one."
-        : undefined;
+      : error && SIGN_IN_ERRORS[error];
 
   if (state.status === "sent") {
     return (
@@ -92,6 +97,7 @@ function RequestAccessForm({
           required
           autoComplete="email"
           placeholder="you@example.com"
+          defaultValue={state.status === "error" ? state.email : undefined}
           className="h-12 rounded-xl border border-input bg-background/60 px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25"
         />
         <TurnstileWidget resetOn={state} onTokenChange={setHasToken} />

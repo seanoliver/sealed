@@ -99,10 +99,17 @@ describe("requestAccess", () => {
     expect(console.error).toHaveBeenCalledWith(logged);
   });
 
+  it("echoes the email exactly as typed", async () => {
+    const data = form(" A@Example.test ");
+    data.delete("cf-turnstile-response");
+    await expect(requestAccess(idle, data)).resolves.toMatchObject({ email: " A@Example.test " });
+  });
+
   it("rejects an invalid email before any other check", async () => {
     await expect(requestAccess(idle, form("not-an-email"))).resolves.toEqual({
       status: "error",
       message: "Enter a valid email address.",
+      email: "not-an-email",
     });
     expect(checkRateLimit).not.toHaveBeenCalled();
   });
@@ -112,6 +119,7 @@ describe("requestAccess", () => {
     await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "error",
       message: "Too many requests. Please try again later.",
+      email: "a@example.test",
     });
     expect(checkRateLimit).toHaveBeenNthCalledWith(1, "request-access:203.0.113.7", 5, 3600);
     expect(checkRateLimit).toHaveBeenNthCalledWith(2, "request-access-email:a@example.test", 3, 3600);
@@ -134,6 +142,7 @@ describe("requestAccess", () => {
     await expect(requestAccess(idle, data)).resolves.toEqual({
       status: "error",
       message: "Verification failed. Please try again.",
+      email: "a@example.test",
     });
     expect(checkRateLimit).not.toHaveBeenCalled();
     expect(verifyTurnstile).not.toHaveBeenCalled();
@@ -141,8 +150,10 @@ describe("requestAccess", () => {
 
   it("stops at the client limit without checking Turnstile or the email limit", async () => {
     vi.mocked(checkRateLimit).mockResolvedValueOnce(false);
-    await expect(requestAccess(idle, form("a@example.test"))).resolves.toMatchObject({
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "error",
+      message: "Too many requests. Please try again later.",
+      email: "a@example.test",
     });
     expect(checkRateLimit).toHaveBeenCalledTimes(1);
     expect(verifyTurnstile).not.toHaveBeenCalled();
@@ -150,8 +161,10 @@ describe("requestAccess", () => {
 
   it("fails closed when the limiter is unavailable", async () => {
     vi.mocked(checkRateLimit).mockRejectedValue(new Error("connection refused"));
-    await expect(requestAccess(idle, form("a@example.test"))).resolves.toMatchObject({
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "error",
+      message: "Something went wrong. Please try again.",
+      email: "a@example.test",
     });
     expect(signInWithOtp).not.toHaveBeenCalled();
   });
@@ -161,6 +174,7 @@ describe("requestAccess", () => {
     await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
       status: "error",
       message: "Verification failed. Please try again.",
+      email: "a@example.test",
     });
     expect(checkRateLimit).toHaveBeenCalledTimes(1);
     expect(signInWithOtp).not.toHaveBeenCalled();
@@ -176,7 +190,7 @@ describe("continueWithGoogle", () => {
   it.each([
     ["returns an error", { data: { url: "https://accounts.google.com/x" }, error: { message: "boom" } }],
     ["returns no OAuth URL", { data: { url: null }, error: null }],
-  ])("redirects to /?error=1 when Supabase %s", async (_label, result) => {
+  ])("redirects to /?error=oauth when Supabase %s", async (_label, result) => {
     const signInWithOAuth = vi.fn().mockResolvedValue(result);
     vi.mocked(createClient).mockResolvedValue({
       auth: { signInWithOAuth },
@@ -187,6 +201,6 @@ describe("continueWithGoogle", () => {
 
     await expect(continueWithGoogle()).rejects.toThrow("NEXT_REDIRECT");
     expect(redirect).toHaveBeenCalledTimes(1);
-    expect(redirect).toHaveBeenCalledWith("/?error=1");
+    expect(redirect).toHaveBeenCalledWith("/?error=oauth");
   });
 });

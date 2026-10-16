@@ -18,6 +18,7 @@ test("the widget resets after a failed submit and is replaced on a different ema
   await page.getByLabel("Email address").fill("nobody@localhost");
   await submit.click();
   await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText("Enter a valid email address.");
+  await expect(page.getByLabel("Email address")).toHaveValue("nobody@localhost");
   await expect.poll(() => calls(page)).toEqual({ renders: 1, resets: 1, removes: 0 });
   await expect(submit).toBeDisabled();
 

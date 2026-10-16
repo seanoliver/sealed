@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
   if (searchParams.get("error_description") === WAITLIST_REJECTION) {
     return NextResponse.redirect(new URL("/?requested=google", request.url));
   }
+  if (searchParams.get("error")) {
+    return NextResponse.redirect(new URL("/?error=oauth", request.url));
+  }
 
   const supabase = await createClient();
 
@@ -40,9 +43,7 @@ export async function GET(request: NextRequest) {
     }
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
+    return NextResponse.redirect(new URL(error ? "/?error=oauth" : "/dashboard", request.url));
   }
 
   return NextResponse.redirect(new URL("/?error=1", request.url));

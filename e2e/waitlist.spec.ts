@@ -69,6 +69,10 @@ test("a waitlisted Google sign-up shows its confirmation", async ({ page }) => {
   // Supabase falls back to the Site URL when redirect_to is unusable.
   await page.goto("/?error=access_denied&error_description=sealed_waitlisted");
   await expect(page.getByRole("status")).toContainText("You’re on the list, and your invitation will arrive");
+
+  await page.getByRole("link", { name: "Back to sign in" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Request an invitation" })).toBeVisible();
 });
 
 test("the waitlist admin page is hidden from other owners", async ({ page }) => {
@@ -120,7 +124,7 @@ test("an admin approves a waiting email, which can then sign up", async ({
   await visitor.close();
 });
 
-test("the admin board offers Resend invitation only when none was sent", async ({
+test("the admin board offers Resend invitation on every approved row", async ({
   page,
 }) => {
   await seedApprovedWaitlist(notInvited, { invited: false });
@@ -135,13 +139,19 @@ test("the admin board offers Resend invitation only when none was sent", async (
   await expect(approved.filter({ hasText: alreadyInvited })).toContainText("Invitation sent");
   await expect(
     approved.filter({ hasText: alreadyInvited }).getByRole("button", { name: "Resend invitation" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });
 
 test("an admin invites an unlisted email directly", async ({ page }) => {
   await signupAndLogin(page, ADMIN_EMAIL);
 
   await page.goto("/admin/waitlist");
+  const input = page.getByLabel("Email to send an invitation to");
+  await input.fill("nobody@localhost");
+  await page.getByRole("button", { name: "Send invitation", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText("Enter a valid email address.");
+  await expect(input).toHaveValue("nobody@localhost");
+
   await page.getByLabel("Email to send an invitation to").fill(invitedDirectly);
   await page.getByRole("button", { name: "Send invitation", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(
