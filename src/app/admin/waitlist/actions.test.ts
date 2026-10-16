@@ -109,6 +109,14 @@ describe("approveEmail", () => {
     await expect(approveEmail({}, form("new@example.test"))).resolves.not.toHaveProperty("email");
   });
 
+  it("refills the direct form when the approval fails", async () => {
+    vi.mocked(dbAdmin.execute).mockRejectedValueOnce(new Error("boom"));
+    await expect(approveEmail({}, form("new@example.test", "direct"))).resolves.toEqual({
+      error: "Could not approve that email.",
+      email: "new@example.test",
+    });
+  });
+
   it("rejects an invalid email before touching the database or Auth", async () => {
     await expect(approveEmail({}, form("nope"))).resolves.toEqual({
       error: "Enter a valid email address.",
