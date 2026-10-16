@@ -17,6 +17,10 @@ export type RequestAccessState =
   | { status: "error"; message: string };
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
+const VERIFICATION_FAILED: RequestAccessState = {
+  status: "error",
+  message: "Verification failed. Please try again.",
+};
 
 export async function requestAccess(
   _prevState: RequestAccessState,
@@ -26,16 +30,16 @@ export async function requestAccess(
   if (!email) {
     return { status: "error", message: "Enter a valid email address." };
   }
+  const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
+  // Checked before the IP limit so a submit that beat the widget costs no budget.
+  if (!turnstileResponse) return VERIFICATION_FAILED;
   const ip = await requestIp();
 
   // The email limit must run after Turnstile, or a bot could use up any address's budget.
   const ipLimited = await limitError(hashedRateLimitKey("request-access", ip), 5);
   if (ipLimited) return ipLimited;
 
-  const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
-  if (!(await verifyTurnstile(turnstileResponse, ip))) {
-    return { status: "error", message: "Verification failed. Please try again." };
-  }
+  if (!(await verifyTurnstile(turnstileResponse, ip))) return VERIFICATION_FAILED;
 
   const emailLimited = await limitError(
     hashedRateLimitKey("request-access-email", email.toLowerCase()),

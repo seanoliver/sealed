@@ -110,6 +110,17 @@ describe("requestAccess", () => {
     );
   });
 
+  it("rejects a submit with no Turnstile response before charging any limit", async () => {
+    const data = form("a@example.test");
+    data.delete("cf-turnstile-response");
+    await expect(requestAccess(idle, data)).resolves.toEqual({
+      status: "error",
+      message: "Verification failed. Please try again.",
+    });
+    expect(checkRateLimit).not.toHaveBeenCalled();
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+  });
+
   it("stops at the client limit without checking Turnstile or the email limit", async () => {
     vi.mocked(checkRateLimit).mockResolvedValueOnce(false);
     await expect(requestAccess(idle, form("a@example.test"))).resolves.toMatchObject({

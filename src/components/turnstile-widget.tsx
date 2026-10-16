@@ -16,7 +16,15 @@ import Script from "next/script";
  */
 
 type TurnstileGlobal = {
-  render: (container: HTMLElement, options: { sitekey: string }) => string;
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      callback: () => void;
+      "expired-callback": () => void;
+      "error-callback": () => void;
+    },
+  ) => string;
   reset: (widgetId: string) => void;
   remove: (widgetId: string) => void;
 };
@@ -32,10 +40,20 @@ function turnstileGlobal(): TurnstileGlobal | undefined {
  * Responses are single-use at siteverify, so pass the form's action state as
  * `resetOn`: each new state after a submit gets a fresh response.
  */
-export function TurnstileWidget({ resetOn }: { resetOn?: unknown } = {}) {
+export function TurnstileWidget({
+  resetOn,
+  onTokenChange,
+}: {
+  resetOn?: unknown;
+  onTokenChange?: (hasToken: boolean) => void;
+} = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [widgetId, setWidgetId] = useState<string>();
   const initialResetOn = useRef(resetOn);
+  const onTokenChangeRef = useRef(onTokenChange);
+  useEffect(() => {
+    onTokenChangeRef.current = onTokenChange;
+  });
 
   function renderWidget() {
     const turnstile = turnstileGlobal();
@@ -44,6 +62,9 @@ export function TurnstileWidget({ resetOn }: { resetOn?: unknown } = {}) {
     setWidgetId(
       turnstile.render(container, {
         sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
+        callback: () => onTokenChangeRef.current?.(true),
+        "expired-callback": () => onTokenChangeRef.current?.(false),
+        "error-callback": () => onTokenChangeRef.current?.(false),
       }),
     );
   }
@@ -55,6 +76,7 @@ export function TurnstileWidget({ resetOn }: { resetOn?: unknown } = {}) {
 
   useEffect(() => {
     if (!widgetId || resetOn === initialResetOn.current) return;
+    onTokenChangeRef.current?.(false);
     turnstileGlobal()?.reset(widgetId);
   }, [resetOn, widgetId]);
 

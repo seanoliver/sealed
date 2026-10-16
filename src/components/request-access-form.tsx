@@ -32,6 +32,7 @@ function RequestAccessForm({
   onReset: () => void;
 }) {
   const [state, formAction] = useActionState(requestAccess, initialState);
+  const [hasToken, setHasToken] = useState(false);
   const message =
     state.status === "error"
       ? state.message
@@ -93,8 +94,9 @@ function RequestAccessForm({
           placeholder="you@example.com"
           className="h-12 rounded-xl border border-input bg-background/60 px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25"
         />
-        <TurnstileWidget resetOn={state} />
+        <TurnstileWidget resetOn={state} onTokenChange={setHasToken} />
         <SubmitButton
+          disabled={!hasToken}
           pendingLabel="Sending…"
           className="mt-1 h-12 rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/85"
         >
