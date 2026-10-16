@@ -1,7 +1,6 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { authConfirmationUrl } from "@/lib/auth-flow";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
@@ -9,9 +8,8 @@ import { currentRequestOrigin } from "@/lib/request-origin";
 import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { createClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { parseEmailField } from "@/lib/validation/email";
 import { WAITLIST_REJECTION } from "@/lib/waitlist";
-
-const emailSchema = z.email().max(254);
 
 export type RequestAccessState =
   | { status: "idle" }
@@ -26,11 +24,10 @@ export async function requestAccess(
   _prevState: RequestAccessState,
   formData: FormData,
 ): Promise<RequestAccessState> {
-  const parsed = emailSchema.safeParse(String(formData.get("email") ?? "").trim());
-  if (!parsed.success) {
+  const email = parseEmailField(formData);
+  if (!email) {
     return { status: "error", message: "Enter a valid email address." };
   }
-  const email = parsed.data;
   const ip = await requestIp();
 
   // Supabase sends at most 30 auth emails an hour for the whole project, so

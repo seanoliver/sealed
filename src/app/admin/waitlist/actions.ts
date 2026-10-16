@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
-import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { signInLinkUrl } from "@/lib/auth-flow";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): the waitlist is
@@ -13,10 +12,9 @@ import { waitlistApprovedEmail } from "@/lib/email/templates";
 import { requiredEnv } from "@/lib/env";
 import { logDbError } from "@/lib/log";
 import { createAdminAuthClient } from "@/lib/supabase/admin";
+import { parseEmailField } from "@/lib/validation/email";
 
 export type ApproveState = { message?: string; error?: string };
-
-const emailSchema = z.email().max(254);
 
 // Approves any email, listed or not. Re-running for an approved email resends
 // the invitation with a fresh sign-in link.
@@ -28,11 +26,8 @@ export async function approveEmail(
   // Checked before approving, so a misconfigured deploy changes nothing.
   const appUrl = requiredEnv("APP_URL");
   const authAdmin = createAdminAuthClient();
-  const parsed = emailSchema.safeParse(
-    String(formData.get("email") ?? "").trim().toLowerCase(),
-  );
-  if (!parsed.success) return { error: "Enter a valid email address." };
-  const email = parsed.data;
+  const email = parseEmailField(formData)?.toLowerCase();
+  if (!email) return { error: "Enter a valid email address." };
 
   let newlyApproved = false;
   try {
