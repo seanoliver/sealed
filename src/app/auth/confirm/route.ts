@@ -17,7 +17,6 @@ const otpTypeSchema = z.enum([
  * - Magic link / email OTP: ?token_hash=...&type=email → verifyOtp
  * - OAuth (Google) PKCE:    ?code=...                  → exchangeCodeForSession
  * On success the session cookies are set and we land on /dashboard.
- * Failures land on /?error=oauth for Google and /?error=1 for email links.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -28,7 +27,6 @@ export async function GET(request: NextRequest) {
   if (searchParams.get("error_description") === WAITLIST_REJECTION) {
     return NextResponse.redirect(new URL("/?requested=google", request.url));
   }
-  // Email links always carry a token_hash, so a provider error or a code is Google.
   if (searchParams.get("error")) {
     return NextResponse.redirect(new URL("/?error=oauth", request.url));
   }

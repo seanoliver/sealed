@@ -56,8 +56,7 @@ export default async function Home({
   const googleRequested =
     params.requested === "google" ||
     params.error_description === WAITLIST_REJECTION;
-  // Email links fail with error=1. Anything else, including a provider error
-  // that fell back to the Site URL, came from Google.
+  // Not `=== "oauth"`: a Google error that fell back to the Site URL arrives as error=access_denied.
   const signInError: SignInError | undefined =
     params.error === "1" ? "link" : params.error ? "oauth" : undefined;
 
