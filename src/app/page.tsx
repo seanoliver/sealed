@@ -86,8 +86,8 @@ export default async function Home({
                   role="status"
                   className="rounded-xl border border-green-500/25 bg-green-500/10 p-4 leading-relaxed text-foreground"
                 >
-                  You’re on the list. Your invitation will arrive at the email
-                  on your Google account.
+                  You’re on the list, and your invitation will arrive at the
+                  email on your Google account.
                 </div>
               </div>
             ) : (

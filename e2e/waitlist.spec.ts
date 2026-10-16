@@ -49,11 +49,11 @@ test("a waitlisted Google sign-up shows its confirmation", async ({ page }) => {
     "/auth/confirm?flow=login&error=access_denied&error_code=unexpected_failure&error_description=sealed_waitlisted",
   );
   await expect(page).toHaveURL(/\/\?requested=google$/);
-  await expect(page.getByRole("status")).toContainText("You’re on the list.");
+  await expect(page.getByRole("status")).toContainText("You’re on the list, and your invitation will arrive");
 
   // Supabase falls back to the Site URL when redirect_to is unusable.
   await page.goto("/?error=access_denied&error_description=sealed_waitlisted");
-  await expect(page.getByRole("status")).toContainText("You’re on the list.");
+  await expect(page.getByRole("status")).toContainText("You’re on the list, and your invitation will arrive");
 });
 
 test("the waitlist admin page is hidden from other owners", async ({ page }) => {

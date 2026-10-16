@@ -51,8 +51,9 @@ function RequestAccessForm({
           className="rounded-xl border border-green-500/25 bg-green-500/10 p-4 leading-relaxed text-foreground"
         >
           Check <strong className="font-semibold">{state.email}</strong>. If
-          you’ve been invited, your sign-in link is there now. If not, you’re
-          on the list, and your invitation will arrive in the same inbox.
+          you’ve been invited, your sign-in link is on its way, and it can
+          take a few minutes to arrive. If not, you’re on the list, and your
+          invitation will arrive in the same inbox.
         </div>
         <button
           type="button"
