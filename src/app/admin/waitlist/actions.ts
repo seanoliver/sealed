@@ -9,6 +9,7 @@ import { requireAdmin } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { sendNotification } from "@/lib/email/resend";
 import { waitlistApprovedEmail } from "@/lib/email/templates";
+import { requiredEnv } from "@/lib/env";
 import { logDbError } from "@/lib/log";
 
 export type ApproveState = { message?: string; error?: string };
@@ -21,6 +22,8 @@ export async function approveEmail(
   formData: FormData,
 ): Promise<ApproveState> {
   await requireAdmin();
+  // Checked before approving, so a misconfigured deploy changes nothing.
+  const appUrl = requiredEnv("APP_URL");
   const parsed = emailSchema.safeParse(
     String(formData.get("email") ?? "").trim().toLowerCase(),
   );
@@ -40,7 +43,7 @@ export async function approveEmail(
 
   const sent = await sendNotification({
     to: email,
-    ...waitlistApprovedEmail({ signInUrl: `${process.env.APP_URL}/` }),
+    ...waitlistApprovedEmail({ signInUrl: `${appUrl}/` }),
   });
   if (sent) {
     try {

@@ -63,6 +63,15 @@ describe("approveEmail", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
+  it("fails loudly without APP_URL and changes nothing", async () => {
+    vi.stubEnv("APP_URL", "");
+    await expect(approveEmail({}, form("new@example.test"))).rejects.toThrow(
+      "Missing required environment variable: APP_URL",
+    );
+    expect(dbAdmin.execute).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
   it("checks admin access before anything else", async () => {
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NOT_FOUND"));
     await expect(approveEmail({}, form("new@example.test"))).rejects.toThrow("NOT_FOUND");
