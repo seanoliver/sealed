@@ -85,7 +85,6 @@ select private.check_rate_limit('k2', 1, 60);
 select results_eq($$select key from private.rate_limits where key in ('stale', 'recent')$$,
   array['recent'], 'a rate-limit call deletes rows older than two days');
 
--- handle_new_user
 insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values
   ('00000000-0000-0000-0000-0000000000b1', 'mail@test.dev', '{"provider": "email"}', '{"full_name": "Chosen Name"}'),
   ('00000000-0000-0000-0000-0000000000b2', 'goog@test.dev', '{"provider": "google"}', '{"full_name": "Google Name"}');
