@@ -44,12 +44,18 @@ Open <https://sealed.page/admin/waitlist>. **Approve** marks an email approved a
 
 The hook is enabled but the function is missing or not executable by `supabase_auth_admin`. Disable the hook (same PATCH with `"hook_before_user_created_enabled": false`), check that the migration applied, then enable it again.
 
+### "Invitations aren't set up on this deployment"
+
+`APP_URL` or `SUPABASE_SECRET_KEY` is missing. The function log line `[wl] [approveEmail] Missing required environment variable: <name>` names it. Set it on the Production target and redeploy. Nothing was approved.
+
 ### Approved, but "the invitation email failed"
 
 Check the production function logs for a `[wl] [approveEmail]` or `[em] [sendNotification]` line.
 
 - `[wl] [approveEmail] generateLink failed: AuthApiError 401`: `SUPABASE_SECRET_KEY` is invalid, often a masked copy ([bug](../bugs/2026-10-16-supabase-cli-masked-secret-key.md)). Re-check it with the curl in Prerequisites, replace it, and redeploy.
-- Any other `generateLink failed`: Supabase Auth rejected the request or could not be reached (the status is in the line, for example 429 or 5xx). Retry later.
+- `generateLink failed: AuthApiError 403`: the key is not a secret key, for example a publishable or anon key pasted as `SUPABASE_SECRET_KEY` (unverified). Re-check it as for 401.
+- `generateLink failed: AuthApiError 429` or `5xx`, or `AuthRetryableFetchError 0`: Supabase Auth is rate-limiting or unreachable (status `0` means no response arrived). Retry later.
+- Any other `generateLink failed: AuthApiError 4xx`: Supabase Auth rejected the request. Read the message in the function logs before retrying.
 - `[em] [sendNotification] ...`: Resend rejected the email or could not be reached, or `EMAIL_FROM` is not set. Check `EMAIL_FROM` and `RESEND_API_KEY`.
 
 Then use **Resend invitation**.

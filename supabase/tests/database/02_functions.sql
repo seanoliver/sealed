@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(20);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'own@test.dev');
 update public.profiles set display_name = 'Sean O' where id = '00000000-0000-0000-0000-0000000000a1';
@@ -78,6 +78,20 @@ select results_eq('select count(*) from public.submissions', array[2::bigint],
 select ok(private.check_rate_limit('k1', 2, 60) and private.check_rate_limit('k1', 2, 60)
           and not private.check_rate_limit('k1', 2, 60),
   'third call within window is rejected');
+
+insert into private.rate_limits (key, count, window_start) values
+  ('stale', 1, now() - interval '3 days'), ('recent', 1, now() - interval '1 day');
+select private.check_rate_limit('k2', 1, 60);
+select results_eq($$select key from private.rate_limits where key in ('stale', 'recent')$$,
+  array['recent'], 'a rate-limit call deletes rows older than two days');
+
+-- handle_new_user
+insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000b1', 'mail@test.dev', '{"provider": "email"}', '{"full_name": "Chosen Name"}'),
+  ('00000000-0000-0000-0000-0000000000b2', 'goog@test.dev', '{"provider": "google"}', '{"full_name": "Google Name"}');
+select results_eq($$select display_name from public.profiles
+    where id in ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b2') order by id$$,
+  array['', 'Google Name'], 'email sign-ups ignore metadata names; Google sign-ups keep them');
 
 select * from finish();
 rollback;

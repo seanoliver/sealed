@@ -90,7 +90,7 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 
 ## Invite-only sign-up
 
-Supabase Auth calls `private.before_user_created_hook` before it creates any user, whether through a magic link, Google, or the Auth API directly. The hook allows emails approved in `private.waitlist`, and records every other email as pending before rejecting the sign-up with the message `sealed_waitlisted`. The hook runs in its own transaction, so the waitlist row is kept even though the sign-up fails. Existing users never reach the hook. Only `ADMIN_EMAILS` can approve emails, at `/admin/waitlist`; the waitlist is reachable only through `private.*` functions.
+Supabase Auth calls `private.before_user_created_hook` before it creates any user, whether through a magic link, Google, or the Auth API directly. The hook allows emails approved in `private.waitlist`, and records every other email as pending before rejecting the sign-up with the message `sealed_waitlisted`. The hook runs in its own transaction, so the waitlist row is kept even though the sign-up fails. Existing users never reach the hook. Email sign-ups start with an empty display name: `private.handle_new_user` ignores user metadata when the provider is `email`, so a direct `signUp` for an approved address cannot choose the name its recipients see. Waitlist emails are kept until deleted by hand; there is no retention period yet. Only `ADMIN_EMAILS` can approve emails, at `/admin/waitlist`; the waitlist is reachable only through `private.*` functions.
 
 Approving an email sends a beta invitation with a sign-in link. The app generates it with `auth.admin.generateLink` (type `magiclink`), which creates the now-approved user if needed and sends no email itself; the app emails the link through Resend. This is the only use of `SUPABASE_SECRET_KEY`, which bypasses Auth checks: it is server only, read through `src/lib/supabase/admin.ts`, and lint-restricted to admin paths. The link expires after the project's OTP lifetime, 24 hours in hosted Auth and `supabase/config.toml`; an expired link lands on the entry page with a message to request a new one.
 
@@ -100,19 +100,24 @@ Known limits: calling the Supabase Auth API directly with the public anon key sk
 
 ## Rate limits
 
-All public surfaces are metered by `private.check_rate_limit` — a fixed-window limiter backed by Postgres (no extra infra). Client IPs are **hashed (SHA-256) before use as keys**, so `private.rate_limits` never stores raw IPs. Callers **fail closed**: a limiter outage denies the request rather than waving it through.
+All public surfaces are metered by `private.check_rate_limit`, a fixed-window limiter backed by Postgres (no extra infra). Client IPs and emails are **hashed with HMAC-SHA-256 keyed by `RATE_LIMIT_SECRET` before use as keys**, so `private.rate_limits` never stores them and a leaked table cannot be reversed by hashing guessed values. Each call also deletes rows older than two days, so the table stays small without a scheduled job. Callers **fail closed**: a limiter outage denies the request rather than waving it through.
 
 **Self-hosting note:** the per-IP keys come from the `x-forwarded-for` header, which a platform proxy (Vercel, or your own reverse proxy) must set. Run the app bare — no proxy setting the header — and every visitor shares the single `"unknown"` bucket: the limiter still fails closed (legitimate traffic gets throttled long before an attacker gets extra budget), but the site degrades under any real load. Deploy behind Vercel or a proxy that sets `x-forwarded-for`.
 
 | Surface | Key | Limit |
 |---|---|---|
-| `/u/[token]` page view | `token-view:sha256(ip)` | 30 / hour |
-| `/u/[token]` submit | `token-submit:sha256(ip)` | 10 / hour |
-| `/b/[slug]` page view | `permalink-view:sha256(ip)` | 60 / hour |
-| `/b/[slug]` submit, per client | `permalink-submit:sha256(ip)` | 5 / hour |
+| `/u/[token]` page view | `token-view:hmac(ip)` | 30 / hour |
+| `/u/[token]` submit | `token-submit:hmac(ip)` | 10 / hour |
+| `/b/[slug]` page view | `permalink-view:hmac(ip)` | 60 / hour |
+| `/b/[slug]` submit, per client | `permalink-submit:hmac(ip)` | 5 / hour |
 | `/b/[slug]` submit, per book | `permalink-book:<slug>` | 100 / day |
-| Entry page request access, per client | `request-access:sha256(ip)` | 5 / hour |
-| Entry page request access, per email | `request-access-email:sha256(email)` | 3 / hour |
+| Entry page request access, per client | `request-access:hmac(ip)` | 5 / hour |
+| Entry page request access, per email | `request-access-email:hmac(email)` | 3 / hour |
+
+Accepted limits on the entry page:
+
+- **Per-email lockout.** Anyone who solves Turnstile three times in an hour with someone else's email blocks that email's sign-in link for the rest of the hour. Google sign-in still works for them.
+- **Shared networks.** Offices and carrier NAT share one per-IP budget of 5 requests an hour, and existing users sign in through the same form.
 
 Ordering is deliberate: on permalink submits the per-IP limit runs first (a client burns its own budget before anything shared), and the per-book limit runs **after** the Turnstile gate — so bot-generated junk can never drain a targeted book's daily budget.
 
@@ -167,13 +172,7 @@ Work through this before pointing real traffic at a deployment:
 - [ ] **Resend**: verify the sending domain (SPF/DKIM) and set the webhook endpoint + `RESEND_WEBHOOK_SECRET` — without the secret the webhook route refuses all events (fail closed).
 - [ ] **Vercel env vars marked Sensitive** so they're write-only in the dashboard.
 - [ ] **`EMAIL_DRY_RUN` must be unset.** The code also gates it on `APP_ENV !== "production"` (a stray flag can't divert real sends into console logs of token links), but don't rely on the belt when you can remove the braces.
-- [ ] **Schedule a `private.rate_limits` sweep** — the table grows with distinct key×window entries and has no in-band cleanup. Enable the `pg_cron` extension first (Dashboard → Database → Extensions), then:
-
-  ```sql
-  select cron.schedule('sweep-rate-limits', '17 4 * * *',
-    $$ delete from private.rate_limits where window_start < now() - interval '1 day' $$);
-  ```
-
+- [ ] **`RATE_LIMIT_SECRET` is a random production value** (`openssl rand -hex 32`), never the example one. Changing it resets every rate-limit window.
 - [ ] **`X-Robots-Tag` for `/u/*`** ships in `next.config.ts` — verify the header survives any proxy/CDN in front of the app (`curl -sI https://<app>/u/anything | grep -i x-robots-tag`).
 
 ## Reporting a vulnerability
