@@ -21,7 +21,7 @@ The public, write-only page an owner shares so another person can submit contact
 _Avoid_: Ask-your-friends page, public address book
 
 **Waitlist**:
-Emails that asked for access to the private beta and are not yet approved. Requesting access through the entry form or Google adds an email; approving it lets that email create an account.
+The list of emails that requested access to the private beta, each with a pending or approved status. Requesting access through the entry form or Google adds an email as pending; approving it lets that email create an account. Approved emails stay on the list.
 _Avoid_: Signup list, queue
 
 **Beta invitation**:
