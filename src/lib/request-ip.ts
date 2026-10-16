@@ -25,10 +25,11 @@ export async function requestIp(): Promise<string> {
 }
 
 /**
- * Rate-limit key: `${prefix}:${sha256hex(ip)}`. Hashing keeps raw IPs out
- * of the private.rate_limits table (PII minimization) while still giving
+ * Rate-limit key: `${prefix}:${sha256hex(value)}`, where value is a client
+ * IP or an email. Hashing keeps raw IPs and emails out of the
+ * private.rate_limits table (PII minimization) while still giving
  * per-client buckets.
  */
-export function hashedIpKey(prefix: string, ip: string): string {
-  return `${prefix}:${createHash("sha256").update(ip).digest("hex")}`;
+export function hashedRateLimitKey(prefix: string, value: string): string {
+  return `${prefix}:${createHash("sha256").update(value).digest("hex")}`;
 }

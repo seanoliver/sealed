@@ -9,7 +9,7 @@ vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: vi.fn() }));
 vi.mock("@/lib/request-ip", () => ({
   requestIp: vi.fn(async () => "203.0.113.7"),
-  hashedIpKey: (prefix: string, value: string) => `${prefix}:${value}`,
+  hashedRateLimitKey: (prefix: string, value: string) => `${prefix}:${value}`,
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 

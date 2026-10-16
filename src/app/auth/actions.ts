@@ -6,7 +6,7 @@ import { authConfirmationUrl } from "@/lib/auth-flow";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
 import { currentRequestOrigin } from "@/lib/request-origin";
-import { hashedIpKey, requestIp } from "@/lib/request-ip";
+import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { createClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { WAITLIST_REJECTION } from "@/lib/waitlist";
@@ -36,7 +36,7 @@ export async function requestAccess(
   // Supabase sends at most 30 auth emails an hour for the whole project, so
   // one client or one address must not be able to use them all. The email
   // limit runs after Turnstile: otherwise anyone could use up a victim's budget.
-  const ipLimit = await withinLimit(hashedIpKey("request-access", ip), 5);
+  const ipLimit = await withinLimit(hashedRateLimitKey("request-access", ip), 5);
   if (ipLimit !== true) return ipLimit;
 
   const turnstileResponse = String(formData.get("cf-turnstile-response") ?? "");
@@ -44,7 +44,7 @@ export async function requestAccess(
     return { status: "error", message: "Verification failed. Please try again." };
   }
 
-  const emailLimit = await withinLimit(hashedIpKey("request-access-email", email.toLowerCase()), 3);
+  const emailLimit = await withinLimit(hashedRateLimitKey("request-access-email", email.toLowerCase()), 3);
   if (emailLimit !== true) return emailLimit;
 
   const supabase = await createClient();

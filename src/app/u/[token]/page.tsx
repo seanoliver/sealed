@@ -8,7 +8,7 @@ import { z } from "zod";
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
-import { hashedIpKey, requestIp } from "@/lib/request-ip";
+import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { RecipientForm } from "@/components/recipient-form";
@@ -73,7 +73,7 @@ export default async function TokenUpdatePage({
   const ip = await requestIp();
   let allowed = false;
   try {
-    allowed = await checkRateLimit(hashedIpKey("token-view", ip), 30, 3600);
+    allowed = await checkRateLimit(hashedRateLimitKey("token-view", ip), 30, 3600);
   } catch (err) {
     logDbError("[tu] [TokenUpdatePage] rate-limit check failed", err);
   }
