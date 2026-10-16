@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import type { UserIdentity } from "@supabase/supabase-js";
-import { authDisplayName, suggestLinkName } from "./onboarding";
+import { describe, expect, it, vi } from "vitest";
+import type { User, UserIdentity } from "@supabase/supabase-js";
+import { authDisplayName, googleDisplayName, suggestLinkName } from "./onboarding";
 
 describe("suggestLinkName", () => {
   it.each([
@@ -50,7 +50,34 @@ describe("authDisplayName", () => {
     expect(authDisplayName(undefined)).toBe("");
   });
 
+  it("never uses an email as the name", () => {
+    expect(authDisplayName([identity("google", { email: "sean.oliver@example.com" })])).toBe("");
+  });
+
   it("ignores malformed or empty identity data", () => {
     expect(authDisplayName([identity("google", { full_name: "  ", name: 42 })])).toBe("");
+  });
+});
+
+describe("googleDisplayName", () => {
+  const client = (user: Partial<User> | null) =>
+    ({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }) } }) as never;
+
+  it("pre-fills the name from a linked Google identity", async () => {
+    const user = {
+      identities: [
+        { id: "g", user_id: "u1", identity_id: "g", provider: "google", identity_data: { full_name: "Ada" } },
+      ],
+    };
+    await expect(googleDisplayName(client(user))).resolves.toBe("Ada");
+  });
+
+  it("ignores user metadata when there is no Google identity", async () => {
+    const user = { user_metadata: { full_name: "Chosen Name" }, identities: [] };
+    await expect(googleDisplayName(client(user))).resolves.toBe("");
+  });
+
+  it("returns an empty name when there is no user", async () => {
+    await expect(googleDisplayName(client(null))).resolves.toBe("");
   });
 });

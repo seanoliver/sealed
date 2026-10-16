@@ -133,6 +133,18 @@ describe("approveEmail", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
+  it("reports a missing APP_URL and changes nothing", async () => {
+    vi.stubEnv("APP_URL", "");
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error: "Invitations aren’t set up on this deployment. Check the function logs.",
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      "[wl] [approveEmail] Missing required environment variable: APP_URL",
+    );
+    expect(dbAdmin.execute).not.toHaveBeenCalled();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
   it("refills the direct form on a setup error", async () => {
     vi.mocked(createAdminAuthClient).mockImplementation(() => {
       throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");

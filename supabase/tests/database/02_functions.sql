@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(23);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'own@test.dev');
 update public.profiles set display_name = 'Sean O' where id = '00000000-0000-0000-0000-0000000000a1';
@@ -88,6 +88,7 @@ select results_eq($$select key from private.rate_limits where key in ('stale', '
 select throws_ok($$select private.check_rate_limit('k3', 1, 172800)$$,
   'rate-limit window must be under two days, because older rows are deleted',
   'windows of two days or more are rejected');
+select ok(private.check_rate_limit('k4', 1, 172799), 'a window just under two days is accepted');
 select has_index('private', 'rate_limits', 'rate_limits_window_start_idx', 'rate_limits is indexed on window_start');
 
 insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values

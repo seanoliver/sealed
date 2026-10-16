@@ -1,4 +1,4 @@
-import type { UserIdentity } from "@supabase/supabase-js";
+import type { SupabaseClient, UserIdentity } from "@supabase/supabase-js";
 import { BOOK_LINK_SHAPE } from "@/lib/book-link";
 
 const FALLBACK_LINK_NAME = "my-address-book";
@@ -29,4 +29,9 @@ export function authDisplayName(identities: UserIdentity[] | undefined): string 
     if (name) return name.slice(0, 200).trim();
   }
   return "";
+}
+
+export async function googleDisplayName(supabase: Pick<SupabaseClient, "auth">): Promise<string> {
+  const { data } = await supabase.auth.getUser();
+  return authDisplayName(data.user?.identities);
 }

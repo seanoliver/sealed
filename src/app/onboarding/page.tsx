@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { authDisplayName, suggestLinkName } from "@/lib/onboarding";
+import { googleDisplayName, suggestLinkName } from "@/lib/onboarding";
 import { getOwnBook, getOwnProfile } from "@/lib/queries/books";
 import { createClient } from "@/lib/supabase/server";
 import { OnboardingForm } from "./onboarding-form";
@@ -14,7 +14,7 @@ export default async function OnboardingPage() {
   if (book) redirect("/dashboard");
 
   const email = typeof claims.email === "string" ? claims.email : "";
-  const displayName = profile?.displayName.trim() || (await googleDisplayName());
+  const displayName = profile?.displayName.trim() || (await googleDisplayName(await createClient()));
 
   return (
     <main className="flex flex-1">
@@ -30,10 +30,4 @@ export default async function OnboardingPage() {
       />
     </main>
   );
-}
-
-async function googleDisplayName(): Promise<string> {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
-  return authDisplayName(data.user?.identities);
 }
