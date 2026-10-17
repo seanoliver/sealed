@@ -1,3 +1,4 @@
+import type { SupabaseClient, UserIdentity } from "@supabase/supabase-js";
 import { BOOK_LINK_SHAPE } from "@/lib/book-link";
 
 const FALLBACK_LINK_NAME = "my-address-book";
@@ -16,14 +17,11 @@ export function suggestLinkName(email: string): string {
   return BOOK_LINK_SHAPE.test(suggestion) ? suggestion : FALLBACK_LINK_NAME;
 }
 
-/** Read only genuine human-name claims supplied by an identity provider. */
-export function authDisplayName(claims: Record<string, unknown>): string {
-  const metadata = claims.user_metadata;
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return "";
-  }
+/** The name on a linked Google identity. User metadata is not read: a direct signUp can set it. */
+export function authDisplayName(identities: UserIdentity[] | undefined): string {
+  const values = identities?.find((identity) => identity.provider === "google")?.identity_data;
+  if (!values) return "";
 
-  const values = metadata as Record<string, unknown>;
   for (const key of ["full_name", "name"] as const) {
     const value = values[key];
     if (typeof value !== "string") continue;
@@ -31,4 +29,9 @@ export function authDisplayName(claims: Record<string, unknown>): string {
     if (name) return name.slice(0, 200).trim();
   }
   return "";
+}
+
+export async function googleDisplayName(supabase: Pick<SupabaseClient, "auth">): Promise<string> {
+  const { data } = await supabase.auth.getUser();
+  return authDisplayName(data.user?.identities);
 }

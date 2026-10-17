@@ -10,7 +10,7 @@ const MAX_RESPONSE_LENGTH = 2048;
  * Server-side Turnstile verification (siteverify).
  *
  * Fail closed: missing secret, empty/oversized response, non-2xx status,
- * unexpected body shape, or any network failure all return false — a bot
+ * unexpected body shape, a 5-second timeout, or any network failure all return false — a bot
  * check that can't be completed must never wave a request through.
  *
  * Logging: NOTHING here is ever logged. The response token is
@@ -29,6 +29,7 @@ export async function verifyTurnstile(
   try {
     const res = await fetch(SITEVERIFY_URL, {
       method: "POST",
+      signal: AbortSignal.timeout(5000),
       body: new URLSearchParams({
         secret,
         response,

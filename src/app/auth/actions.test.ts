@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { hashedRateLimitKey } from "@/lib/request-ip";
@@ -58,13 +58,14 @@ describe("requestAccess", () => {
     });
   });
 
-  it("rate-limits on a sha256 of the email, never the raw address", async () => {
+  it("rate-limits on a keyed hash of the email, never the raw address", async () => {
+    vi.stubEnv("RATE_LIMIT_SECRET", "test-secret");
     const actual = await vi.importActual<typeof import("@/lib/request-ip")>("@/lib/request-ip");
     vi.mocked(hashedRateLimitKey)
       .mockImplementationOnce(actual.hashedRateLimitKey)
       .mockImplementationOnce(actual.hashedRateLimitKey);
     await requestAccess(idle, form("A@example.test"));
-    const digest = createHash("sha256").update("a@example.test").digest("hex");
+    const digest = createHmac("sha256", "test-secret").update("a@example.test").digest("hex");
     const keys = vi.mocked(checkRateLimit).mock.calls.map(([key]) => key);
     expect(keys).toContain(`request-access-email:${digest}`);
     expect(keys.join()).not.toContain("example.test");

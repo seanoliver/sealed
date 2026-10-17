@@ -22,11 +22,20 @@ export async function approveEmail(
   formData: FormData,
 ): Promise<ApproveState> {
   await requireAdmin();
-  // Checked before approving, so a misconfigured deploy changes nothing.
-  const appUrl = requiredEnv("APP_URL");
-  const authAdmin = createAdminAuthClient();
   // Only the direct form refills its input; a row's hidden email must not land there.
   const echo = formData.get("source") === "direct" ? { email: String(formData.get("email") ?? "") } : {};
+  // Checked before approving, so a misconfigured deploy changes nothing.
+  let appUrl: string;
+  let authAdmin: ReturnType<typeof createAdminAuthClient>;
+  try {
+    appUrl = requiredEnv("APP_URL");
+    authAdmin = createAdminAuthClient();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "configuration error";
+    console.error(`[wl] [approveEmail] ${message}`);
+    const check = message.includes("SUPABASE_SECRET_KEY") ? "SUPABASE_SECRET_KEY" : "the function logs";
+    return { error: `Invitations aren’t set up on this deployment. Check ${check}.`, ...echo };
+  }
   const email = parseEmailField(formData);
   if (!email) return { error: "Enter a valid email address.", ...echo };
 

@@ -133,13 +133,49 @@ describe("approveEmail", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
-  it("fails loudly without APP_URL and changes nothing", async () => {
+  it("reports a missing APP_URL and changes nothing", async () => {
     vi.stubEnv("APP_URL", "");
-    await expect(approveEmail({}, form("new@example.test"))).rejects.toThrow(
-      "Missing required environment variable: APP_URL",
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error: "Invitations aren’t set up on this deployment. Check the function logs.",
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      "[wl] [approveEmail] Missing required environment variable: APP_URL",
     );
     expect(dbAdmin.execute).not.toHaveBeenCalled();
     expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("refills the direct form on a setup error", async () => {
+    vi.mocked(createAdminAuthClient).mockImplementation(() => {
+      throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");
+    });
+    await expect(approveEmail({}, form("new@example.test", "direct"))).resolves.toMatchObject({
+      email: "new@example.test",
+    });
+  });
+
+  it("logs a generic line when setup throws something other than an Error", async () => {
+    vi.mocked(createAdminAuthClient).mockImplementation(() => {
+      throw "boom";
+    });
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error: "Invitations aren’t set up on this deployment. Check the function logs.",
+    });
+    expect(console.error).toHaveBeenCalledWith("[wl] [approveEmail] configuration error");
+  });
+
+  it("reports a missing secret key, logs it, and changes nothing", async () => {
+    vi.mocked(createAdminAuthClient).mockImplementation(() => {
+      throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");
+    });
+    await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
+      error: "Invitations aren’t set up on this deployment. Check SUPABASE_SECRET_KEY.",
+    });
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "[wl] [approveEmail] Missing required environment variable: SUPABASE_SECRET_KEY",
+    );
+    expect(dbAdmin.execute).not.toHaveBeenCalled();
   });
 
   it("checks admin access before anything else", async () => {
