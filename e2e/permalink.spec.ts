@@ -208,6 +208,34 @@ test("the owner approves a household into display names", async () => {
   });
 });
 
+test("a resubmission from a known email updates that contact's names", async ({
+  browser,
+}) => {
+  await clearRateLimits();
+  await submitAsVisitor(browser, {
+    first_name: "Hana",
+    last_name: "Newname",
+    email: householdEmail,
+  });
+
+  await ownerPage.goto("/dashboard/review");
+  const card = ownerPage.locator("ol > li", { hasText: "Hana Newname" });
+  await card.getByRole("button", { name: "Apply update" }).click();
+  await expect(card).toHaveCount(0);
+
+  expect(await getContactNamesByEmail(householdEmail)).toMatchObject({
+    fullName: "Hana Newname",
+    firstName: "Hana",
+    lastName: "Newname",
+    partnerFirstName: "Sam",
+    kids: [
+      { first: "Zoe", last: "Household" },
+      { first: "Max", last: "Rivera" },
+    ],
+    kidsNames: "Zoe Household, Max Rivera",
+  });
+});
+
 test("the owner rejects a submission and it never becomes a contact", async () => {
   await ownerPage.goto("/dashboard/review");
   const card = ownerPage.locator("ol > li", { hasText: "Rex Reject" });
