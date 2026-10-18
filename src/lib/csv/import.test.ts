@@ -107,6 +107,18 @@ describe("parseContactsCsv", () => {
     });
   });
 
+  it("matches hyphenated headers and the envelope name alias", () => {
+    const csv = "Envelope Name,Postal-Code\nAda Byron,94103";
+    expect(parseContactsCsv(csv).valid[0]).toEqual({ full_name: "Ada Byron", postal_code: "94103" });
+  });
+
+  it("keeps a name when a later column for the same field is blank", () => {
+    const csv = "Name,Name on Envelope\nAda Byron,";
+    const { valid, errors } = parseContactsCsv(csv);
+    expect(errors).toEqual([]);
+    expect(valid[0]).toEqual({ full_name: "Ada Byron" });
+  });
+
   it("keeps a two-person name whole when the partner column has a value", () => {
     const csv = "name,partner\nAda & Will Byron,Will";
     expect(parseContactsCsv(csv).valid[0]).toMatchObject({
@@ -211,7 +223,17 @@ describe("splitCouple", () => {
     expect(splitCouple(name)).toEqual({ full_name: fullName, partner_name: partnerName });
   });
 
-  it.each(["Ada Byron", "Ada", "The Byron Family", "Ada & Will & Ida Byron", "Sandy Anderson"])(
+  it.each([
+    "Ada Byron",
+    "Ada",
+    "The Byron Family",
+    "Satya & Family",
+    "Ada & Will Byron Family",
+    "Ada & Will & Ida Byron",
+    "Ada, Will & Ida Byron",
+    "Ada, Will, and Ida Byron",
+    "Sandy Anderson",
+  ])(
     "leaves %s alone",
     (name) => {
       expect(splitCouple(name)).toBeUndefined();

@@ -69,7 +69,7 @@ export function splitCouple(
   const match = name.trim().match(COUPLE);
   if (!match || /\bfamily\b/i.test(name)) return undefined;
   const [, left, right] = match;
-  if (COUPLE.test(right)) return undefined;
+  if (COUPLE.test(right) || left.includes(",")) return undefined;
   const rightWords = right.split(/\s+/);
   const fullName =
     !/\s/.test(left) && rightWords.length > 1 ? `${left} ${rightWords.at(-1)}` : left;
@@ -119,12 +119,14 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
   parsed.data.slice(0, CSV_ROW_LIMIT).forEach((row, i) => {
     const candidate: Partial<Record<ContactField, string>> = {};
     // Columns apply left-to-right, so when two headers map to the same field
-    // (e.g. "name" and "full_name") the last recognized column wins.
+    // (e.g. "name" and "full_name") the last non-blank one wins.
     for (const [source, target] of columnMap) {
       const value = row[source];
       // Short rows leave trailing columns undefined; omit those keys so
       // contactSchema's optionals apply instead of failing on undefined.
-      if (typeof value === "string") candidate[target] = value;
+      if (typeof value === "string" && (value.trim() !== "" || !candidate[target])) {
+        candidate[target] = value;
+      }
     }
     if (!candidate.partner_name?.trim()) {
       const couple = splitCouple(candidate.full_name ?? "");
