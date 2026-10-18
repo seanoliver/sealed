@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CSV_ROW_LIMIT, parseContactsCsv } from "./import";
+import { CSV_ROW_LIMIT, NOT_NAMES, parseContactsCsv, splitCouple } from "./import";
 
 const CANONICAL_HEADER =
   "full_name,partner_name,kids_names,email,birthday,address_line1,address_line2,city,state_region,postal_code,country,notes";
@@ -81,6 +81,57 @@ describe("parseContactsCsv", () => {
         partner_name: "William",
         postal_code: "94103",
       });
+    });
+  });
+
+  it("matches spreadsheet headers with spaces, like a holiday card list", () => {
+    const csv =
+      "Name on Envelope,Address 1,Address 2,Postal Code,Email\n" +
+      "Ada Byron,1 Main St,Unit 4,94103,ada@example.com";
+    const { valid, errors } = parseContactsCsv(csv);
+    expect(errors).toEqual([]);
+    expect(valid[0]).toEqual({
+      full_name: "Ada Byron",
+      address_line1: "1 Main St",
+      address_line2: "Unit 4",
+      postal_code: "94103",
+      email: "ada@example.com",
+    });
+  });
+
+  it("splits a two-person name into the contact and partner", () => {
+    const csv = "name,email\nAda & Will Byron,ada@example.com";
+    expect(parseContactsCsv(csv).valid[0]).toMatchObject({
+      full_name: "Ada Byron",
+      partner_name: "Will Byron",
+    });
+  });
+
+  it("matches hyphenated headers and the envelope name alias", () => {
+    const csv = "Envelope Name,Postal-Code\nAda Byron,94103";
+    expect(parseContactsCsv(csv).valid[0]).toEqual({ full_name: "Ada Byron", postal_code: "94103" });
+  });
+
+  it.each(['', '"  "'])("keeps a name when a later column for the same field is %s", (blank) => {
+    const csv = `Name,Name on Envelope\nAda Byron,${blank}`;
+    const { valid, errors } = parseContactsCsv(csv);
+    expect(errors).toEqual([]);
+    expect(valid[0]).toEqual({ full_name: "Ada Byron" });
+  });
+
+  it.each(["", "  "])("splits a two-person name when the partner cell is %j", (partner) => {
+    const csv = `name,partner\nAda & Will Byron,${partner}`;
+    expect(parseContactsCsv(csv).valid[0]).toMatchObject({
+      full_name: "Ada Byron",
+      partner_name: "Will Byron",
+    });
+  });
+
+  it("keeps a two-person name whole when the partner column has a value", () => {
+    const csv = "name,partner\nAda & Will Byron,Will";
+    expect(parseContactsCsv(csv).valid[0]).toMatchObject({
+      full_name: "Ada & Will Byron",
+      partner_name: "Will",
     });
   });
 
@@ -166,5 +217,80 @@ describe("parseContactsCsv", () => {
     expect(valid).toEqual([
       { full_name: "Lovelace, Ada", notes: "line one\nline two, with comma" },
     ]);
+  });
+});
+
+describe("splitCouple", () => {
+  it.each([
+    ["Ada & Will Byron", "Ada Byron", "Will Byron"],
+    ["Ada Byron & Will King", "Ada Byron", "Will King"],
+    ["Ada and Will Byron", "Ada Byron", "Will Byron"],
+    ["Ada AND Will Byron", "Ada Byron", "Will Byron"],
+    ["  Ada & Will Byron ", "Ada Byron", "Will Byron"],
+    ["Ada & Will", "Ada", "Will"],
+    ["Ada Byron & DJ King", "Ada Byron", "DJ King"],
+    ["Zoë & Seán O'Brien-Lee", "Zoë O'Brien-Lee", "Seán O'Brien-Lee"],
+  ])("splits %s", (name, fullName, partnerName) => {
+    expect(splitCouple(name)).toEqual({ full_name: fullName, partner_name: partnerName });
+  });
+
+  it.each([
+    "Ada Byron",
+    "Ada",
+    "The Byron Family",
+    "Satya & Family",
+    "Ada & Will Byron Family",
+    "Ada & Will & Ida Byron",
+    "Ada, Will & Ida Byron",
+    "Ada, Will, and Ida Byron",
+    "Ada & Will, Ida Byron",
+    "Ada Mary Byron & Will King",
+    "Mr. & Mrs. John Byron",
+    "Mr and Mrs Byron",
+    "Ada & Will Byron Jr.",
+    "Ada & Will van der Berg",
+    "Ada & Will Byron + kids",
+    "Ada & the kids",
+    "Ada & Kids",
+    "Barnes & Noble Booksellers Inc",
+    "Bob & Bob Jr",
+    "Ada & Will III",
+    "Ada & Will II",
+    "Ada & Will VI",
+    "Ada & Will JD",
+    "Ada & Will DNR",
+    "Ada & DJS",
+    "Ada & Mr Byron",
+    "Ada & Will IV",
+    "Ada & Will Sr",
+    "Ada & Will Esq",
+    "Ada & Van Gogh",
+    "Ada & De Silva",
+    "Rev Ada & Will Byron",
+    "Aunt Ada & Uncle Will",
+    "The Byrons & The Kings",
+    "Ada & Guest",
+    "Ada & Baby Will",
+    "Ada & Children",
+    "Ada & Mrs Byron",
+    "Ada & Ms Byron",
+    "Ada & Mx Byron",
+    "Ada & Dr Byron",
+    "ADA & WILL BYRON",
+    "Ada & Will Byron-",
+    "Ada & will",
+    "Ada Byron & will King",
+    "Sandy Anderson",
+  ])(
+    "leaves %s alone",
+    (name) => {
+      expect(splitCouple(name)).toBeUndefined();
+    },
+  );
+
+  it.each([...NOT_NAMES])("leaves a name with %s alone in either position", (word) => {
+    const cap = word[0].toUpperCase() + word.slice(1);
+    expect(splitCouple(`Ada & ${cap} Byron`)).toBeUndefined();
+    expect(splitCouple(`${cap} Ada & Will Byron`)).toBeUndefined();
   });
 });
