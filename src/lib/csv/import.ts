@@ -61,19 +61,31 @@ function resolveHeader(raw: string): ContactField | undefined {
   return FIELD_BY_HEADER.get(headerKey(raw));
 }
 
-const COUPLE = /^(\S.*?)\s+(?:&|and)\s+(\S.*)$/i;
+const NAME_WORD = /^\p{Lu}[\p{L}'’-]*$/u;
+const NOT_NAMES = new Set(["family", "kids", "children", "mr", "mrs", "ms", "mx", "dr"]);
 
 export function splitCouple(
   name: string,
 ): { full_name: string; partner_name: string } | undefined {
-  const match = name.trim().match(COUPLE);
-  if (!match || /\bfamily\b/i.test(name)) return undefined;
-  const [, left, right] = match;
-  if (COUPLE.test(right) || left.includes(",")) return undefined;
-  const rightWords = right.split(/\s+/);
-  const fullName =
-    !/\s/.test(left) && rightWords.length > 1 ? `${left} ${rightWords.at(-1)}` : left;
-  return { full_name: fullName, partner_name: right };
+  const words = name.trim().split(/\s+/);
+  const separator = words.findIndex((word) => word === "&" || word.toLowerCase() === "and");
+  if (separator < 1) return undefined;
+  const left = words.slice(0, separator);
+  const right = words.slice(separator + 1);
+  const names = [...left, ...right];
+  if (!names.every((word) => NAME_WORD.test(word) && !NOT_NAMES.has(word.toLowerCase()))) {
+    return undefined;
+  }
+  if (left.length === 1 && right.length === 1) {
+    return { full_name: left[0], partner_name: right[0] };
+  }
+  if (left.length === 1 && right.length === 2) {
+    return { full_name: `${left[0]} ${right[1]}`, partner_name: right.join(" ") };
+  }
+  if (left.length === 2 && right.length === 2) {
+    return { full_name: left.join(" "), partner_name: right.join(" ") };
+  }
+  return undefined;
 }
 
 const EXPECTED_HEADERS_MESSAGE = `No recognizable columns found. Expected headers such as: ${CONTACT_FIELDS.join(", ")}.`;
