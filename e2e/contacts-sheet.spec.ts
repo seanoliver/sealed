@@ -1020,7 +1020,7 @@ test("the contact form rejects a bad detail on an unsplit contact", async () => 
   await page.locator("#email").fill("a@b");
   await page.locator("#city").fill("Oslo");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByText("Invalid email address")).toBeVisible();
 
   expect((await getContactRow(id)).city).toBeNull();
   expect(await getContactEventDiffs(id)).toEqual([]);
