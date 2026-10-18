@@ -160,8 +160,6 @@ export function parseSubmissionForDisplay(
     kids,
     ...display
   } = dropDisabledFields(parsed.data, enabled);
-  // Same precedence as the approval parse: household names replace any
-  // legacy name strings in the same payload.
   if (first_name === undefined && last_name === undefined) return display;
   return {
     ...display,

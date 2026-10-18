@@ -54,7 +54,6 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
 }
 
 
-/** Non-null fields only — keeps create diffs compact. */
 export function definedFields(snap: Snapshot): Partial<Snapshot> {
   const out: Partial<Record<SnapshotField, unknown>> = {};
   for (const field of SNAPSHOT_FIELDS) {
@@ -65,7 +64,6 @@ export function definedFields(snap: Snapshot): Partial<Snapshot> {
 
 type SnapshotDiff = { before: Partial<Snapshot>; after: Partial<Snapshot> };
 
-/** Changed fields only, or undefined for a no-op merge (no audit row). */
 export function changedFields(
   before: Snapshot,
   after: Snapshot,
@@ -85,7 +83,6 @@ export function changedFields(
   return changed ? (diff as SnapshotDiff) : undefined;
 }
 
-/** Schema field name → contacts column name, for the merge update. */
 const FIELD_TO_COLUMN = {
   full_name: "fullName",
   partner_name: "partnerName",
@@ -141,7 +138,6 @@ function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
   return patch as Partial<Snapshot>;
 }
 
-/** The column update a merge writes, or undefined when nothing changes. */
 export function mergeUpdate(
   before: Snapshot,
   payload: SubmissionPayload,

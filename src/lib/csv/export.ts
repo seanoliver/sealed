@@ -19,7 +19,6 @@ export const CSV_COLUMNS = [
 
 export type CsvColumn = ContactField | (typeof CSV_COLUMNS)[number];
 
-/** One exported contact: column name → value (null/missing → empty cell). */
 export type ContactCsvRow = Partial<Record<CsvColumn, string | null>>;
 
 /**

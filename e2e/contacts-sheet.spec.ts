@@ -233,7 +233,6 @@ test("an invalid edit shows the error and stays in edit mode", async () => {
   await first.press("Enter");
   await expect(panel.getByText("Add a first name.")).toBeVisible();
 
-  // The first Esc closes the panel, the second cancels the row.
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await page.keyboard.press("Escape");

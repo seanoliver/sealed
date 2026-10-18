@@ -165,7 +165,6 @@ export function HouseholdFields({
   const [kids, setKids] = useState<Row[]>(() =>
     defaults.kids.map((kid) => toRow(kid, defaults.last_name)),
   );
-  // Row keys survive removals so React keeps focus and input state aligned.
   const nextKey = useRef(defaults.kids.length);
   const [kidKeys, setKidKeys] = useState(() => defaults.kids.map((_, i) => i));
   const partnerLastRef = useRef<HTMLInputElement>(null);
