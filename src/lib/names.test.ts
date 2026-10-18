@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  isUntouchedPrefill,
   compareLastName,
   formatKids,
   formatPerson,
@@ -234,5 +235,34 @@ describe("lastNameKey and compareLastName", () => {
       { last: "Holloway", first: "Mark" },
       { last: "okafor", first: "Daniel" },
     ]);
+  });
+});
+
+describe("isUntouchedPrefill", () => {
+  const legacy = {
+    fullName: "Jen Holloway",
+    partnerName: "Mark",
+    kidsNames: "A, B, C, D, E, F, G, H, I, J, K, L",
+    firstName: null,
+    lastName: null,
+    partnerFirstName: null,
+    partnerLastName: null,
+    kids: null,
+  };
+
+  it("matches the prefill an unsplit contact was shown, with kids capped like the form reader", () => {
+    const prefill = householdPrefill(legacy);
+    expect(prefill.kids).toHaveLength(12);
+    expect(isUntouchedPrefill(legacy, { ...prefill, kids: prefill.kids.slice(0, 11) }, 11)).toBe(true);
+  });
+
+  it("is false once any name is edited", () => {
+    const prefill = householdPrefill(legacy);
+    expect(isUntouchedPrefill(legacy, { ...prefill, last_name: "Hollow" }, 11)).toBe(false);
+  });
+
+  it("is false for a split contact", () => {
+    const split = { ...legacy, firstName: "Jen", lastName: "Holloway" };
+    expect(isUntouchedPrefill(split, householdPrefill(split), 11)).toBe(false);
   });
 });

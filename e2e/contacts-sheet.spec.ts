@@ -962,3 +962,24 @@ test("a cancelled stalled save that fails says so", async () => {
   ).toBeVisible();
   await save.done();
 });
+
+test("the contact form saves a detail on an unsplit contact it cannot split", async () => {
+  const kidsNames = "A, B, C, D, E, F, G, H, I, J, K, L";
+  const id = await seedContact({
+    bookId,
+    fullName: "Mona Many",
+    email: "mona@example.test",
+    kidsNames,
+  });
+  await page.goto(`/dashboard/contacts/${id}`);
+  await page.locator("#city").fill("Oslo");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+
+  expect(await getContactNamesByEmail("mona@example.test")).toMatchObject({
+    fullName: "Mona Many",
+    firstName: null,
+    kidsNames,
+  });
+  expect((await getContactRow(id)).city).toBe("Oslo");
+});

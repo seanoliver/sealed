@@ -12,7 +12,7 @@ import { isUniqueViolation } from "@/lib/db/errors";
 import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { type Kid, type StoredNames } from "@/lib/names";
+import { isUntouchedPrefill, type Kid, type StoredNames } from "@/lib/names";
 import {
   CONTACT_FIELDS,
   contactDetailsSchema,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/validation/contact";
 import {
   householdSchema,
+  KIDS_MAX,
   parseHouseholdForm,
   readHouseholdValues,
   type HouseholdFieldErrors,
@@ -236,11 +237,9 @@ export async function updateContact(
     return { error: "Contact not found.", ...echo };
   }
 
-  const parsed = parseContactForm(formData);
-  if (!parsed.ok) return parsed.state;
-  const row = inputToRow(parsed.details, parsed.household);
-
   let before: ContactRow | undefined;
+  let row: Partial<Row> | undefined;
+  let invalid: ContactFormState | undefined;
   try {
     before = await withRls(claims, async (tx) => {
       const [book] = await tx
@@ -256,6 +255,22 @@ export async function updateContact(
         .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
         .limit(1);
       if (!existing) return undefined;
+      const keepNames = isUntouchedPrefill(storedNames(existing), echo.household, KIDS_MAX + 1);
+      if (keepNames) {
+        const details = contactDetailsSchema.safeParse(echo.values);
+        if (!details.success) {
+          invalid = { error: details.error.issues[0]?.message ?? "Invalid input", ...echo };
+          return existing;
+        }
+        row = contactDetailsToRow(details.data);
+      } else {
+        const parsed = parseContactForm(formData);
+        if (!parsed.ok) {
+          invalid = parsed.state;
+          return existing;
+        }
+        row = inputToRow(parsed.details, parsed.household);
+      }
       await tx
         .update(contacts)
         .set(row)
@@ -278,8 +293,9 @@ export async function updateContact(
   if (!before) {
     return { error: "Contact not found.", ...echo };
   }
+  if (invalid) return invalid;
 
-  const diff = changedFields(rowToSnapshot(before), rowToSnapshot(row));
+  const diff = changedFields(rowToSnapshot(before), rowToSnapshot({ ...before, ...row }));
   if (diff) await recordContactEvent(id, diff);
 
   revalidatePath("/dashboard");

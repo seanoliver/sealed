@@ -129,6 +129,19 @@ export function householdPrefill(
   };
 }
 
+export function isUntouchedPrefill(
+  names: StoredNames,
+  posted: HouseholdValues,
+  kidsLimit: number,
+): boolean {
+  if (isSplit(names)) return false;
+  const prefill = householdPrefill(names);
+  return (
+    JSON.stringify(posted) ===
+    JSON.stringify({ ...prefill, kids: prefill.kids.slice(0, kidsLimit) })
+  );
+}
+
 export function lastNameKey(names: StoredNames): Person | undefined {
   return isSplit(names) && names.lastName !== null ? contactPerson(names) : undefined;
 }
