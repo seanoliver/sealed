@@ -1,7 +1,7 @@
 begin;
 create schema if not exists tests;
 create extension if not exists pgtap with schema extensions;
-select plan(24);
+select plan(25);
 
 -- Parity fixture shared with src/lib/names.test.ts, which parses the
 -- dollar-quoted literal below. Keep it valid JSON.
@@ -184,6 +184,17 @@ select results_eq(
   $$ values ('Owen Park', 'Ivy') $$,
   'an authenticated owner insert derives names');
 reset role;
+
+insert into public.contacts (id, book_id, full_name, first_name, last_name, kids) values
+  ('20000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-0000000000c1',
+   'x', 'Ann', 'Lee', '[{"first": "Tom", "last": "Smith"}]');
+update public.contacts set last_name = 'Smith', full_name = 'Ann Smith', kids_names = 'Tom'
+where id = '20000000-0000-0000-0000-0000000000c4';
+select results_eq(
+  $$ select kids_names, kids from public.contacts
+     where id = '20000000-0000-0000-0000-0000000000c4' $$,
+  $$ values ('Tom', '[{"first": "Tom", "last": "Smith"}]'::jsonb) $$,
+  'a last-name save that sends the recomputed kids_names keeps kids');
 
 select * from finish();
 rollback;

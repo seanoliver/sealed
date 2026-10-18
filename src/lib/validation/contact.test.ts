@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   contactSchema,
+  readTokenDetails,
   TOKEN_UPDATE_FIELDS,
   tokenUpdateSchema,
 } from "./contact";
@@ -166,5 +167,18 @@ describe("TOKEN_UPDATE_FIELDS", () => {
       "country",
     ]);
     expect(TOKEN_UPDATE_FIELDS).not.toContain("notes");
+  });
+});
+
+describe("readTokenDetails", () => {
+  it("reads detail fields and leaves the name fields blank", () => {
+    const form = new FormData();
+    form.set("full_name", "Smuggled");
+    form.set("partner_name", "Smuggled");
+    form.set("city", "Lisbon");
+    const values = readTokenDetails(form);
+    expect(values.city).toBe("Lisbon");
+    expect(values.email).toBe("");
+    expect([values.full_name, values.partner_name, values.kids_names]).toEqual(["", "", ""]);
   });
 });

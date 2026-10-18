@@ -71,6 +71,7 @@ export async function seedOwnerBook(opts: {
   email: string;
   displayName: string;
   slug: string;
+  enabledFields?: EnabledFields;
 }): Promise<{ ownerId: string; bookId: string }> {
   const ownerId = randomUUID();
   await db`insert into auth.users (id, email) values (${ownerId}, ${opts.email})`;
@@ -78,6 +79,7 @@ export async function seedOwnerBook(opts: {
     ownerId,
     slug: opts.slug,
     displayName: opts.displayName,
+    enabledFields: opts.enabledFields,
   });
   return { ownerId, bookId };
 }

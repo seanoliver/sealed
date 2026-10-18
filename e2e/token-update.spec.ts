@@ -193,6 +193,43 @@ test("unknown and malformed tokens render the same invalid page", async ({
   await context.close();
 });
 
+test.describe("with the partner field disabled", () => {
+  const ownerEmailNoPartner = uniqueEmail("token-nopartner-owner");
+  let partnerToken: string;
+
+  test.beforeAll(async () => {
+    const { bookId } = await seedOwnerBook({
+      email: ownerEmailNoPartner,
+      displayName: "Solo Owner",
+      slug: uniqueSlug("token-nopartner"),
+      enabledFields: { partner_name: false, kids_names: true, birthday: false },
+    });
+    const contactId = await seedContact({
+      bookId,
+      fullName: "Riley Quinn",
+      household: { firstName: "Riley", lastName: "Quinn", partnerFirstName: "Morgan", partnerLastName: "Vale" },
+    });
+    partnerToken = await seedUpdateToken(contactId);
+  });
+
+  test.afterAll(async () => {
+    await cleanupUser(ownerEmailNoPartner);
+  });
+
+  test("a stored partner neither renders nor leaks", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`/u/${partnerToken}`);
+
+    await expect(page.locator("#first_name")).toHaveValue("Riley");
+    await expect(page.locator("#partner_first")).toHaveCount(0);
+    const html = await page.content();
+    expect(html).not.toContain("Morgan");
+    expect(html).not.toContain("Vale");
+    await context.close();
+  });
+});
+
 test.describe("with partner and kids enabled", () => {
   const kidsOwnerEmail = uniqueEmail("token-kids-owner");
   const recipientEmail = uniqueEmail("token-kids-recipient");

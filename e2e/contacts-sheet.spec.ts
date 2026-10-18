@@ -840,13 +840,7 @@ test("a household edited elsewhere since the page loaded is not overwritten", as
     { first: "Ivy", last: "Holloway" },
   ];
   await setContactKidsByEmail("jen@example.test", updated);
-  await page.keyboard.press("Escape");
-  const search = page.getByRole("searchbox", { name: "Search contacts" });
-  await search.fill("Jen");
-  await search.press("Enter");
-  await expect(page).toHaveURL(/q=Jen/);
-  await expect(table().locator("tbody tr")).toHaveCount(1);
-  await table().getByRole("button", { name: "Save" }).click();
+  await panel.getByRole("textbox", { name: "Partner last name" }).press("Enter");
 
   await expect(
     page.getByRole("alert").filter({ hasText: "names changed since you opened them" }),
@@ -855,6 +849,8 @@ test("a household edited elsewhere since the page loaded is not overwritten", as
     partnerLastName: "Holloway",
     kidsNames: "Zoe, Maxine, Ivy",
   });
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
   await table().getByRole("button", { name: "Cancel" }).click();
   await expect(table().getByRole("textbox")).toHaveCount(0);
 });

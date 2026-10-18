@@ -79,7 +79,8 @@ begin
 
   if tg_op = 'UPDATE'
      and new.kids is not distinct from old.kids
-     and new.kids_names is distinct from old.kids_names then
+     and new.kids_names is distinct from old.kids_names
+     and new.kids_names is distinct from private.format_kids(new.kids, new.last_name) then
     new.kids := null;
   elsif new.kids is not null then
     new.kids_names := private.format_kids(new.kids, new.last_name);
