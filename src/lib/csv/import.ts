@@ -61,8 +61,14 @@ function resolveHeader(raw: string): ContactField | undefined {
   return FIELD_BY_HEADER.get(headerKey(raw));
 }
 
-const NAME_WORD = /^\p{Lu}[\p{L}'’-]*$/u;
-const NOT_NAMES = new Set(["family", "kids", "children", "mr", "mrs", "ms", "mx", "dr"]);
+const NAME_WORD = /^(?:\p{Lu}(?=.*\p{Ll})[\p{L}'’-]*\p{L}|\p{Lu}{2})$/u;
+const NOT_NAMES = new Set([
+  ...["family", "fam", "kids", "kid", "children", "child", "baby", "guest", "guests", "friends", "the"],
+  ...["mr", "mrs", "ms", "mx", "dr", "rev", "prof", "sir", "dame", "lady", "lord", "miss", "fr", "hon"],
+  ...["aunt", "uncle", "grandma", "grandpa", "nana", "papa", "mom", "dad"],
+  ...["jr", "sr", "ii", "iii", "iv", "esq", "phd", "md"],
+  ...["van", "von", "de", "da", "del", "der", "la", "le", "di", "du", "st"],
+]);
 
 export function splitCouple(
   name: string,

@@ -112,8 +112,8 @@ describe("parseContactsCsv", () => {
     expect(parseContactsCsv(csv).valid[0]).toEqual({ full_name: "Ada Byron", postal_code: "94103" });
   });
 
-  it("keeps a name when a later column for the same field is blank", () => {
-    const csv = "Name,Name on Envelope\nAda Byron,";
+  it.each(['', '"  "'])("keeps a name when a later column for the same field is %s", (blank) => {
+    const csv = `Name,Name on Envelope\nAda Byron,${blank}`;
     const { valid, errors } = parseContactsCsv(csv);
     expect(errors).toEqual([]);
     expect(valid[0]).toEqual({ full_name: "Ada Byron" });
@@ -228,6 +228,7 @@ describe("splitCouple", () => {
     ["Ada AND Will Byron", "Ada Byron", "Will Byron"],
     ["  Ada & Will Byron ", "Ada Byron", "Will Byron"],
     ["Ada & Will", "Ada", "Will"],
+    ["Ada Byron & DJ King", "Ada Byron", "DJ King"],
     ["Zoë & Seán O'Brien-Lee", "Zoë O'Brien-Lee", "Seán O'Brien-Lee"],
   ])("splits %s", (name, fullName, partnerName) => {
     expect(splitCouple(name)).toEqual({ full_name: fullName, partner_name: partnerName });
@@ -252,6 +253,28 @@ describe("splitCouple", () => {
     "Ada & the kids",
     "Ada & Kids",
     "Barnes & Noble Booksellers Inc",
+    "Bob & Bob Jr",
+    "Ada & Will III",
+    "Ada & Will II",
+    "Ada & Will IV",
+    "Ada & Will Sr",
+    "Ada & Will Esq",
+    "Ada & Van Gogh",
+    "Ada & De Silva",
+    "Rev Ada & Will Byron",
+    "Aunt Ada & Uncle Will",
+    "The Byrons & The Kings",
+    "Ada & Guest",
+    "Ada & Baby Will",
+    "Ada & Children",
+    "Ada & Mrs Byron",
+    "Ada & Ms Byron",
+    "Ada & Mx Byron",
+    "Ada & Dr Byron",
+    "ADA & WILL BYRON",
+    "Ada & Will Byron-",
+    "Ada & will",
+    "Ada Byron & will King",
     "Sandy Anderson",
   ])(
     "leaves %s alone",
