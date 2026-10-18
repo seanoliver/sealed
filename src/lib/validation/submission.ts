@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { type TokenUpdateField } from "./contact";
+import { formatKids, formatPerson, type Kid } from "@/lib/names";
+import { tokenUpdateSchema, type TokenUpdateField } from "./contact";
+import { householdShape, requirePartnerFirstName } from "./household";
 
 /**
  * Helpers for handling `submissions.payload`, which is ATTACKER-CONTROLLED
@@ -18,11 +20,45 @@ export type EnabledFields = {
   birthday: boolean;
 };
 
+// Household name keys win over legacy name keys. parseSubmissionForDisplay
+// must use the same precedence, or the review card shows another name.
+export const householdPayloadSchema = tokenUpdateSchema
+  .omit({ full_name: true, partner_name: true, kids_names: true })
+  .extend(householdShape({ ownerName: "the owner" }))
+  .superRefine(requirePartnerFirstName);
+
+export type HouseholdPayload = z.infer<typeof householdPayloadSchema>;
+export type LegacyPayload = z.infer<typeof tokenUpdateSchema>;
+export type SubmissionPayload = HouseholdPayload | LegacyPayload;
+
+const hasHouseholdNames = (payload: unknown) =>
+  typeof payload === "object" &&
+  payload !== null &&
+  ("first_name" in payload || "last_name" in payload);
+
+export function parseSubmissionPayload(
+  payload: unknown,
+  enabled: EnabledFields,
+): { success: true; data: SubmissionPayload } | { success: false } {
+  const parsed = hasHouseholdNames(payload)
+    ? householdPayloadSchema.safeParse(payload)
+    : tokenUpdateSchema.safeParse(payload);
+  return parsed.success
+    ? { success: true, data: dropDisabledFields<SubmissionPayload>(parsed.data, enabled) }
+    : { success: false };
+}
+
+export function isHouseholdPayload(
+  payload: SubmissionPayload,
+): payload is HouseholdPayload {
+  return "first_name" in payload;
+}
+
 /**
- * Display-only cap. Stored values are zod-capped on the legit path (≤500
+ * Display-only cap. Stored values are zod-capped on the legit path (≤2000
  * chars), but a hostile payload only has to fit the 64KB jsonb guard — never
  * let a huge string blow up the review page. Approval paths re-validate the
- * FULL value through tokenUpdateSchema; this truncation is cosmetic.
+ * FULL value through parseSubmissionPayload; this truncation is cosmetic.
  */
 export const DISPLAY_VALUE_MAX = 200;
 
@@ -36,8 +72,10 @@ const displayValue = z
   // rather than failing the whole card.
   .catch(undefined);
 
+const rawName = z.string().optional().catch(undefined);
+
 /**
- * Lenient parser for DISPLAY only (approval uses strict tokenUpdateSchema):
+ * Lenient parser for DISPLAY only (approval uses strict submissionPayloadSchema):
  * accepts any object, DROPS unknown keys (z.object strips them) and
  * non-string values, truncates long values. Rejects non-object payloads
  * (scalar/array/null) — callers render those as "Malformed submission".
@@ -56,25 +94,52 @@ export const submissionDisplaySchema = z.object({
   state_region: displayValue,
   postal_code: displayValue,
   country: displayValue,
+  first_name: rawName,
+  last_name: rawName,
+  partner_first_name: rawName,
+  partner_last_name: rawName,
+  kids: z.array(z.unknown()).optional().catch(undefined),
 });
 
-export type SubmissionDisplayFields = z.infer<typeof submissionDisplaySchema>;
+export type SubmissionDisplayFields = Partial<Record<TokenUpdateField, string>>;
 
-/**
- * Fields the book has DISABLED are removed entirely — a smuggled
- * `kids_names` on a kids-disabled book must neither display nor merge.
- * Shared by the review page (lenient display parse) and the approve actions
- * (strict tokenUpdateSchema parse), so the two paths can never disagree
- * about gating.
- */
-export function dropDisabledFields<
-  T extends Partial<Record<TokenUpdateField, unknown>>,
->(data: T, enabled: EnabledFields): T {
-  const out = { ...data };
-  if (!enabled.partner_name) delete out.partner_name;
-  if (!enabled.kids_names) delete out.kids_names;
-  if (!enabled.birthday) delete out.birthday;
-  return out;
+function capDisplay(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  return value.length > DISPLAY_VALUE_MAX
+    ? `${value.slice(0, DISPLAY_VALUE_MAX)}…`
+    : value;
+}
+
+const displayKid = z.object({
+  first: z.string(),
+  last: z.string().optional().catch(undefined),
+});
+
+function displayKids(items: unknown[]): Kid[] {
+  const kids: Kid[] = [];
+  for (const item of items.slice(0, 10)) {
+    const parsed = displayKid.safeParse(item);
+    if (parsed.success) kids.push(parsed.data);
+  }
+  return kids;
+}
+
+const GATED_KEYS: Record<keyof EnabledFields, readonly string[]> = {
+  partner_name: ["partner_name", "partner_first_name", "partner_last_name"],
+  kids_names: ["kids_names", "kids"],
+  birthday: ["birthday"],
+};
+
+export function dropDisabledFields<T extends object>(
+  data: T,
+  enabled: EnabledFields,
+): T {
+  const out = { ...data } as Record<string, unknown>;
+  for (const field of Object.keys(GATED_KEYS) as (keyof EnabledFields)[]) {
+    if (enabled[field]) continue;
+    for (const key of GATED_KEYS[field]) delete out[key];
+  }
+  return out as T;
 }
 
 /**
@@ -87,5 +152,23 @@ export function parseSubmissionForDisplay(
 ): SubmissionDisplayFields | null {
   const parsed = submissionDisplaySchema.safeParse(payload);
   if (!parsed.success) return null;
-  return dropDisabledFields(parsed.data, enabled);
+  const {
+    first_name,
+    last_name,
+    partner_first_name,
+    partner_last_name,
+    kids,
+    ...display
+  } = dropDisabledFields(parsed.data, enabled);
+  if (first_name === undefined && last_name === undefined) return display;
+  return {
+    ...display,
+    full_name: capDisplay(formatPerson({ first: first_name, last: last_name })),
+    partner_name: capDisplay(
+      formatPerson({ first: partner_first_name, last: partner_last_name }),
+    ),
+    kids_names: capDisplay(
+      formatKids({ kids: displayKids(kids ?? []), familyLast: last_name }),
+    ),
+  };
 }

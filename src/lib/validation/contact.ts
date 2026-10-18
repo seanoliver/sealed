@@ -21,7 +21,7 @@ const isRealDate = (s: string) => {
 export const contactSchema = z.object({
   full_name: z.string().trim().min(1, "Name is required").max(200),
   partner_name: opt(200),
-  kids_names: opt(500),
+  kids_names: opt(2000),
   email: z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional(),
   // refine: shape-valid but calendar-invalid dates ("2025-99-99") must never
   // reach the Postgres date cast — class-22 errors embed the value in logs
@@ -32,6 +32,13 @@ export const contactSchema = z.object({
   notes: opt(2000),
 });
 export type ContactInput = z.infer<typeof contactSchema>;
+
+export const contactDetailsSchema = contactSchema.omit({
+  full_name: true,
+  partner_name: true,
+  kids_names: true,
+});
+export type ContactDetailsInput = z.infer<typeof contactDetailsSchema>;
 
 /** Form field names in display order; shared by the form, actions, and diffs. */
 export const CONTACT_FIELDS = [
@@ -77,5 +84,23 @@ export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];
 /** contactSchema minus notes; unknown keys (incl. a smuggled `notes`) are stripped. */
 export const tokenUpdateSchema = contactSchema.omit({ notes: true });
 
+export const TOKEN_DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
+  (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",
+);
+export const tokenDetailSchema = tokenUpdateSchema.omit({
+  full_name: true,
+  partner_name: true,
+  kids_names: true,
+});
+
 /** Raw token-form values (all strings), echoed back through action state. */
 export type TokenUpdateValues = Record<TokenUpdateField, string>;
+
+export function readTokenDetails(formData: FormData): TokenUpdateValues {
+  return Object.fromEntries(
+    TOKEN_UPDATE_FIELDS.map((field) => [
+      field,
+      (TOKEN_DETAIL_FIELDS as readonly string[]).includes(field) ? String(formData.get(field) ?? "") : "",
+    ]),
+  ) as TokenUpdateValues;
+}

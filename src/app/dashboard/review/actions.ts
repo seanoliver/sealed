@@ -6,24 +6,26 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
-import { contactInputToRow as toRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
+import { parseSubmissionPayload } from "@/lib/validation/submission";
 import {
-  TOKEN_UPDATE_FIELDS,
-  tokenUpdateSchema,
-  type TokenUpdateField,
-} from "@/lib/validation/contact";
-import { dropDisabledFields } from "@/lib/validation/submission";
+  changedFields,
+  definedFields,
+  mergeUpdate,
+  rowToSnapshot,
+  toInsertRow,
+  type Snapshot,
+} from "./merge";
 
 /**
  * Review-queue actions. `submissions.payload` is ATTACKER-CONTROLLED jsonb
  * (public permalink submissions; submit_to_book does not gate enabled_fields
  * and stores whatever object it was handed). Every approval therefore:
- *   1. re-validates the payload through the STRICT tokenUpdateSchema
- *      (unknown keys — including a smuggled `notes` — stripped, per-field
- *      caps, full_name required), and
+ *   1. re-validates the payload through the STRICT parseSubmissionPayload
+ *      (household or legacy shape; unknown keys — including a smuggled
+ *      `notes` — stripped, per-field caps, a name required), which also
  *   2. drops fields DISABLED on the book (dropDisabledFields)
  * BEFORE anything touches `contacts`. The DB CHECK constraints are the third
  * net. Display-side gating (review/page.tsx) uses the same dropDisabledFields
@@ -40,84 +42,6 @@ const INVALID_PAYLOAD =
   "This submission contains invalid data and can't be approved — reject it instead.";
 const DUPLICATE_EMAIL =
   "You already have a contact with this email — use Apply update on the matching card or reject this one.";
-
-type TokenUpdateInput = z.infer<typeof tokenUpdateSchema>;
-
-/** Field snapshot keyed by schema names, for audit diffs. No `notes`: it can never arrive via a submission. */
-type Snapshot = Record<TokenUpdateField, string | null>;
-
-function inputToSnapshot(d: TokenUpdateInput): Snapshot {
-  return {
-    full_name: d.full_name,
-    partner_name: d.partner_name ?? null,
-    kids_names: d.kids_names ?? null,
-    email: d.email ?? null,
-    birthday: d.birthday ?? null,
-    address_line1: d.address_line1 ?? null,
-    address_line2: d.address_line2 ?? null,
-    city: d.city ?? null,
-    state_region: d.state_region ?? null,
-    postal_code: d.postal_code ?? null,
-    country: d.country ?? null,
-  };
-}
-
-function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
-  return {
-    full_name: row.fullName,
-    partner_name: row.partnerName,
-    kids_names: row.kidsNames,
-    email: row.email,
-    birthday: row.birthday,
-    address_line1: row.addressLine1,
-    address_line2: row.addressLine2,
-    city: row.city,
-    state_region: row.stateRegion,
-    postal_code: row.postalCode,
-    country: row.country,
-  };
-}
-
-/** Non-null fields only — keeps create diffs compact. */
-function definedFields(snap: Snapshot): Partial<Snapshot> {
-  const out: Partial<Snapshot> = {};
-  for (const field of TOKEN_UPDATE_FIELDS) {
-    if (snap[field] !== null) out[field] = snap[field];
-  }
-  return out;
-}
-
-/** Changed fields only, or undefined for a no-op merge (no audit row). */
-function changedFields(
-  before: Snapshot,
-  after: Snapshot,
-): { before: Partial<Snapshot>; after: Partial<Snapshot> } | undefined {
-  const diff = { before: {} as Partial<Snapshot>, after: {} as Partial<Snapshot> };
-  let changed = false;
-  for (const field of TOKEN_UPDATE_FIELDS) {
-    if (before[field] !== after[field]) {
-      diff.before[field] = before[field];
-      diff.after[field] = after[field];
-      changed = true;
-    }
-  }
-  return changed ? diff : undefined;
-}
-
-/** Schema field name → contacts column name, for the merge update. */
-const FIELD_TO_COLUMN = {
-  full_name: "fullName",
-  partner_name: "partnerName",
-  kids_names: "kidsNames",
-  email: "email",
-  birthday: "birthday",
-  address_line1: "addressLine1",
-  address_line2: "addressLine2",
-  city: "city",
-  state_region: "stateRegion",
-  postal_code: "postalCode",
-  country: "country",
-} as const satisfies Record<TokenUpdateField, keyof typeof contacts.$inferInsert>;
 
 /**
  * Audit append — the ONLY sanctioned dbAdmin use in this module.
@@ -221,12 +145,12 @@ export async function approveNew(
       const { book, submission } = loaded;
 
       // STRICT re-validation of the untrusted payload (unknown keys stripped,
-      // caps enforced, full_name required — a missing/invalid name fails
+      // caps enforced, a name required — a missing/invalid name fails
       // here), then drop book-disabled fields. Nothing unvalidated or
       // ungated ever reaches `contacts`.
-      const parsed = tokenUpdateSchema.safeParse(submission.payload);
+      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
       if (!parsed.success) return { kind: "invalid" };
-      const gated = dropDisabledFields(parsed.data, book.enabledFields);
+      const gated = parsed.data;
 
       // Concurrency gate: atomically flip pending → approved FIRST; a
       // concurrent approval of the same submission loses here and returns
@@ -238,12 +162,12 @@ export async function approveNew(
 
       const [row] = await tx
         .insert(contacts)
-        .values({ bookId: book.id, ...toRow(gated) })
-        .returning({ id: contacts.id });
+        .values({ bookId: book.id, ...toInsertRow(gated) })
+        .returning();
       return {
         kind: "ok",
         contactId: row.id,
-        after: definedFields(inputToSnapshot(gated)),
+        after: definedFields(rowToSnapshot(row)),
       };
     });
   } catch (err) {
@@ -294,9 +218,9 @@ export async function approveMerge(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       // Same strict-parse + gate as approveNew (see module doc).
-      const parsed = tokenUpdateSchema.safeParse(submission.payload);
+      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
       if (!parsed.success) return { kind: "invalid" };
-      const gated = dropDisabledFields(parsed.data, book.enabledFields);
+      const gated = parsed.data;
 
       // Scoped by id AND bookId (RLS backstops the same predicate). The FK
       // is ON DELETE SET NULL, so a dangling match is unreachable in
@@ -315,13 +239,12 @@ export async function approveMerge(
 
       // Merge semantics: PRESENT keys overwrite, ABSENT keys stay untouched.
       // Legit payloads are value-bearing by construction (submitToBook drops
-      // empty values), and tokenUpdateSchema turns "" into undefined — so an
+      // empty values), and the strict parse turns "" into undefined — so an
       // empty string (only craftable by a hostile direct insert) is treated
       // as absent and can never CLEAR a column. This intentionally differs
       // from token updates, where a present-but-empty key means "clear".
       const before = rowToSnapshot(existing);
-      const after = { ...before, ...definedFields(inputToSnapshot(gated)) };
-      const diff = changedFields(before, after);
+      const set = mergeUpdate(before, gated);
 
       // Concurrency gate: atomically flip pending → approved after all the
       // read-only checks and BEFORE the contact write; a concurrent approval
@@ -331,25 +254,22 @@ export async function approveMerge(
         return { kind: "not_found" };
       }
 
-      if (diff) {
-        const set: Partial<
-          Record<(typeof FIELD_TO_COLUMN)[TokenUpdateField], string>
-        > = {};
-        for (const field of TOKEN_UPDATE_FIELDS) {
-          // Changed fields always carry the submitted string — a merge can
-          // overwrite but never clear (see the semantics note above).
-          const next = diff.after[field];
-          if (typeof next === "string") set[FIELD_TO_COLUMN[field]] = next;
-        }
-        await tx
-          .update(contacts)
-          .set(set)
-          .where(
-            and(eq(contacts.id, existing.id), eq(contacts.bookId, book.id)),
-          );
+      if (!set) {
+        return { kind: "ok", contactId: existing.id, diff: undefined };
       }
-
-      return { kind: "ok", contactId: existing.id, diff };
+      const [row] = await tx
+        .update(contacts)
+        .set(set)
+        .where(
+          and(eq(contacts.id, existing.id), eq(contacts.bookId, book.id)),
+        )
+        .returning();
+      // Diff the stored row so trigger-derived display strings are audited.
+      return {
+        kind: "ok",
+        contactId: existing.id,
+        diff: changedFields(before, rowToSnapshot(row)),
+      };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {

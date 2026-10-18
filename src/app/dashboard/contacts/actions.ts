@@ -7,17 +7,26 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
-import { contactInputToRow as toRow } from "@/lib/db/contact-row";
+import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
+import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
+import { type Kid, type StoredNames } from "@/lib/names";
 import {
   CONTACT_FIELDS,
-  contactSchema,
-  type ContactField,
+  contactDetailsSchema,
+  type ContactDetailsInput,
   type ContactFormValues,
-  type ContactInput,
 } from "@/lib/validation/contact";
+import {
+  householdSchema,
+  parseHouseholdForm,
+  readHouseholdValues,
+  type HouseholdFieldErrors,
+  type HouseholdInput,
+  type HouseholdValues,
+} from "@/lib/validation/household";
 
 export type ContactFormState = {
   error?: string;
@@ -28,6 +37,8 @@ export type ContactFormState = {
    * uses these as defaults so a failed save doesn't wipe the user's input.
    */
   values?: ContactFormValues;
+  household?: HouseholdValues;
+  fieldErrors?: HouseholdFieldErrors;
 };
 
 export type DeleteContactState = { error?: string };
@@ -40,27 +51,23 @@ function readContactForm(formData: FormData): ContactFormValues {
   ) as ContactFormValues;
 }
 
+const NAME_FIELDS = [
+  "first_name",
+  "last_name",
+  "partner_first_name",
+  "partner_last_name",
+  "kids",
+] as const;
+const SNAPSHOT_FIELDS = [...CONTACT_FIELDS, ...NAME_FIELDS] as const;
+type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
+
 /** Field snapshot keyed by form/schema names, for audit diffs. */
-type Snapshot = Record<ContactField, string | null>;
+type Snapshot = Record<SnapshotField, string | readonly Kid[] | null>;
 
-function inputToSnapshot(d: ContactInput): Snapshot {
-  return {
-    full_name: d.full_name,
-    partner_name: d.partner_name ?? null,
-    kids_names: d.kids_names ?? null,
-    email: d.email ?? null,
-    birthday: d.birthday ?? null,
-    address_line1: d.address_line1 ?? null,
-    address_line2: d.address_line2 ?? null,
-    city: d.city ?? null,
-    state_region: d.state_region ?? null,
-    postal_code: d.postal_code ?? null,
-    country: d.country ?? null,
-    notes: d.notes ?? null,
-  };
-}
+type ContactRow = typeof contacts.$inferSelect;
+type Row = ReturnType<typeof householdToRow> & ReturnType<typeof contactDetailsToRow>;
 
-function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
+function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
   return {
     full_name: row.fullName,
     partner_name: row.partnerName,
@@ -74,13 +81,22 @@ function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     postal_code: row.postalCode,
     country: row.country,
     notes: row.notes,
+    first_name: row.firstName,
+    last_name: row.lastName,
+    partner_first_name: row.partnerFirstName,
+    partner_last_name: row.partnerLastName,
+    kids: row.kids,
   };
+}
+
+function inputToRow(details: ContactDetailsInput, household: HouseholdInput): Row {
+  return { ...householdToRow(household), ...contactDetailsToRow(details) };
 }
 
 /** Non-null fields only — keeps create diffs compact. */
 function definedFields(snap: Snapshot): Partial<Snapshot> {
   const out: Partial<Snapshot> = {};
-  for (const field of CONTACT_FIELDS) {
+  for (const field of SNAPSHOT_FIELDS) {
     if (snap[field] !== null) out[field] = snap[field];
   }
   return out;
@@ -93,14 +109,40 @@ function changedFields(
 ): { before: Partial<Snapshot>; after: Partial<Snapshot> } | undefined {
   const diff = { before: {} as Partial<Snapshot>, after: {} as Partial<Snapshot> };
   let changed = false;
-  for (const field of CONTACT_FIELDS) {
-    if (before[field] !== after[field]) {
+  for (const field of SNAPSHOT_FIELDS) {
+    if (!sameJsonb(before[field], after[field])) {
       diff.before[field] = before[field];
       diff.after[field] = after[field];
       changed = true;
     }
   }
   return changed ? diff : undefined;
+}
+
+type ParsedContactForm =
+  | { ok: true; details: ContactDetailsInput; household: HouseholdInput }
+  | { ok: false; state: ContactFormState };
+
+function parseContactForm(formData: FormData): ParsedContactForm {
+  const values = readContactForm(formData);
+  const household = parseHouseholdForm(formData);
+  const details = contactDetailsSchema.safeParse(values);
+  if (household.ok && details.success) {
+    return { ok: true, details: details.data, household: household.data };
+  }
+  return {
+    ok: false,
+    state: {
+      error: details.success
+        ? household.ok
+          ? undefined
+          : household.error
+        : (details.error.issues[0]?.message ?? "Invalid input"),
+      fieldErrors: household.ok ? undefined : household.fieldErrors,
+      values,
+      household: household.values,
+    },
+  };
 }
 
 /**
@@ -129,14 +171,13 @@ export async function createContact(
 ): Promise<ContactFormState> {
   const claims = await requireUser();
 
-  const submitted = readContactForm(formData);
-  const parsed = contactSchema.safeParse(submitted);
-  if (!parsed.success) {
-    return {
-      error: parsed.error.issues[0]?.message ?? "Invalid input",
-      values: submitted,
-    };
-  }
+  const parsed = parseContactForm(formData);
+  if (!parsed.ok) return parsed.state;
+  const echo = {
+    values: readContactForm(formData),
+    household: readHouseholdValues(formData),
+  };
+  const row = inputToRow(parsed.details, parsed.household);
 
   let inserted: { id: string } | undefined;
   try {
@@ -148,31 +189,31 @@ export async function createContact(
         .where(eq(books.ownerId, claims.sub))
         .limit(1);
       if (!book) return undefined;
-      const [row] = await tx
+      const [created] = await tx
         .insert(contacts)
-        .values({ bookId: book.id, ...toRow(parsed.data) })
+        .values({ bookId: book.id, ...row })
         .returning({ id: contacts.id });
-      return row;
+      return created;
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
       return {
         error: "You already have a contact with this email",
-        values: submitted,
+        ...echo,
       };
     }
     logDbError("[ct] [createContact] insert failed", err);
     return {
       error: "Something went wrong. Please try again.",
-      values: submitted,
+      ...echo,
     };
   }
   if (!inserted) {
-    return { error: "Set up your address book first.", values: submitted };
+    return { error: "Set up your address book first.", ...echo };
   }
 
   await recordContactEvent(inserted.id, {
-    after: definedFields(inputToSnapshot(parsed.data)),
+    after: definedFields(rowToSnapshot(row)),
   });
 
   revalidatePath("/dashboard");
@@ -186,21 +227,20 @@ export async function updateContact(
 ): Promise<ContactFormState> {
   const claims = await requireUser();
 
-  const submitted = readContactForm(formData);
+  const echo = {
+    values: readContactForm(formData),
+    household: readHouseholdValues(formData),
+  };
   const id = String(formData.get("id") ?? "");
   if (!uuidSchema.safeParse(id).success) {
-    return { error: "Contact not found.", values: submitted };
+    return { error: "Contact not found.", ...echo };
   }
 
-  const parsed = contactSchema.safeParse(submitted);
-  if (!parsed.success) {
-    return {
-      error: parsed.error.issues[0]?.message ?? "Invalid input",
-      values: submitted,
-    };
-  }
+  const parsed = parseContactForm(formData);
+  if (!parsed.ok) return parsed.state;
+  const row = inputToRow(parsed.details, parsed.household);
 
-  let before: (typeof contacts.$inferSelect) | undefined;
+  let before: ContactRow | undefined;
   try {
     before = await withRls(claims, async (tx) => {
       const [book] = await tx
@@ -218,7 +258,7 @@ export async function updateContact(
       if (!existing) return undefined;
       await tx
         .update(contacts)
-        .set(toRow(parsed.data))
+        .set(row)
         .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
       return existing;
     });
@@ -226,52 +266,85 @@ export async function updateContact(
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
       return {
         error: "You already have a contact with this email",
-        values: submitted,
+        ...echo,
       };
     }
     logDbError("[ct] [updateContact] update failed", err);
     return {
       error: "Something went wrong. Please try again.",
-      values: submitted,
+      ...echo,
     };
   }
   if (!before) {
-    return { error: "Contact not found.", values: submitted };
+    return { error: "Contact not found.", ...echo };
   }
 
-  const diff = changedFields(rowToSnapshot(before), inputToSnapshot(parsed.data));
+  const diff = changedFields(rowToSnapshot(before), rowToSnapshot(row));
   if (diff) await recordContactEvent(id, diff);
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contacts/${id}`);
-  return { saved: true, values: submitted };
+  return { saved: true, ...echo };
 }
 
 export type PatchContactResult = { error?: string };
 
-const patchSchema = z
-  .object(
-    Object.fromEntries(
-      CONTACT_FIELDS.map((field) => [field, z.string().optional()]),
-    ) as Record<ContactField, z.ZodOptional<z.ZodString>>,
-  )
-  .strict();
+const DETAIL_FIELDS = CONTACT_FIELDS.filter(
+  (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",
+);
+type DetailField = (typeof DETAIL_FIELDS)[number];
 
-function rowToFormValues(row: typeof contacts.$inferSelect): ContactFormValues {
+// No name fields here: writing full_name alone clears the structured names.
+const patchSchema = z.strictObject({
+  values: z
+    .strictObject(
+      Object.fromEntries(
+        DETAIL_FIELDS.map((field) => [field, z.string().optional()]),
+      ) as Record<DetailField, z.ZodOptional<z.ZodString>>,
+    )
+    .optional(),
+  household: householdSchema().optional(),
+  namesBase: z.unknown().optional(),
+});
+
+export type ContactPatch = {
+  values?: Partial<Record<DetailField, string>>;
+  household?: z.input<ReturnType<typeof householdSchema>>;
+  namesBase?: StoredNames;
+};
+
+const NAMES_CHANGED =
+  "This contact's names changed since you opened them. Reload to see the new names.";
+
+function storedNames(row: ContactRow): StoredNames {
+  return {
+    fullName: row.fullName,
+    partnerName: row.partnerName,
+    kidsNames: row.kidsNames,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    partnerFirstName: row.partnerFirstName,
+    partnerLastName: row.partnerLastName,
+    kids: row.kids,
+  };
+}
+
+function rowToDetailValues(row: ContactRow): Record<DetailField, string> {
   const snap = rowToSnapshot(row);
   return Object.fromEntries(
-    CONTACT_FIELDS.map((field) => [field, snap[field] ?? ""]),
-  ) as ContactFormValues;
+    DETAIL_FIELDS.map((field) => [field, snap[field] ?? ""]),
+  ) as Record<DetailField, string>;
 }
 
 export async function patchContact(
   id: string,
-  patch: Partial<ContactFormValues>,
+  patch: ContactPatch,
 ): Promise<PatchContactResult> {
   const claims = await requireUser();
   if (!uuidSchema.safeParse(id).success) return { error: "Contact not found." };
   const fields = patchSchema.safeParse(patch);
   if (!fields.success) return { error: "Invalid input" };
+  const names = fields.data.household;
 
   type Outcome =
     | { kind: "missing" }
@@ -293,9 +366,12 @@ export async function patchContact(
         .limit(1)
         .for("update");
       if (!existing) return { kind: "missing" };
-      const parsed = contactSchema.safeParse({
-        ...rowToFormValues(existing),
-        ...fields.data,
+      if (names && !sameJsonb(storedNames(existing), fields.data.namesBase)) {
+        return { kind: "invalid", error: NAMES_CHANGED };
+      }
+      const parsed = contactDetailsSchema.safeParse({
+        ...rowToDetailValues(existing),
+        ...fields.data.values,
       });
       if (!parsed.success) {
         return {
@@ -303,13 +379,17 @@ export async function patchContact(
           error: parsed.error.issues[0]?.message ?? "Invalid input",
         };
       }
+      const row = {
+        ...contactDetailsToRow(parsed.data),
+        ...(names ? householdToRow(names) : {}),
+      };
       const before = rowToSnapshot(existing);
-      const after = inputToSnapshot(parsed.data);
+      const after = rowToSnapshot({ ...existing, ...row });
       // A no-op save must not bump updated_at.
       if (changedFields(before, after)) {
         await tx
           .update(contacts)
-          .set(toRow(parsed.data))
+          .set(row)
           .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
       }
       return { kind: "saved", before, after };

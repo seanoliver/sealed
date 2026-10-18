@@ -67,19 +67,20 @@ test("configures a faithful preview and preserves it when going back", async () 
       name: "Add your address to Draft Owner's address book",
     }),
   ).toBeVisible();
-  await expect(preview.locator("#full_name")).toBeDisabled();
+  await expect(preview.locator("#first_name")).toBeDisabled();
+  await expect(preview.locator("#last_name")).toBeDisabled();
   await expect(preview.locator("#email")).toBeDisabled();
   await expect(preview.locator("#address_line1")).toBeDisabled();
-  await expect(preview.locator("#partner_name")).toHaveCount(0);
-  await expect(preview.locator("#kids_names")).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add partner" })).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(preview.locator("#birthday")).toHaveCount(0);
   await expect(preview.getByRole("button", { name: "Add my details" })).toBeDisabled();
 
   await page.getByRole("switch", { name: "Partner name" }).check();
   await page.getByRole("switch", { name: "Kids' names" }).check();
   await page.getByRole("switch", { name: "Birthday" }).check();
-  await expect(preview.locator("#partner_name")).toBeDisabled();
-  await expect(preview.locator("#kids_names")).toBeDisabled();
+  await expect(preview.getByRole("button", { name: "Add partner" })).toBeDisabled();
+  await expect(preview.getByRole("button", { name: "Add a child" })).toBeDisabled();
   await expect(preview.locator("#birthday")).toBeDisabled();
   await page.getByRole("switch", { name: "Birthday" }).uncheck();
   await expect(preview.locator("#birthday")).toHaveCount(0);
@@ -103,8 +104,8 @@ test("publishes the optional fields selected in the preview", async () => {
   await expect(page.getByText("No contacts yet")).toBeVisible();
 
   await page.goto(`/b/${slug}`);
-  await expect(page.locator("#partner_name")).toBeVisible();
-  await expect(page.locator("#kids_names")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a child" })).toBeVisible();
   await expect(page.locator("#birthday")).toHaveCount(0);
 
   await page.goto("/onboarding");
@@ -128,7 +129,7 @@ test("previews settings changes before publishing them", async ({ browser }) => 
       name: "Add your address to Updated Owner's address book",
     }),
   ).toBeVisible();
-  await expect(preview.locator("#kids_names")).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(preview.locator("#birthday")).toBeDisabled();
 
   const liveContext = await browser.newContext();
@@ -139,7 +140,7 @@ test("previews settings changes before publishing them", async ({ browser }) => 
       name: "Add your address to Draft Owner's address book",
     }),
   ).toBeVisible();
-  await expect(livePage.locator("#kids_names")).toBeVisible();
+  await expect(livePage.getByRole("button", { name: "Add a child" })).toBeVisible();
   await expect(livePage.locator("#birthday")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save" }).click();
@@ -150,7 +151,7 @@ test("previews settings changes before publishing them", async ({ browser }) => 
       name: "Add your address to Updated Owner's address book",
     }),
   ).toBeVisible();
-  await expect(livePage.locator("#kids_names")).toHaveCount(0);
+  await expect(livePage.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(livePage.locator("#birthday")).toBeVisible();
   await liveContext.close();
 });
@@ -208,7 +209,11 @@ test("changing the slug requires acknowledging the link-break warning", async ()
 
 test("adds a contact via the form", async () => {
   await page.getByRole("link", { name: "Add contact" }).click();
-  await page.locator("#full_name").fill("Ada Lovelace");
+  await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByText("Add a first name.")).toBeVisible();
+  await page.locator("#first_name").fill("Ada");
+  await page.locator("#last_name").fill("Lovelace");
   await page.locator("#email").fill("ada@e2e.test");
   await page.locator("#city").fill("London");
   await page.getByRole("button", { name: "Add contact" }).click();
@@ -223,6 +228,12 @@ test("adds a contact via the form", async () => {
 test("edits the contact and the audit trail records the change", async () => {
   await page.getByRole("link", { name: "Ada Lovelace" }).click();
   await expect(page).toHaveURL(/\/dashboard\/contacts\/[0-9a-f-]+$/);
+  await expect(page.locator("#first_name")).toHaveValue("Ada");
+  await page.getByRole("button", { name: "Add partner" }).click();
+  await page.locator("#partner_first").fill("William");
+  await page.locator("#partner_last").fill("King");
+  await page.getByRole("button", { name: "Add a child" }).click();
+  await page.locator("#kid_0_first").fill("Byron");
   await page.locator("#city").fill("Boston");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved.");
@@ -235,6 +246,19 @@ test("edits the contact and the audit trail records the change", async () => {
   await expect(latest).toContainText("You");
   await expect(latest.locator("pre")).toContainText('"city"');
   await expect(latest.locator("pre")).toContainText("Boston");
+  await expect(latest.locator("pre")).toContainText('"partner_name": "William King"');
+  await expect(page.locator("#kid_0_first")).toHaveValue("Byron");
+  await expect(page.locator("#kid_0_last")).toHaveValue("Lovelace");
+
+  await page.goto("/dashboard");
+  await expect(
+    page
+      .getByRole("table", { name: "Contacts" })
+      .getByRole("link", { name: "Ada Lovelace & William King" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: "Contacts" }).locator("tbody tr").first(),
+  ).toContainText("· 1 kid");
 });
 
 test("exports contacts as CSV with the canonical header", async () => {
@@ -246,8 +270,12 @@ test("exports contacts as CSV with the canonical header", async () => {
 
   const lines = csv.replace(/^﻿/, "").split("\r\n");
   expect(lines[0]).toBe(
-    "full_name,partner_name,kids_names,email,birthday,address_line1," +
+    "full_name,partner_name,kids_names,first_name,last_name," +
+      "partner_first_name,partner_last_name,email,birthday,address_line1," +
       "address_line2,city,state_region,postal_code,country,notes",
+  );
+  expect(lines[1]).toContain(
+    "Ada Lovelace,William King,Byron,Ada,Lovelace,William,King,",
   );
   expect(lines[1]).toContain("Ada Lovelace");
   expect(lines[1]).toContain("ada@e2e.test");

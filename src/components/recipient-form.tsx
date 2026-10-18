@@ -7,6 +7,10 @@ import {
 } from "@/components/recipient-fields";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
+import {
+  type HouseholdFieldErrors,
+  type HouseholdValues,
+} from "@/lib/validation/household";
 
 /**
  * Shared recipient-facing contact form, used by both unauthenticated
@@ -25,6 +29,8 @@ import { type TokenUpdateValues } from "@/lib/validation/contact";
 export type RecipientFormState = {
   error?: string;
   values?: TokenUpdateValues;
+  household?: HouseholdValues;
+  fieldErrors?: HouseholdFieldErrors;
 };
 
 type RecipientFormProps = {
@@ -39,6 +45,7 @@ type RecipientFormProps = {
   pendingLabel: string;
   /** Optional helper copy under the email input (e.g. "Optional — ..."). */
   emailHint?: string;
+  household: HouseholdValues;
 };
 
 export function RecipientForm({
@@ -48,6 +55,7 @@ export function RecipientForm({
   submitLabel,
   pendingLabel,
   emailHint,
+  household,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   // React 19 resets uncontrolled inputs to defaultValue after a form action
@@ -66,7 +74,15 @@ export function RecipientForm({
         </div>
       ) : null}
 
-      <RecipientFields defaults={v} enabled={enabled} emailHint={emailHint} />
+      <RecipientFields
+        defaults={v}
+        enabled={enabled}
+        emailHint={emailHint}
+        household={{
+          defaults: state.household ?? household,
+          errors: state.fieldErrors,
+        }}
+      />
 
       <TurnstileWidget resetOn={state} />
 

@@ -31,3 +31,7 @@ _Avoid_: Invite (reserved for the invite page)
 **Optional invite field**:
 A recipient detail that an owner deliberately enables for the invite page. Partner name, kids’ names, and birthday are optional invite fields and default to disabled for a new address book.
 _Avoid_: Required field, custom field
+
+**Household builder**:
+The invite-page section where a recipient enters their own first and last name, then optionally adds a partner and up to 10 kids. Each added person has a first name and a last name that defaults to the recipient's.
+_Avoid_: Family form, name fields

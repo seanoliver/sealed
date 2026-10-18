@@ -10,6 +10,7 @@ import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
 import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
+import { householdPrefill } from "@/lib/names";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { RecipientForm } from "@/components/recipient-form";
 import { InvalidLinkNotice, Notice } from "../notice";
@@ -35,6 +36,13 @@ const tokenDataSchema = z.object({
     full_name: z.string().nullable(),
     partner_name: z.string().nullable(),
     kids_names: z.string().nullable(),
+    first_name: z.string().nullable(),
+    last_name: z.string().nullable(),
+    partner_first_name: z.string().nullable(),
+    partner_last_name: z.string().nullable(),
+    kids: z
+      .array(z.object({ first: z.string(), last: z.string().optional() }))
+      .nullable(),
     email: z.string().nullable(),
     birthday: z.string().nullable(),
     address_line1: z.string().nullable(),
@@ -110,13 +118,24 @@ export default async function TokenUpdatePage({
   // PII: a disabled field's stored value must not reach the client AT ALL —
   // form props are embedded in the RSC payload, so passing it would leak it
   // into the page source even though no input renders it. Blank, not just
-  // hidden.
+  // hidden. Pass the enabled flags to householdPrefill for the same reason.
+  const household = householdPrefill(
+    {
+      fullName: contact.full_name ?? "",
+      partnerName: contact.partner_name,
+      kidsNames: contact.kids_names,
+      firstName: contact.first_name,
+      lastName: contact.last_name,
+      partnerFirstName: contact.partner_first_name,
+      partnerLastName: contact.partner_last_name,
+      kids: contact.kids,
+    },
+    { partner: enabled_fields.partner_name, kids: enabled_fields.kids_names },
+  );
   const defaults: TokenUpdateValues = {
-    full_name: contact.full_name ?? "",
-    partner_name: enabled_fields.partner_name
-      ? (contact.partner_name ?? "")
-      : "",
-    kids_names: enabled_fields.kids_names ? (contact.kids_names ?? "") : "",
+    full_name: "",
+    partner_name: "",
+    kids_names: "",
     email: contact.email ?? "",
     birthday: enabled_fields.birthday ? (contact.birthday ?? "") : "",
     address_line1: contact.address_line1 ?? "",
@@ -150,6 +169,7 @@ export default async function TokenUpdatePage({
           enabled={enabled_fields}
           submitLabel="Update my details"
           pendingLabel="Saving…"
+          household={household}
         />
       </div>
     </main>

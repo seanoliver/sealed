@@ -71,6 +71,7 @@ export async function seedOwnerBook(opts: {
   email: string;
   displayName: string;
   slug: string;
+  enabledFields?: EnabledFields;
 }): Promise<{ ownerId: string; bookId: string }> {
   const ownerId = randomUUID();
   await db`insert into auth.users (id, email) values (${ownerId}, ${opts.email})`;
@@ -78,6 +79,7 @@ export async function seedOwnerBook(opts: {
     ownerId,
     slug: opts.slug,
     displayName: opts.displayName,
+    enabledFields: opts.enabledFields,
   });
   return { ownerId, bookId };
 }
@@ -93,17 +95,28 @@ export async function seedContact(opts: {
   stateRegion?: string;
   postalCode?: string;
   country?: string;
+  household?: {
+    firstName: string;
+    lastName: string;
+    partnerFirstName?: string;
+    partnerLastName?: string;
+    kids?: { first: string; last?: string }[];
+  };
 }): Promise<string> {
+  const h = opts.household;
   const rows = await db`
     insert into public.contacts
       (book_id, full_name, email, partner_name, kids_names, address_line1,
-       city, state_region, postal_code, country)
+       city, state_region, postal_code, country, first_name, last_name,
+       partner_first_name, partner_last_name, kids)
     values
       (${opts.bookId}, ${opts.fullName}, ${opts.email ?? null},
        ${opts.partnerName ?? null}, ${opts.kidsNames ?? null},
        ${opts.addressLine1 ?? null}, ${opts.city ?? null},
        ${opts.stateRegion ?? null}, ${opts.postalCode ?? null},
-       ${opts.country ?? null})
+       ${opts.country ?? null}, ${h?.firstName ?? null}, ${h?.lastName ?? null},
+       ${h?.partnerFirstName ?? null}, ${h?.partnerLastName ?? null},
+       ${h?.kids ? db.json(h.kids) : null})
     returning id`;
   return rows[0].id as string;
 }
@@ -114,6 +127,43 @@ export async function getContactRow(
   const rows = await db`
     select city, updated_at from public.contacts where id = ${contactId}`;
   return { city: rows[0].city, updatedAt: rows[0].updated_at };
+}
+
+export async function getContactNamesByEmail(email: string): Promise<{
+  fullName: string;
+  partnerName: string | null;
+  kidsNames: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  partnerFirstName: string | null;
+  partnerLastName: string | null;
+  kids: unknown;
+}> {
+  const rows = await db`
+    select full_name, partner_name, kids_names, first_name, last_name,
+           partner_first_name, partner_last_name, kids
+    from public.contacts where email = ${email}`;
+  if (rows.length !== 1) {
+    throw new Error(`expected 1 contact for ${email}, found ${rows.length}`);
+  }
+  const r = rows[0];
+  return {
+    fullName: r.full_name,
+    partnerName: r.partner_name,
+    kidsNames: r.kids_names,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    partnerFirstName: r.partner_first_name,
+    partnerLastName: r.partner_last_name,
+    kids: r.kids,
+  };
+}
+
+export async function setContactKidsByEmail(
+  email: string,
+  kids: { first: string; last?: string }[],
+): Promise<void> {
+  await db`update public.contacts set kids = ${db.json(kids)} where email = ${email}`;
 }
 
 export async function deleteContact(contactId: string): Promise<void> {

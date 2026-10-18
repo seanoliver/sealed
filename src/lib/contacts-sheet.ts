@@ -1,12 +1,26 @@
+import {
+  formatKids,
+  formatPerson,
+  householdLine,
+  householdPrefill,
+  kidsCount,
+  kidsSummary,
+  isSplit,
+  type StoredNames,
+} from "@/lib/names";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
 import type { ContactFormValues } from "@/lib/validation/contact";
+import {
+  householdSchema,
+  type HouseholdFieldErrors,
+  type HouseholdInput,
+  type HouseholdValues,
+} from "@/lib/validation/household";
 
 export type StatusKey = SendStatus | "updated";
 
 export type SheetField = Extract<
   keyof ContactFormValues,
-  | "full_name"
-  | "partner_name"
   | "email"
   | "address_line1"
   | "city"
@@ -19,6 +33,7 @@ export type SheetValues = Record<SheetField, string>;
 
 export interface SheetRow {
   id: string;
+  names: StoredNames;
   values: SheetValues;
   status: StatusKey;
   updatedAtIso: string;
@@ -31,9 +46,17 @@ export function toSheetRow(
 ): SheetRow {
   return {
     id: row.id,
+    names: {
+      fullName: row.fullName,
+      partnerName: row.partnerName,
+      kidsNames: row.kidsNames,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      partnerFirstName: row.partnerFirstName,
+      partnerLastName: row.partnerLastName,
+      kids: row.kids,
+    },
     values: {
-      full_name: row.fullName,
-      partner_name: row.partnerName ?? "",
       email: row.email ?? "",
       address_line1: row.addressLine1 ?? "",
       city: row.city ?? "",
@@ -94,7 +117,10 @@ export function moveCursor(
   return Math.min(Math.max(target, 0), count - 1);
 }
 
-export function parseStoredLayout(raw: string | null): {
+export function parseStoredLayout(
+  raw: string | null,
+  { columnIds }: { columnIds?: readonly string[] } = {},
+): {
   columnVisibility?: Record<string, boolean>;
   columnSizing?: Record<string, number>;
 } {
@@ -106,8 +132,14 @@ export function parseStoredLayout(raw: string | null): {
     return {};
   }
   if (!isRecord(parsed)) return {};
-  const visibility = parsed.columnVisibility;
-  const sizing = parsed.columnSizing;
+  const known = (record: unknown) =>
+    isRecord(record) && columnIds
+      ? Object.fromEntries(
+          Object.entries(record).filter(([id]) => columnIds.includes(id)),
+        )
+      : record;
+  const visibility = known(parsed.columnVisibility);
+  const sizing = known(parsed.columnSizing);
   return {
     columnVisibility:
       isRecord(visibility) &&
@@ -126,4 +158,105 @@ export function parseStoredLayout(raw: string | null): {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function sheetName(names: StoredNames): {
+  line: string;
+  kids: string | null;
+  split: boolean;
+} {
+  return {
+    line: householdLine(names),
+    kids: kidsSummary(kidsCount(names)),
+    split: isSplit(names),
+  };
+}
+
+export type PanelRow = { first: string; last: string; lastEdited: boolean };
+
+export type HouseholdDraft = {
+  first_name: string;
+  last_name: string;
+  partner: PanelRow | null;
+  kids: PanelRow[];
+};
+
+function toPanelRow(row: { first: string; last: string }, familyLast: string): PanelRow {
+  return { ...row, lastEdited: row.last !== familyLast };
+}
+
+export function draftFromNames(names: StoredNames): HouseholdDraft {
+  const values = householdPrefill(names);
+  return {
+    first_name: values.first_name,
+    last_name: values.last_name,
+    partner: values.partner ? toPanelRow(values.partner, values.last_name) : null,
+    kids: values.kids.map((kid) => toPanelRow(kid, values.last_name)),
+  };
+}
+
+export function draftToValues(draft: HouseholdDraft): HouseholdValues {
+  const resolve = (row: PanelRow) => ({
+    first: row.first,
+    last: row.lastEdited ? row.last : draft.last_name,
+  });
+  return {
+    first_name: draft.first_name,
+    last_name: draft.last_name,
+    partner: draft.partner ? resolve(draft.partner) : null,
+    kids: draft.kids.map(resolve),
+  };
+}
+
+export function householdEdited(names: StoredNames, draft: HouseholdDraft): boolean {
+  // An unsplit contact's draft is a proposed split, so it always saves.
+  if (!isSplit(names)) return true;
+  return (
+    JSON.stringify(draftToValues(draft)) !==
+    JSON.stringify(draftToValues(draftFromNames(names)))
+  );
+}
+
+export function householdPatchInput(values: HouseholdValues) {
+  return {
+    first_name: values.first_name,
+    last_name: values.last_name,
+    ...(values.partner
+      ? { partner_first_name: values.partner.first, partner_last_name: values.partner.last }
+      : {}),
+    ...(values.kids.length > 0 ? { kids: values.kids } : {}),
+  };
+}
+
+export function validateHousehold(
+  values: HouseholdValues,
+): { ok: true; data: HouseholdInput } | { ok: false; errors: HouseholdFieldErrors } {
+  const parsed = householdSchema().safeParse(householdPatchInput(values));
+  if (parsed.success) return { ok: true, data: parsed.data };
+  const errors: HouseholdFieldErrors = {};
+  for (const issue of parsed.error.issues) {
+    errors[issue.path.join(".")] ??= issue.message;
+  }
+  return { ok: false, errors };
+}
+
+export function namesFromValues(values: HouseholdValues): StoredNames {
+  const first = values.first_name.trim();
+  const last = values.last_name.trim();
+  const partnerFirst = values.partner?.first.trim() ?? "";
+  const partnerLast = values.partner?.last.trim() ?? "";
+  const kids = values.kids
+    .map((kid) => ({ first: kid.first.trim(), last: kid.last.trim() }))
+    .filter((kid) => kid.first !== "")
+    .map((kid) => (kid.last === "" ? { first: kid.first } : kid));
+  return {
+    fullName: formatPerson({ first, last }) ?? "",
+    partnerName: formatPerson({ first: partnerFirst, last: partnerLast }),
+    kidsNames: formatKids({ kids, familyLast: last }),
+    firstName: first,
+    lastName: last,
+    partnerFirstName: partnerFirst === "" ? null : partnerFirst,
+    partnerLastName: partnerLast === "" ? null : partnerLast,
+    kids: kids.length === 0 ? null : kids,
+  };
 }

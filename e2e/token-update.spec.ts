@@ -3,10 +3,12 @@ import {
   cleanupUser,
   clearRateLimits,
   generateToken,
+  getContactNamesByEmail,
   getUserIdByEmail,
   seedBook,
   seedContact,
   seedEmailSend,
+  seedOwnerBook,
   seedUpdateToken,
 } from "./db";
 import {
@@ -90,14 +92,19 @@ test("prefills enabled fields; a disabled field is absent AND unleaked", async (
   await expect(
     page.getByRole("heading", { name: /Update your address for/ }),
   ).toBeVisible();
-  await expect(page.locator("#full_name")).toHaveValue("Tess Token");
-  await expect(page.locator("#partner_name")).toHaveValue("Pat Partner");
+  await expect(page.locator("#first_name")).toHaveValue("Tess");
+  await expect(page.locator("#last_name")).toHaveValue("Token");
+  await expect(page.locator("#partner_first")).toHaveValue("Pat");
+  await expect(page.locator("#partner_last")).toHaveValue("Partner");
   await expect(page.locator("#city")).toHaveValue("Lisbon");
-  // kids_names is disabled for this book: no input at all...
-  await expect(page.locator("#kids_names")).toHaveCount(0);
+  // kids_names is disabled for this book: no kids rows or add button...
+  await expect(page.locator("#kid_0_first")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   // ...and its stored value must not appear ANYWHERE (RSC payload included —
   // see docs/bugs/2026-07-11-rsc-props-leak-disabled-token-fields.md).
-  expect(await page.content()).not.toContain("Zoe");
+  const html = await page.content();
+  expect(html).not.toContain("Zoe");
+  expect(html).not.toContain("kids_section");
 
   await context.close();
 });
@@ -137,6 +144,16 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   await expect(row).toContainText("Updated"); // outranks the raw send status
   await expect(row).toContainText("Porto");
 
+  const names = await getContactNamesByEmail("tess@e2e.test");
+  expect(names).toMatchObject({
+    firstName: "Tess",
+    lastName: "Token",
+    partnerFirstName: "Pat",
+    partnerLastName: "Partner",
+    kidsNames: "Zoe, Max",
+    kids: null,
+  });
+
   // The audit trail shows the recipient's change.
   await ownerPage.getByRole("link", { name: "Tess Token" }).click();
   const history = ownerPage.getByRole("region", { name: "History" });
@@ -151,7 +168,7 @@ test("a used link renders the generic invalid page", async ({ browser }) => {
   await expect(
     page.getByRole("heading", { name: "Link not available" }),
   ).toBeVisible();
-  await expect(page.locator("#full_name")).toHaveCount(0);
+  await expect(page.locator("#first_name")).toHaveCount(0);
   await context.close();
 });
 
@@ -174,4 +191,137 @@ test("unknown and malformed tokens render the same invalid page", async ({
   ).toBeVisible();
 
   await context.close();
+});
+
+test.describe("with the partner field disabled", () => {
+  const ownerEmailNoPartner = uniqueEmail("token-nopartner-owner");
+  let partnerToken: string;
+
+  test.beforeAll(async () => {
+    const { bookId } = await seedOwnerBook({
+      email: ownerEmailNoPartner,
+      displayName: "Solo Owner",
+      slug: uniqueSlug("token-nopartner"),
+      enabledFields: { partner_name: false, kids_names: true, birthday: false },
+    });
+    const contactId = await seedContact({
+      bookId,
+      fullName: "Riley Quinn",
+      household: { firstName: "Riley", lastName: "Quinn", partnerFirstName: "Morgan", partnerLastName: "Vale" },
+    });
+    partnerToken = await seedUpdateToken(contactId);
+  });
+
+  test.afterAll(async () => {
+    await cleanupUser(ownerEmailNoPartner);
+  });
+
+  test("a stored partner neither renders nor leaks", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`/u/${partnerToken}`);
+
+    await expect(page.locator("#first_name")).toHaveValue("Riley");
+    await expect(page.locator("#partner_first")).toHaveCount(0);
+    const html = await page.content();
+    expect(html).not.toContain("Morgan");
+    expect(html).not.toContain("Vale");
+    await context.close();
+  });
+});
+
+test.describe("with partner and kids enabled", () => {
+  const kidsOwnerEmail = uniqueEmail("token-kids-owner");
+  const recipientEmail = uniqueEmail("token-kids-recipient");
+  let kidsTokens: string[];
+
+  test.beforeAll(async () => {
+    const { bookId } = await seedOwnerBook({
+      email: kidsOwnerEmail,
+      displayName: "Kid Owner",
+      slug: uniqueSlug("token-kids"),
+    });
+    const contactId = await seedContact({
+      bookId,
+      fullName: "Jen Holloway",
+      email: recipientEmail,
+      partnerName: "Mark",
+      kidsNames: "Zoe, Max",
+    });
+    kidsTokens = [
+      await seedUpdateToken(contactId),
+      await seedUpdateToken(contactId),
+    ];
+  });
+
+  test.afterAll(async () => {
+    await cleanupUser(kidsOwnerEmail);
+  });
+
+  test("a recipient splits a legacy household and edits the kids", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`/u/${kidsTokens[0]}`);
+
+    await expect(page.locator("#first_name")).toHaveValue("Jen");
+    await expect(page.locator("#last_name")).toHaveValue("Holloway");
+    await expect(page.locator("#partner_first")).toHaveValue("Mark");
+    await expect(page.locator("#partner_last")).toHaveValue("Holloway");
+    await expect(page.locator("#kid_0_first")).toHaveValue("Zoe");
+    await expect(page.locator("#kid_1_first")).toHaveValue("Max");
+    await expect(page.locator("#kid_1_last")).toHaveValue("Holloway");
+
+    await page.getByRole("button", { name: "Remove child 2" }).click();
+    await page.getByRole("button", { name: "Add a child" }).click();
+    await page.locator("#kid_1_first").fill("Ivy");
+
+    await page.locator("#last_name").fill("");
+    await waitForTurnstile(page);
+    await page.getByRole("button", { name: "Update my details" }).click();
+    await expect(
+      page.getByText("Add your last name so Kid Owner can address your mail."),
+    ).toBeVisible();
+    await expect(page.locator("#kid_1_first")).toHaveValue("Ivy");
+
+    await page.locator("#last_name").fill("Holloway");
+    await waitForTurnstile(page);
+    await page.getByRole("button", { name: "Update my details" }).click();
+    await expect(page).toHaveURL(/\/u\/thanks$/);
+    await context.close();
+
+    expect(await getContactNamesByEmail(recipientEmail)).toMatchObject({
+      fullName: "Jen Holloway",
+      partnerName: "Mark Holloway",
+      kidsNames: "Zoe, Ivy",
+      kids: [
+        { first: "Zoe", last: "Holloway" },
+        { first: "Ivy", last: "Holloway" },
+      ],
+    });
+  });
+
+  test("removing the partner and every kid clears them", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`/u/${kidsTokens[1]}`);
+
+    await expect(page.locator("#kid_1_first")).toHaveValue("Ivy");
+    await page.getByRole("button", { name: "Remove partner" }).click();
+    await page.getByRole("button", { name: "Remove child 2" }).click();
+    await page.getByRole("button", { name: "Remove child 1" }).click();
+    await waitForTurnstile(page);
+    await page.getByRole("button", { name: "Update my details" }).click();
+    await expect(page).toHaveURL(/\/u\/thanks$/);
+    await context.close();
+
+    expect(await getContactNamesByEmail(recipientEmail)).toMatchObject({
+      fullName: "Jen Holloway",
+      partnerName: null,
+      partnerFirstName: null,
+      kidsNames: null,
+      kids: null,
+    });
+  });
 });

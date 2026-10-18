@@ -1,8 +1,10 @@
+import { HouseholdFields } from "@/components/household-fields";
+import { inputClasses, labelClasses } from "@/components/recipient-field-styles";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
-
-const inputClasses =
-  "h-11 rounded-lg border border-input bg-card/70 px-3.5 text-base text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 disabled:cursor-default disabled:opacity-100";
-const labelClasses = "text-sm font-medium text-foreground/90";
+import {
+  type HouseholdFieldErrors,
+  type HouseholdValues,
+} from "@/lib/validation/household";
 
 export type EnabledFields = {
   partner_name: boolean;
@@ -28,6 +30,7 @@ type RecipientFieldsProps = {
   defaults: TokenUpdateValues;
   enabled: EnabledFields;
   emailHint?: string;
+  household: { defaults: HouseholdValues; errors?: HouseholdFieldErrors };
 };
 
 type FieldProps = {
@@ -70,41 +73,15 @@ export function RecipientFields({
   defaults: v,
   enabled,
   emailHint,
+  household,
 }: RecipientFieldsProps) {
   return (
     <>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="full_name" className={labelClasses}>
-          Full name
-        </label>
-        <input
-          id="full_name"
-          name="full_name"
-          type="text"
-          required
-          maxLength={200}
-          defaultValue={v.full_name}
-          className={inputClasses}
-        />
-      </div>
-
-      {enabled.partner_name ? (
-        <Field
-          name="partner_name"
-          label="Partner name"
-          value={v.partner_name}
-          maxLength={200}
-        />
-      ) : null}
-      {enabled.kids_names ? (
-        <Field
-          name="kids_names"
-          label="Kids' names"
-          value={v.kids_names}
-          maxLength={500}
-          hint="Comma separated."
-        />
-      ) : null}
+      <HouseholdFields
+        defaults={household.defaults}
+        enabled={enabled}
+        errors={household.errors}
+      />
       <Field
         name="email"
         label="Email"

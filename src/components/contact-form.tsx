@@ -2,7 +2,9 @@
 
 import { useActionState } from "react";
 import { type ContactFormState } from "@/app/dashboard/contacts/actions";
+import { HouseholdFields } from "@/components/household-fields";
 import { type ContactFormValues } from "@/lib/validation/contact";
+import { type HouseholdValues } from "@/lib/validation/household";
 
 const initialState: ContactFormState = {};
 
@@ -16,6 +18,7 @@ type ContactFormProps = {
     formData: FormData,
   ) => Promise<ContactFormState>;
   defaults: ContactFormValues;
+  household: HouseholdValues;
   /** Present on the edit page; posted as a hidden field. */
   contactId?: string;
   submitLabel: string;
@@ -59,6 +62,7 @@ function Field({
 export function ContactForm({
   action,
   defaults,
+  household,
   contactId,
   submitLabel,
 }: ContactFormProps) {
@@ -89,34 +93,11 @@ export function ContactForm({
 
       {contactId ? <input type="hidden" name="id" value={contactId} /> : null}
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="full_name" className={labelClasses}>
-          Full name
-        </label>
-        <input
-          id="full_name"
-          name="full_name"
-          type="text"
-          required
-          maxLength={200}
-          defaultValue={v.full_name}
-          placeholder="Ada Lovelace"
-          className={inputClasses}
-        />
-      </div>
-
-      <Field
-        name="partner_name"
-        label="Partner name"
-        value={v.partner_name}
-        maxLength={200}
-      />
-      <Field
-        name="kids_names"
-        label="Kids' names"
-        value={v.kids_names}
-        maxLength={500}
-        hint="Comma separated."
+      <HouseholdFields
+        defaults={state.household ?? household}
+        enabled={{ partner_name: true, kids_names: true }}
+        errors={state.fieldErrors}
+        audience="owner"
       />
       <Field
         name="email"
