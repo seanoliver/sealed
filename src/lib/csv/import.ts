@@ -61,12 +61,13 @@ function resolveHeader(raw: string): ContactField | undefined {
   return FIELD_BY_HEADER.get(headerKey(raw));
 }
 
-const NAME_WORD = /^(?:\p{Lu}(?=.*\p{Ll})[\p{L}'’-]*\p{L}|\p{Lu}{2})$/u;
-const NOT_NAMES = new Set([
+const NAME_WORD = /^\p{Lu}(?=.*\p{Ll})[\p{L}'’-]*\p{L}$/u;
+const INITIALS = /^\p{Lu}{2}$/u;
+export const NOT_NAMES = new Set([
   ...["family", "fam", "kids", "kid", "children", "child", "baby", "guest", "guests", "friends", "the"],
   ...["mr", "mrs", "ms", "mx", "dr", "rev", "prof", "sir", "dame", "lady", "lord", "miss", "fr", "hon"],
   ...["aunt", "uncle", "grandma", "grandpa", "nana", "papa", "mom", "dad"],
-  ...["jr", "sr", "ii", "iii", "iv", "esq", "phd", "md"],
+  ...["jr", "sr", "ii", "iv", "esq", "phd", "md"],
   ...["van", "von", "de", "da", "del", "der", "la", "le", "di", "du", "st"],
 ]);
 
@@ -78,10 +79,10 @@ export function splitCouple(
   if (separator < 1) return undefined;
   const left = words.slice(0, separator);
   const right = words.slice(separator + 1);
-  const names = [...left, ...right];
-  if (!names.every((word) => NAME_WORD.test(word) && !NOT_NAMES.has(word.toLowerCase()))) {
-    return undefined;
-  }
+  const isName = (word: string, i: number) =>
+    (NAME_WORD.test(word) || (i === 0 && INITIALS.test(word))) &&
+    !NOT_NAMES.has(word.toLowerCase());
+  if (!left.every(isName) || !right.every(isName)) return undefined;
   if (left.length === 1 && right.length === 1) {
     return { full_name: left[0], partner_name: right[0] };
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CSV_ROW_LIMIT, parseContactsCsv, splitCouple } from "./import";
+import { CSV_ROW_LIMIT, NOT_NAMES, parseContactsCsv, splitCouple } from "./import";
 
 const CANONICAL_HEADER =
   "full_name,partner_name,kids_names,email,birthday,address_line1,address_line2,city,state_region,postal_code,country,notes";
@@ -256,6 +256,11 @@ describe("splitCouple", () => {
     "Bob & Bob Jr",
     "Ada & Will III",
     "Ada & Will II",
+    "Ada & Will VI",
+    "Ada & Will JD",
+    "Ada & Will DNR",
+    "Ada & DJS",
+    "Ada & Mr Byron",
     "Ada & Will IV",
     "Ada & Will Sr",
     "Ada & Will Esq",
@@ -282,4 +287,10 @@ describe("splitCouple", () => {
       expect(splitCouple(name)).toBeUndefined();
     },
   );
+
+  it.each([...NOT_NAMES])("leaves a name with %s alone in either position", (word) => {
+    const cap = word[0].toUpperCase() + word.slice(1);
+    expect(splitCouple(`Ada & ${cap} Byron`)).toBeUndefined();
+    expect(splitCouple(`${cap} Ada & Will Byron`)).toBeUndefined();
+  });
 });
