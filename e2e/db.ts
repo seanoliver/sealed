@@ -159,6 +159,13 @@ export async function getContactNamesByEmail(email: string): Promise<{
   };
 }
 
+export async function getContactEventDiffs(contactId: string): Promise<unknown[]> {
+  const rows = await db`
+    select diff from public.contact_events
+    where contact_id = ${contactId} order by created_at`;
+  return rows.map((r) => r.diff);
+}
+
 export async function setContactKidsByEmail(
   email: string,
   kids: { first: string; last?: string }[],

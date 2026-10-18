@@ -129,6 +129,11 @@ export function householdPrefill(
   };
 }
 
+export function isUntouchedPrefill(names: StoredNames, posted: HouseholdValues): boolean {
+  if (isSplit(names)) return false;
+  return JSON.stringify(posted) === JSON.stringify(householdPrefill(names));
+}
+
 export function lastNameKey(names: StoredNames): Person | undefined {
   return isSplit(names) && names.lastName !== null ? contactPerson(names) : undefined;
 }
