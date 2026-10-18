@@ -1,55 +1,104 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 
 /**
- * Cloudflare Turnstile widget, implicit-rendering mode.
+ * Cloudflare Turnstile widget, explicit-rendering mode.
  *
  * This is the ONE sanctioned external script in the app. CSP note for
  * Task 18: `script-src` must allow https://challenges.cloudflare.com and
  * `frame-src` must allow it too (the widget renders its challenge in an
  * iframe from that origin). Nothing else external is permitted.
  *
- * api.js scans the DOM for `.cf-turnstile` and injects a hidden
- * `cf-turnstile-response` input into the ENCLOSING <form> — always render
- * this component inside the form it protects.
+ * Render this component inside the form it protects: the widget adds a hidden
+ * `cf-turnstile-response` input to the enclosing <form>.
  */
 
-type TurnstileGlobal = { reset?: () => void };
+type TurnstileGlobal = {
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      callback: () => void;
+      "expired-callback": () => void;
+      "error-callback": () => void;
+    },
+  ) => string;
+  reset: (widgetId: string) => void;
+  remove: (widgetId: string) => void;
+};
 
-/**
- * Reset the widget after a failed submit. Turnstile responses are single-use
- * at siteverify: without a reset, a user who hits a validation error and
- * resubmits would post the already-consumed response and fail verification
- * forever. Pass the failed action state (a new object per result, so two
- * identical errors in a row still reset), or undefined while there is none.
- */
-export function useTurnstileResetOnError(failedState: object | undefined): void {
-  useEffect(() => {
-    if (!failedState) return;
-    const turnstile = (window as { turnstile?: TurnstileGlobal }).turnstile;
-    try {
-      turnstile?.reset?.();
-    } catch {
-      // Widget not rendered yet (script still loading) — nothing to reset.
-    }
-  }, [failedState]);
+function turnstileGlobal(): TurnstileGlobal | undefined {
+  return (window as { turnstile?: TurnstileGlobal }).turnstile;
 }
 
-export function TurnstileWidget() {
+/**
+ * Keep explicit rendering: implicit mode scans the page once, so a remounted form gets no widget.
+ * Pass the action state as `resetOn`; siteverify consumes each response.
+ */
+export function TurnstileWidget({
+  resetOn,
+  onTokenChange,
+}: {
+  resetOn?: unknown;
+  onTokenChange?: (hasToken: boolean) => void;
+} = {}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [widgetId, setWidgetId] = useState<string>();
+  const [failed, setFailed] = useState(false);
+  const initialResetOn = useRef(resetOn);
+  const onTokenChangeRef = useRef(onTokenChange);
+  useEffect(() => {
+    onTokenChangeRef.current = onTokenChange;
+  });
+
+  function renderWidget() {
+    const turnstile = turnstileGlobal();
+    const container = containerRef.current;
+    if (!turnstile || !container || container.childElementCount > 0) return;
+    setWidgetId(
+      turnstile.render(container, {
+        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
+        callback: () => {
+          setFailed(false);
+          onTokenChangeRef.current?.(true);
+        },
+        "expired-callback": () => onTokenChangeRef.current?.(false),
+        "error-callback": () => {
+          setFailed(true);
+          onTokenChangeRef.current?.(false);
+        },
+      }),
+    );
+  }
+
+  useEffect(() => {
+    if (!widgetId) return;
+    return () => turnstileGlobal()?.remove(widgetId);
+  }, [widgetId]);
+
+  useEffect(() => {
+    if (!widgetId || resetOn === initialResetOn.current) return;
+    onTokenChangeRef.current?.(false);
+    turnstileGlobal()?.reset(widgetId);
+  }, [resetOn, widgetId]);
+
   return (
     <>
       <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
-        async
-        defer
+        onReady={renderWidget}
+        onError={() => setFailed(true)}
       />
-      <div
-        className="cf-turnstile"
-        data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""}
-      />
+      <div ref={containerRef} />
+      {failed ? (
+        <p role="alert" className="text-sm text-destructive">
+          The verification check didn’t load. Allow challenges.cloudflare.com in
+          any content blocker, then reload the page.
+        </p>
+      ) : null}
     </>
   );
 }

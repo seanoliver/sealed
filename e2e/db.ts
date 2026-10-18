@@ -202,6 +202,43 @@ export async function seedEmailSend(opts: {
  */
 export async function cleanupUser(email: string): Promise<void> {
   await db`delete from auth.users where email = ${email}`;
+  await db`delete from private.waitlist where email = ${email.toLowerCase()}`;
+}
+
+export async function approveEmail(email: string): Promise<void> {
+  await db`select private.approve_waitlist_email(${email})`;
+}
+
+export async function seedPendingWaitlist(email: string): Promise<void> {
+  await db`
+    insert into private.waitlist (email, source)
+    values (${email.toLowerCase()}, 'email')
+    on conflict (email) do nothing`;
+}
+
+export async function seedApprovedWaitlist(
+  email: string,
+  opts: { invited: boolean },
+): Promise<void> {
+  await seedPendingWaitlist(email);
+  await approveEmail(email);
+  if (opts.invited) {
+    await db`select private.mark_waitlist_invitation_sent(${email})`;
+  }
+}
+
+export async function getWaitlistRow(
+  email: string,
+): Promise<{ status: string; source: string; invited: boolean } | null> {
+  const rows = await db`
+    select status, source, invitation_sent_at is not null as invited
+    from private.waitlist where email = ${email.toLowerCase()}`;
+  return (rows[0] as { status: string; source: string; invited: boolean }) ?? null;
+}
+
+export async function authUserExists(email: string): Promise<boolean> {
+  const rows = await db`select 1 from auth.users where email = ${email.toLowerCase()}`;
+  return rows.length > 0;
 }
 
 /**
@@ -211,4 +248,9 @@ export async function cleanupUser(email: string): Promise<void> {
  */
 export async function clearRateLimits(): Promise<void> {
   await db`delete from private.rate_limits`;
+}
+
+/** The suite shares one IP, and the entry form allows only 5 requests an hour per IP. */
+export async function clearRequestAccessLimits(): Promise<void> {
+  await db`delete from private.rate_limits where key like 'request-access%'`;
 }

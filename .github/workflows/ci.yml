@@ -110,6 +110,7 @@ jobs:
           sed -i "s|^NEXT_PUBLIC_SUPABASE_URL=.*|NEXT_PUBLIC_SUPABASE_URL=$API_URL|" .env.local
           sed -i "s|^NEXT_PUBLIC_SUPABASE_ANON_KEY=.*|NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY|" .env.local
           sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DB_URL|" .env.local
+          sed -i "s|^SUPABASE_SECRET_KEY=.*|SUPABASE_SECRET_KEY=$SECRET_KEY|" .env.local
       # reuseExistingServer is disabled under CI (playwright.config.ts), so
       # playwright boots `pnpm dev` itself and waits for :3000.
       - run: pnpm e2e

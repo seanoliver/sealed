@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { RequestAccess, type SignInError } from "@/components/request-access-form";
+import { RequestReceived } from "@/components/request-received";
 import { SealedWordmark } from "@/components/sealed-mark";
-import { buttonVariants } from "@/components/ui/button";
+import { currentUser } from "@/lib/auth";
 import { SITE_DESCRIPTION } from "@/lib/branding";
-import { cn } from "@/lib/utils";
+import { WAITLIST_REJECTION } from "@/lib/waitlist";
 
 export const metadata: Metadata = {
   title: { absolute: "Sealed" },
@@ -38,46 +40,69 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    requested?: string;
+    error?: string;
+    error_description?: string;
+  }>;
+}) {
+  if (await currentUser()) redirect("/dashboard");
+  const params = await searchParams;
+  // Supabase falls back to the Site URL when it cannot use redirect_to, so a
+  // waitlisted Google sign-up can arrive here instead of via /auth/confirm.
+  const googleRequested =
+    params.requested === "google" ||
+    params.error_description === WAITLIST_REJECTION;
+  // Not `=== "oauth"`: a Google error that fell back to the Site URL arrives as error=access_denied.
+  const signInError: SignInError | undefined =
+    params.error === "1" ? "link" : params.error ? "oauth" : undefined;
+
   return (
-    <main className="flex flex-1 items-center px-5 py-16 sm:px-8">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-12">
+    <main className="flex flex-1 items-center px-5 py-12 sm:px-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
         <SealedWordmark />
-        <div className="max-w-2xl">
-          <p className="mb-4 text-sm font-medium tracking-wide text-primary uppercase">
-            A simpler way to stay in touch
-          </p>
-          <h1 className="font-serif text-5xl leading-[1.05] text-balance text-foreground sm:text-7xl">
-            Mailing addresses, kept current by the people you love.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground">
-            Share one private link with friends and family. They add their own details, and your address book stays ready for cards and invitations.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/signup"
-              className={cn(
-                buttonVariants({ variant: "default", size: "lg" }),
-                "h-13 rounded-xl border-primary px-7 text-base font-semibold shadow-md shadow-primary/15 hover:-translate-y-0.5 hover:bg-primary/85 hover:shadow-lg hover:shadow-primary/20",
-              )}
-            >
-              Create your address book
-            </Link>
-            <Link
-              href="/login"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "h-13 rounded-xl px-6 text-base shadow-sm",
-              )}
-            >
-              Log in
-            </Link>
-          </div>
+        <div className="overflow-hidden rounded-3xl border bg-card shadow-xl shadow-foreground/5 md:grid md:grid-cols-2">
+          <section className="flex flex-col justify-between gap-10 bg-primary p-6 text-primary-foreground sm:p-11">
+            <p className="flex w-fit items-center gap-2 rounded-full border border-primary-foreground/35 px-3.5 py-1.5 text-sm font-medium">
+              <span className="size-2 rounded-full bg-primary-foreground" aria-hidden="true" />
+              Private beta · by invitation
+            </p>
+            <div className="flex flex-col gap-4">
+              <h1 className="font-serif text-4xl leading-[1.06] text-balance sm:text-5xl">
+                Holiday cards without <em>chasing addresses.</em>
+              </h1>
+              <p className="leading-relaxed text-pretty text-primary-foreground/85">
+                Send one link to everyone on your list. They fill in their own
+                details, and you get an address book that’s ready to print.
+              </p>
+            </div>
+            <p className="text-sm text-primary-foreground/75">
+              We’re sending invitations in small batches so every book gets attention.
+            </p>
+          </section>
+          <section aria-label="Request an invitation" className="p-6 sm:p-11">
+            {googleRequested ? (
+              <RequestReceived
+                footer={
+                  <Link
+                    href="/"
+                    className="w-fit text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                  >
+                    Back to sign in
+                  </Link>
+                }
+              >
+                You’re on the list, and your invitation will arrive at the
+                email on your Google account.
+              </RequestReceived>
+            ) : (
+              <RequestAccess error={signInError} />
+            )}
+          </section>
         </div>
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Lock className="size-4" aria-hidden="true" />
-          Private by design. Your contacts are never visible to one another.
-        </p>
       </div>
     </main>
   );

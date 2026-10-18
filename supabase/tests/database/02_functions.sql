@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(23);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'own@test.dev');
 update public.profiles set display_name = 'Sean O' where id = '00000000-0000-0000-0000-0000000000a1';
@@ -78,6 +78,30 @@ select results_eq('select count(*) from public.submissions', array[2::bigint],
 select ok(private.check_rate_limit('k1', 2, 60) and private.check_rate_limit('k1', 2, 60)
           and not private.check_rate_limit('k1', 2, 60),
   'third call within window is rejected');
+
+insert into private.rate_limits (key, count, window_start) values
+  ('stale', 1, now() - interval '49 hours'), ('recent', 1, now() - interval '47 hours');
+select private.check_rate_limit('k2', 1, 60);
+select results_eq($$select key from private.rate_limits where key in ('stale', 'recent')$$,
+  array['recent'], 'a rate-limit call deletes rows older than two days');
+
+select throws_ok($$select private.check_rate_limit('k3', 1, 172800)$$,
+  'rate-limit window must be under two days, because older rows are deleted',
+  'windows of two days or more are rejected');
+select ok(private.check_rate_limit('k4', 1, 172799), 'a window just under two days is accepted');
+select has_index('private', 'rate_limits', 'rate_limits_window_start_idx', 'rate_limits is indexed on window_start');
+
+insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000b1', 'mail@test.dev', '{"provider": "email"}', '{"full_name": "Chosen Name"}'),
+  ('00000000-0000-0000-0000-0000000000b2', 'goog@test.dev', '{"provider": "google"}', '{"full_name": "Google Name"}'),
+  ('00000000-0000-0000-0000-0000000000b3', 'name@test.dev', '{"provider": "google"}', '{"name": "Only Name"}'),
+  ('00000000-0000-0000-0000-0000000000b4', 'long@test.dev', '{"provider": "google"}', jsonb_build_object('full_name', repeat('x', 250))),
+  ('00000000-0000-0000-0000-0000000000b5', 'none@test.dev', '{}', '{"full_name": "No Provider"}'),
+  ('00000000-0000-0000-0000-0000000000b6', 'both@test.dev', '{"provider": "google"}', '{"full_name": "Full", "name": "Short"}');
+select results_eq($$select display_name from public.profiles
+    where id::text like '00000000-0000-0000-0000-0000000000b%' order by id$$,
+  array['', 'Google Name', 'Only Name', repeat('x', 200), '', 'Full'],
+  'only Google sign-ups keep a metadata name, from full_name or name, capped at 200');
 
 select * from finish();
 rollback;

@@ -6,7 +6,7 @@ import { contacts } from "@/lib/db/schema";
 
 /**
  * Downloads all of the caller's contacts as CSV. Unauthenticated requests are
- * redirected to /login by requireUser (redirect() works in route handlers).
+ * redirected to the entry page by requireUser (redirect() works in route handlers).
  * RLS scopes the select to the caller's own book.
  */
 export async function GET(): Promise<Response> {

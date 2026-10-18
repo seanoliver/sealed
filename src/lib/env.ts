@@ -18,6 +18,7 @@ const ALWAYS_REQUIRED = [
   "DATABASE_URL",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "RATE_LIMIT_SECRET",
 ] as const;
 
 /**
@@ -54,4 +55,10 @@ export function assertServerEnv(): void {
         "See .env.local.example for the full list.",
     );
   }
+}
+
+export function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
 }

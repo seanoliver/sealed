@@ -1,10 +1,11 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { headers } from "next/headers";
+import { requiredEnv } from "@/lib/env";
 
 /**
  * Client-IP helpers for the unauthenticated public surfaces (/u, /b).
- * The IP is used ONLY as a rate-limit bucket key, and only in hashed form —
+ * The IP is used ONLY as a rate-limit bucket key, and only in keyed-hash form —
  * raw IPs are never persisted or logged.
  */
 
@@ -24,11 +25,8 @@ export async function requestIp(): Promise<string> {
   return firstForwardedIp(h.get("x-forwarded-for"));
 }
 
-/**
- * Rate-limit key: `${prefix}:${sha256hex(ip)}`. Hashing keeps raw IPs out
- * of the private.rate_limits table (PII minimization) while still giving
- * per-client buckets.
- */
-export function hashedIpKey(prefix: string, ip: string): string {
-  return `${prefix}:${createHash("sha256").update(ip).digest("hex")}`;
+/** Keyed with RATE_LIMIT_SECRET so stored keys can't be reversed by hashing guessed emails or IPs. */
+export function hashedRateLimitKey(prefix: string, value: string): string {
+  const digest = createHmac("sha256", requiredEnv("RATE_LIMIT_SECRET")).update(value).digest("hex");
+  return `${prefix}:${digest}`;
 }

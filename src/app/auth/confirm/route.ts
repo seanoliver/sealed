@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { parseAuthFlow } from "@/lib/auth-flow";
 import { createClient } from "@/lib/supabase/server";
+import { WAITLIST_REJECTION } from "@/lib/waitlist";
 
 const otpTypeSchema = z.enum([
   "signup",
@@ -23,7 +23,13 @@ export async function GET(request: NextRequest) {
   const tokenHash = searchParams.get("token_hash");
   const type = otpTypeSchema.safeParse(searchParams.get("type"));
   const code = searchParams.get("code");
-  const flow = parseAuthFlow(searchParams.get("flow"));
+
+  if (searchParams.get("error_description") === WAITLIST_REJECTION) {
+    return NextResponse.redirect(new URL("/?requested=google", request.url));
+  }
+  if (searchParams.get("error")) {
+    return NextResponse.redirect(new URL("/?error=oauth", request.url));
+  }
 
   const supabase = await createClient();
 
@@ -37,10 +43,8 @@ export async function GET(request: NextRequest) {
     }
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
+    return NextResponse.redirect(new URL(error ? "/?error=oauth" : "/dashboard", request.url));
   }
 
-  return NextResponse.redirect(new URL(`/${flow}?error=1`, request.url));
+  return NextResponse.redirect(new URL("/?error=1", request.url));
 }

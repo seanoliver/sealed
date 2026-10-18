@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
+import { approveEmail, clearRequestAccessLimits } from "./db";
 
 /** Supabase's local Mailpit (config.toml [local_smtp], port 54324). */
 const MAILPIT_URL = "http://127.0.0.1:54324";
@@ -48,6 +49,15 @@ export async function fetchDeliveredMessage(
   return message;
 }
 
+export async function expectNoDeliveredMessage(email: string): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 3_000));
+  const query = encodeURIComponent(`to:${email}`);
+  const search = await fetch(`${MAILPIT_URL}/api/v1/search?query=${query}`);
+  expect(search.ok, "Mailpit search").toBe(true);
+  const { messages } = (await search.json()) as { messages: unknown[] };
+  expect(messages, `email delivered to ${email}`).toHaveLength(0);
+}
+
 /** Pull the real /auth/confirm magic link out of the rendered email body. */
 export async function fetchMagicLink(email: string): Promise<string> {
   const { Text } = await fetchDeliveredMessage(email);
@@ -56,18 +66,18 @@ export async function fetchMagicLink(email: string): Promise<string> {
   return link;
 }
 
-/**
- * Sign up (or in) through the REAL /login form: request a magic link, fetch
- * it from Mailpit, and visit it. Existing owners land on /dashboard; a new
- * owner is redirected into /onboarding.
- */
-export async function signupAndLogin(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
+export async function requestAccess(page: Page, email: string): Promise<void> {
+  await clearRequestAccessLimits();
+  await page.goto("/");
   await page.getByLabel("Email address").fill(email);
-  await page.getByRole("button", { name: "Send magic link" }).click();
-  await expect(
-    page.getByText("Check your email for a sign-in link."),
-  ).toBeVisible();
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Request access" }).click();
+  await expect(page.getByRole("heading", { name: "Your request is in" })).toBeVisible();
+}
+
+export async function signupAndLogin(page: Page, email: string): Promise<void> {
+  await approveEmail(email);
+  await requestAccess(page, email);
   const link = new URL(await fetchMagicLink(email));
   expect(link.origin).toBe(new URL(process.env.APP_URL!).origin);
   // Keep worktree/custom-port runs on the origin where this browser began.
@@ -130,4 +140,46 @@ export async function waitForTurnstile(page: Page): Promise<void> {
   await expect(
     page.locator('input[name="cf-turnstile-response"]'),
   ).toHaveValue(/.+/, { timeout: 20_000 });
+}
+
+export type TurnstileCalls = { renders: number; resets: number; removes: number };
+
+/** Replace the Cloudflare script with a stub that records render/reset/remove calls. */
+export async function stubTurnstile(
+  page: Page,
+  { failChallenge = false }: { failChallenge?: boolean } = {},
+): Promise<void> {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      body: `
+        window.__ts = { renders: [], resets: [], removes: [], solve: () => {} };
+        let next = 0;
+        window.turnstile = {
+          render(el, opts) {
+            const id = "stub-" + next++;
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "cf-turnstile-response";
+            input.value = "stub-token";
+            el.closest("form").appendChild(input);
+            window.__ts.renders.push(id);
+            window.__ts.solve = opts.callback;
+            if (${failChallenge}) opts["error-callback"]();
+            else opts.callback();
+            return id;
+          },
+          reset(id) { window.__ts.resets.push(id); },
+          remove(id) { window.__ts.removes.push(id); },
+        };
+      `,
+    }),
+  );
+}
+
+export async function calls(page: Page): Promise<TurnstileCalls> {
+  return page.evaluate(() => {
+    const ts = (window as unknown as { __ts: Record<keyof TurnstileCalls, unknown[]> }).__ts;
+    return { renders: ts.renders.length, resets: ts.resets.length, removes: ts.removes.length };
+  });
 }

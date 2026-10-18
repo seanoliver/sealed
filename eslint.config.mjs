@@ -2,10 +2,22 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+const dbAdminImport = {
+  group: ["**/db/admin"],
+  message:
+    "dbAdmin bypasses RLS. Use withRls from @/lib/db for owner-facing data access; dbAdmin is only for private.* SECURITY DEFINER calls, update_token minting, and webhook status updates (see the allowlisted paths in eslint.config.mjs).",
+};
+const supabaseAdminImport = {
+  group: ["**/supabase/admin"],
+  message:
+    "The Supabase admin client holds the secret key and bypasses Auth checks. Only src/app/admin/** may import it.",
+};
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // dbAdmin bypasses RLS: restrict imports of the admin module to the
+  // dbAdmin bypasses RLS and the Supabase admin client bypasses Auth:
+  // restrict imports of both admin modules to the
   // sanctioned call sites (private.* definer calls, token minting, webhook
   // status updates). Everything owner-facing goes through withRls.
   {
@@ -13,15 +25,7 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": [
         "error",
-        {
-          patterns: [
-            {
-              group: ["**/db/admin"],
-              message:
-                "dbAdmin bypasses RLS. Use withRls from @/lib/db for owner-facing data access; dbAdmin is only for private.* SECURITY DEFINER calls, update_token minting, and webhook status updates (see the allowlisted paths in eslint.config.mjs).",
-            },
-          ],
-        },
+        { patterns: [dbAdminImport, supabaseAdminImport] },
       ],
     },
   },
@@ -53,6 +57,15 @@ const eslintConfig = defineConfig([
       "src/app/dashboard/review/approve-race.test.ts",
       "src/app/dashboard/review/merge.test.ts",
     ],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [supabaseAdminImport] }],
+    },
+  },
+  // Sanctioned: the waitlist is private-schema only, and the invitation's
+  // sign-in link needs the Auth admin API; every call is gated by
+  // requireAdmin (ADMIN_EMAILS).
+  {
+    files: ["src/app/admin/**"],
     rules: { "no-restricted-imports": "off" },
   },
   // Override default ignores of eslint-config-next.

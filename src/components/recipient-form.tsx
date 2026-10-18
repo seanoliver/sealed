@@ -5,10 +5,7 @@ import {
   RecipientFields,
   type EnabledFields,
 } from "@/components/recipient-fields";
-import {
-  TurnstileWidget,
-  useTurnstileResetOnError,
-} from "@/components/turnstile-widget";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import {
   type HouseholdFieldErrors,
@@ -61,13 +58,6 @@ export function RecipientForm({
   household,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
-  // Turnstile responses are single-use: refresh the widget after any error
-  // so the user's retry carries a fresh response.
-  useTurnstileResetOnError(
-    state.error !== undefined || state.fieldErrors !== undefined
-      ? state
-      : undefined,
-  );
   // React 19 resets uncontrolled inputs to defaultValue after a form action
   // completes; on error the action echoes the submitted values back so the
   // reset restores what the user typed instead of wiping the form.
@@ -94,7 +84,7 @@ export function RecipientForm({
         }}
       />
 
-      <TurnstileWidget />
+      <TurnstileWidget resetOn={state} />
 
       <button
         type="submit"

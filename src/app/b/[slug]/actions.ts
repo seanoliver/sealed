@@ -19,7 +19,7 @@ import {
   SLUG_SHAPE,
   type PublicBook,
 } from "@/lib/queries/public-book";
-import { hashedIpKey, requestIp } from "@/lib/request-ip";
+import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { readTokenDetails, tokenDetailSchema } from "@/lib/validation/contact";
 import {
@@ -92,7 +92,7 @@ export async function submitToBook(
   //     CLOSED on limiter outage.
   let allowed = false;
   try {
-    allowed = await checkRateLimit(hashedIpKey("permalink-submit", ip), 5, 3600);
+    allowed = await checkRateLimit(hashedRateLimitKey("permalink-submit", ip), 5, 3600);
   } catch (err) {
     logDbError("[pb] [submitToBook] ip rate-limit check failed", err);
     return { error: GENERIC_ERROR, ...echo };

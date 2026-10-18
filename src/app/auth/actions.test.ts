@@ -1,0 +1,207 @@
+import { createHmac } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { checkRateLimit } from "@/lib/db/rate-limit";
+import { hashedRateLimitKey } from "@/lib/request-ip";
+import { createClient } from "@/lib/supabase/server";
+import { verifyTurnstile } from "@/lib/turnstile";
+import { WAITLIST_REJECTION } from "@/lib/waitlist";
+import { redirect } from "next/navigation";
+import { continueWithGoogle, requestAccess, type RequestAccessState } from "./actions";
+
+vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: vi.fn() }));
+vi.mock("@/lib/request-ip", () => ({
+  requestIp: vi.fn(async () => "203.0.113.7"),
+  hashedRateLimitKey: vi.fn((prefix: string, value: string) => `${prefix}:${value}`),
+}));
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("@/lib/request-origin", () => ({
+  currentRequestOrigin: vi.fn(async () => "https://app.example"),
+}));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+
+const signInWithOtp = vi.fn();
+const idle: RequestAccessState = { status: "idle" };
+
+function form(email: string): FormData {
+  const data = new FormData();
+  data.set("email", email);
+  data.set("cf-turnstile-response", "token");
+  return data;
+}
+
+describe("requestAccess", () => {
+  beforeEach(() => {
+    vi.stubEnv("APP_URL", "https://app.example");
+    vi.mocked(checkRateLimit).mockResolvedValue(true);
+    vi.mocked(verifyTurnstile).mockResolvedValue(true);
+    signInWithOtp.mockResolvedValue({ error: null });
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { signInWithOtp },
+    } as unknown as Awaited<ReturnType<typeof createClient>>);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("sends a magic link to a valid email", async () => {
+    await expect(requestAccess(idle, form(" a@example.test "))).resolves.toEqual({
+      status: "sent",
+      email: "a@example.test",
+    });
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      email: "a@example.test",
+      options: { emailRedirectTo: "https://app.example/auth/confirm?flow=login" },
+    });
+  });
+
+  it("rate-limits on a keyed hash of the email, never the raw address", async () => {
+    vi.stubEnv("RATE_LIMIT_SECRET", "test-secret");
+    const actual = await vi.importActual<typeof import("@/lib/request-ip")>("@/lib/request-ip");
+    vi.mocked(hashedRateLimitKey)
+      .mockImplementationOnce(actual.hashedRateLimitKey)
+      .mockImplementationOnce(actual.hashedRateLimitKey);
+    await requestAccess(idle, form("A@example.test"));
+    const digest = createHmac("sha256", "test-secret").update("a@example.test").digest("hex");
+    const keys = vi.mocked(checkRateLimit).mock.calls.map(([key]) => key);
+    expect(keys).toContain(`request-access-email:${digest}`);
+    expect(keys.join()).not.toContain("example.test");
+  });
+
+  it("reports waitlisted emails as sent without logging", async () => {
+    signInWithOtp.mockResolvedValue({
+      error: { name: "AuthApiError", message: WAITLIST_REJECTION, status: 403 },
+    });
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "sent",
+      email: "a@example.test",
+    });
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      { message: "email rate limit exceeded", status: 429, code: "over_email_send_rate_limit" },
+      "[ra] [requestAccess] signInWithOtp failed: AuthApiError 429 over_email_send_rate_limit",
+    ],
+    [
+      { message: "Database error", status: 500 },
+      "[ra] [requestAccess] signInWithOtp failed: AuthApiError 500",
+    ],
+  ])("logs a failed send as an error and still reports it as sent", async (error, logged) => {
+    signInWithOtp.mockResolvedValue({ error: { name: "AuthApiError", ...error } });
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "sent",
+      email: "a@example.test",
+    });
+    expect(console.error).toHaveBeenCalledWith(logged);
+  });
+
+  it("echoes the email exactly as typed", async () => {
+    const data = form(" A@Example.test ");
+    data.delete("cf-turnstile-response");
+    await expect(requestAccess(idle, data)).resolves.toMatchObject({ email: " A@Example.test " });
+  });
+
+  it("rejects an invalid email before any other check", async () => {
+    await expect(requestAccess(idle, form("not-an-email"))).resolves.toEqual({
+      status: "error",
+      message: "Enter a valid email address.",
+      email: "not-an-email",
+    });
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("limits per email after Turnstile", async () => {
+    vi.mocked(checkRateLimit).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "error",
+      message: "Too many requests. Please try again later.",
+      email: "a@example.test",
+    });
+    expect(checkRateLimit).toHaveBeenNthCalledWith(1, "request-access:203.0.113.7", 5, 3600);
+    expect(checkRateLimit).toHaveBeenNthCalledWith(2, "request-access-email:a@example.test", 3, 3600);
+    expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it("keys the per-email limit on the lowercased email", async () => {
+    await requestAccess(idle, form("A@Example.test"));
+    expect(checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      hashedRateLimitKey("request-access-email", "a@example.test"),
+      3,
+      3600,
+    );
+  });
+
+  it("rejects a submit with no Turnstile response before charging any limit", async () => {
+    const data = form("a@example.test");
+    data.delete("cf-turnstile-response");
+    await expect(requestAccess(idle, data)).resolves.toEqual({
+      status: "error",
+      message: "Verification failed. Please try again.",
+      email: "a@example.test",
+    });
+    expect(checkRateLimit).not.toHaveBeenCalled();
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+  });
+
+  it("stops at the client limit without checking Turnstile or the email limit", async () => {
+    vi.mocked(checkRateLimit).mockResolvedValueOnce(false);
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "error",
+      message: "Too many requests. Please try again later.",
+      email: "a@example.test",
+    });
+    expect(checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the limiter is unavailable", async () => {
+    vi.mocked(checkRateLimit).mockRejectedValue(new Error("connection refused"));
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "error",
+      message: "Something went wrong. Please try again.",
+      email: "a@example.test",
+    });
+    expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it("requires a Turnstile pass before touching the email's limit", async () => {
+    vi.mocked(verifyTurnstile).mockResolvedValue(false);
+    await expect(requestAccess(idle, form("a@example.test"))).resolves.toEqual({
+      status: "error",
+      message: "Verification failed. Please try again.",
+      email: "a@example.test",
+    });
+    expect(checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe("continueWithGoogle", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(redirect).mockReset();
+  });
+
+  it.each([
+    ["returns an error", { data: { url: "https://accounts.google.com/x" }, error: { message: "boom" } }],
+    ["returns no OAuth URL", { data: { url: null }, error: null }],
+  ])("redirects to /?error=oauth when Supabase %s", async (_label, result) => {
+    const signInWithOAuth = vi.fn().mockResolvedValue(result);
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { signInWithOAuth },
+    } as unknown as Awaited<ReturnType<typeof createClient>>);
+    vi.mocked(redirect).mockImplementation(() => {
+      throw new Error("NEXT_REDIRECT");
+    });
+
+    await expect(continueWithGoogle()).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith("/?error=oauth");
+  });
+});

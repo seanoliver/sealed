@@ -10,7 +10,7 @@ import {
   SLUG_SHAPE,
   type PublicBook,
 } from "@/lib/queries/public-book";
-import { hashedIpKey, requestIp } from "@/lib/request-ip";
+import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { BLANK_HOUSEHOLD_VALUES } from "@/lib/validation/household";
 import { Notice } from "../../u/notice";
 import { submitToBook } from "./actions";
@@ -48,7 +48,7 @@ export default async function PublicBookPage({
   const ip = await requestIp();
   let allowed = false;
   try {
-    allowed = await checkRateLimit(hashedIpKey("permalink-view", ip), 60, 3600);
+    allowed = await checkRateLimit(hashedRateLimitKey("permalink-view", ip), 60, 3600);
   } catch (err) {
     logDbError("[pb] [PublicBookPage] rate-limit check failed", err);
   }
