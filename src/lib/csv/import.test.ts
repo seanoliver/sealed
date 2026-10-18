@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CSV_ROW_LIMIT, parseContactsCsv } from "./import";
+import { CSV_ROW_LIMIT, parseContactsCsv, splitCouple } from "./import";
 
 const CANONICAL_HEADER =
   "full_name,partner_name,kids_names,email,birthday,address_line1,address_line2,city,state_region,postal_code,country,notes";
@@ -81,6 +81,37 @@ describe("parseContactsCsv", () => {
         partner_name: "William",
         postal_code: "94103",
       });
+    });
+  });
+
+  it("matches spreadsheet headers with spaces, like a holiday card list", () => {
+    const csv =
+      "Name on Envelope,Address 1,Address 2,Postal Code,Email\n" +
+      "Ada Byron,1 Main St,Unit 4,94103,ada@example.com";
+    const { valid, errors } = parseContactsCsv(csv);
+    expect(errors).toEqual([]);
+    expect(valid[0]).toEqual({
+      full_name: "Ada Byron",
+      address_line1: "1 Main St",
+      address_line2: "Unit 4",
+      postal_code: "94103",
+      email: "ada@example.com",
+    });
+  });
+
+  it("splits a two-person name into the contact and partner", () => {
+    const csv = "name,email\nAda & Will Byron,ada@example.com";
+    expect(parseContactsCsv(csv).valid[0]).toMatchObject({
+      full_name: "Ada Byron",
+      partner_name: "Will Byron",
+    });
+  });
+
+  it("keeps a two-person name whole when the partner column has a value", () => {
+    const csv = "name,partner\nAda & Will Byron,Will";
+    expect(parseContactsCsv(csv).valid[0]).toMatchObject({
+      full_name: "Ada & Will Byron",
+      partner_name: "Will",
     });
   });
 
@@ -167,4 +198,23 @@ describe("parseContactsCsv", () => {
       { full_name: "Lovelace, Ada", notes: "line one\nline two, with comma" },
     ]);
   });
+});
+
+describe("splitCouple", () => {
+  it.each([
+    ["Ada & Will Byron", "Ada Byron", "Will Byron"],
+    ["Ada Byron & Will King", "Ada Byron", "Will King"],
+    ["Ada and Will Byron", "Ada Byron", "Will Byron"],
+    ["Ada & Will", "Ada", "Will"],
+    ["Ada Mary Byron & Will King", "Ada Mary Byron", "Will King"],
+  ])("splits %s", (name, fullName, partnerName) => {
+    expect(splitCouple(name)).toEqual({ full_name: fullName, partner_name: partnerName });
+  });
+
+  it.each(["Ada Byron", "Ada", "The Byron Family", "Ada & Will & Ida Byron", "Sandy Anderson"])(
+    "leaves %s alone",
+    (name) => {
+      expect(splitCouple(name)).toBeUndefined();
+    },
+  );
 });

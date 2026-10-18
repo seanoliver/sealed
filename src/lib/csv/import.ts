@@ -26,6 +26,8 @@ export type ParseContactsCsvResult = {
 /** Common export-header spellings → canonical contact fields. */
 const HEADER_ALIASES: Record<string, ContactField> = {
   name: "full_name",
+  name_on_envelope: "full_name",
+  envelope_name: "full_name",
   partner: "partner_name",
   spouse: "partner_name",
   kids: "kids_names",
@@ -48,12 +50,30 @@ const HEADER_ALIASES: Record<string, ContactField> = {
   note: "notes",
 };
 
-const CANONICAL_FIELDS = new Set<string>(CONTACT_FIELDS);
+const headerKey = (header: string) => header.trim().toLowerCase().replace(/[\s_-]+/g, "");
+
+const FIELD_BY_HEADER = new Map<string, ContactField>([
+  ...Object.entries(HEADER_ALIASES).map(([alias, field]) => [headerKey(alias), field] as const),
+  ...CONTACT_FIELDS.map((field) => [headerKey(field), field] as const),
+]);
 
 function resolveHeader(raw: string): ContactField | undefined {
-  const header = raw.trim().toLowerCase();
-  if (CANONICAL_FIELDS.has(header)) return header as ContactField;
-  return HEADER_ALIASES[header];
+  return FIELD_BY_HEADER.get(headerKey(raw));
+}
+
+const COUPLE = /^(\S.*?)\s+(?:&|and)\s+(\S.*)$/i;
+
+export function splitCouple(
+  name: string,
+): { full_name: string; partner_name: string } | undefined {
+  const match = name.trim().match(COUPLE);
+  if (!match || /\bfamily\b/i.test(name)) return undefined;
+  const [, left, right] = match;
+  if (COUPLE.test(right)) return undefined;
+  const rightWords = right.split(/\s+/);
+  const fullName =
+    !/\s/.test(left) && rightWords.length > 1 ? `${left} ${rightWords.at(-1)}` : left;
+  return { full_name: fullName, partner_name: right };
 }
 
 const EXPECTED_HEADERS_MESSAGE = `No recognizable columns found. Expected headers such as: ${CONTACT_FIELDS.join(", ")}.`;
@@ -61,8 +81,8 @@ const EXPECTED_HEADERS_MESSAGE = `No recognizable columns found. Expected header
 /**
  * Parses CSV text into contact rows validated with `contactSchema`.
  *
- * - Headers are matched case-insensitively with surrounding whitespace
- *   ignored, and common aliases (name, spouse, zip, dob, ...) are accepted.
+ * - Headers match case-insensitively ignoring spaces, underscores and hyphens,
+ *   and common aliases (name, spouse, zip, dob, ...) are accepted.
  * - Unknown columns are ignored; a file with no recognizable header at all
  *   yields a single file-level error.
  * - At most {@link CSV_ROW_LIMIT} data rows are parsed; anything beyond that
@@ -105,6 +125,10 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
       // Short rows leave trailing columns undefined; omit those keys so
       // contactSchema's optionals apply instead of failing on undefined.
       if (typeof value === "string") candidate[target] = value;
+    }
+    if (!candidate.partner_name?.trim()) {
+      const couple = splitCouple(candidate.full_name ?? "");
+      if (couple) Object.assign(candidate, couple);
     }
 
     const result = contactSchema.safeParse(candidate);
