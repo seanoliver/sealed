@@ -129,17 +129,9 @@ export function householdPrefill(
   };
 }
 
-export function isUntouchedPrefill(
-  names: StoredNames,
-  posted: HouseholdValues,
-  kidsLimit: number,
-): boolean {
+export function isUntouchedPrefill(names: StoredNames, posted: HouseholdValues): boolean {
   if (isSplit(names)) return false;
-  const prefill = householdPrefill(names);
-  return (
-    JSON.stringify(posted) ===
-    JSON.stringify({ ...prefill, kids: prefill.kids.slice(0, kidsLimit) })
-  );
+  return JSON.stringify(posted) === JSON.stringify(householdPrefill(names));
 }
 
 export function lastNameKey(names: StoredNames): Person | undefined {

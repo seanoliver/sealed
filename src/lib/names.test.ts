@@ -242,27 +242,44 @@ describe("isUntouchedPrefill", () => {
   const legacy = {
     fullName: "Jen Holloway",
     partnerName: "Mark",
-    kidsNames: "A, B, C, D, E, F, G, H, I, J, K, L",
+    kidsNames: "Ada, Bo",
     firstName: null,
     lastName: null,
     partnerFirstName: null,
     partnerLastName: null,
     kids: null,
   };
+  const prefill = householdPrefill(legacy);
 
-  it("matches the prefill an unsplit contact was shown, with kids capped like the form reader", () => {
-    const prefill = householdPrefill(legacy);
-    expect(prefill.kids).toHaveLength(12);
-    expect(isUntouchedPrefill(legacy, { ...prefill, kids: prefill.kids.slice(0, 11) }, 11)).toBe(true);
+  it("matches the prefill an unsplit contact was shown", () => {
+    expect(isUntouchedPrefill(legacy, prefill)).toBe(true);
   });
 
-  it("is false once any name is edited", () => {
-    const prefill = householdPrefill(legacy);
-    expect(isUntouchedPrefill(legacy, { ...prefill, last_name: "Hollow" }, 11)).toBe(false);
+  it("matches a prefill with more kids than the form allows", () => {
+    const many = { ...legacy, kidsNames: "A, B, C, D, E, F, G, H, I, J, K, L" };
+    expect(isUntouchedPrefill(many, householdPrefill(many))).toBe(true);
+  });
+
+  it.each([
+    ["first name", { ...prefill, first_name: "Jenny" }],
+    ["last name", { ...prefill, last_name: "Hollow" }],
+    ["partner", { ...prefill, partner: { first: "Marc", last: "Holloway" } }],
+    ["removed partner", { ...prefill, partner: null }],
+    ["kid", { ...prefill, kids: [prefill.kids[0], { first: "Bea", last: "Holloway" }] }],
+    ["removed kid", { ...prefill, kids: prefill.kids.slice(0, 1) }],
+  ])("is false once the %s is edited", (_, posted) => {
+    expect(isUntouchedPrefill(legacy, posted)).toBe(false);
+  });
+
+  it("is false when a kid past the eleventh is edited", () => {
+    const many = { ...legacy, kidsNames: "A, B, C, D, E, F, G, H, I, J, K, L" };
+    const shown = householdPrefill(many);
+    const kids = shown.kids.map((kid, i) => (i === 11 ? { ...kid, first: "Z" } : kid));
+    expect(isUntouchedPrefill(many, { ...shown, kids })).toBe(false);
   });
 
   it("is false for a split contact", () => {
     const split = { ...legacy, firstName: "Jen", lastName: "Holloway" };
-    expect(isUntouchedPrefill(split, householdPrefill(split), 11)).toBe(false);
+    expect(isUntouchedPrefill(split, householdPrefill(split))).toBe(false);
   });
 });

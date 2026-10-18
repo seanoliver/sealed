@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   cleanupUser,
   deleteContact,
+  getContactEventDiffs,
   getContactNamesByEmail,
   getContactRow,
   getUserIdByEmail,
@@ -980,6 +981,62 @@ test("the contact form saves a detail on an unsplit contact it cannot split", as
     fullName: "Mona Many",
     firstName: null,
     kidsNames,
+  });
+  expect((await getContactRow(id)).city).toBe("Oslo");
+  expect(await getContactEventDiffs(id)).toEqual([
+    { before: { city: null }, after: { city: "Oslo" } },
+  ]);
+});
+
+test("the contact form still checks names edited on an unsplit contact", async () => {
+  const kidsNames = "A, B, C, D, E, F, G, H, I, J, K, L";
+  const id = await seedContact({
+    bookId,
+    fullName: "Nils Many",
+    email: "nils@example.test",
+    kidsNames,
+  });
+  await page.goto(`/dashboard/contacts/${id}`);
+  await page.getByRole("button", { name: "Remove child 12" }).click();
+  await page.locator("#city").fill("Oslo");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Add up to 10 children.")).toBeVisible();
+
+  expect(await getContactNamesByEmail("nils@example.test")).toMatchObject({
+    firstName: null,
+    kidsNames,
+  });
+  expect((await getContactRow(id)).city).toBeNull();
+});
+
+test("the contact form rejects a bad detail on an unsplit contact", async () => {
+  const id = await seedContact({
+    bookId,
+    fullName: "Olga Many",
+    email: "olga@example.test",
+    kidsNames: "A, B, C, D, E, F, G, H, I, J, K, L",
+  });
+  await page.goto(`/dashboard/contacts/${id}`);
+  await page.locator("#email").fill("a@b");
+  await page.locator("#city").fill("Oslo");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+
+  expect((await getContactRow(id)).city).toBeNull();
+  expect(await getContactEventDiffs(id)).toEqual([]);
+});
+
+test("the contact form saves a detail on an unsplit contact with a long name", async () => {
+  const fullName = `Pia ${"L".repeat(90)}`;
+  const id = await seedContact({ bookId, fullName, email: "pia@example.test" });
+  await page.goto(`/dashboard/contacts/${id}`);
+  await page.locator("#city").fill("Oslo");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+
+  expect(await getContactNamesByEmail("pia@example.test")).toMatchObject({
+    fullName,
+    firstName: null,
   });
   expect((await getContactRow(id)).city).toBe("Oslo");
 });

@@ -21,7 +21,6 @@ import {
 } from "@/lib/validation/contact";
 import {
   householdSchema,
-  KIDS_MAX,
   parseHouseholdForm,
   readHouseholdValues,
   type HouseholdFieldErrors,
@@ -255,7 +254,10 @@ export async function updateContact(
         .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
         .limit(1);
       if (!existing) return undefined;
-      const keepNames = isUntouchedPrefill(storedNames(existing), echo.household, KIDS_MAX + 1);
+      const keepNames = isUntouchedPrefill(
+        storedNames(existing),
+        readHouseholdValues(formData, { kidsLimit: Infinity }),
+      );
       if (keepNames) {
         const details = contactDetailsSchema.safeParse(echo.values);
         if (!details.success) {

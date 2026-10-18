@@ -92,7 +92,10 @@ export type HouseholdFormResult =
 const text = (value: FormDataEntryValue | null) =>
   typeof value === "string" ? value : "";
 
-export function readHouseholdValues(formData: FormData): HouseholdValues {
+export function readHouseholdValues(
+  formData: FormData,
+  { kidsLimit = KIDS_MAX + 1 }: { kidsLimit?: number } = {},
+): HouseholdValues {
   const partnerFirst = formData.get("partner_first_name");
   const kidLasts = formData.getAll("kid_last").map(text);
   return {
@@ -105,7 +108,7 @@ export function readHouseholdValues(formData: FormData): HouseholdValues {
     kids: formData.has("kids_section")
       ? formData
           .getAll("kid_first")
-          .slice(0, KIDS_MAX + 1)
+          .slice(0, kidsLimit)
           .map((first, i) => ({ first: text(first), last: kidLasts[i] ?? "" }))
       : [],
   };
