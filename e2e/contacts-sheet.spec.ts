@@ -704,7 +704,12 @@ test("the Name cell shows one line for the household", async () => {
       kids: [{ first: "Asha", last: "Okafor" }],
     },
   });
-  await seedContact({ bookId, fullName: "Cher", partnerName: "Sonny" });
+  await seedContact({
+    bookId,
+    fullName: "Cher",
+    partnerName: "Sonny",
+    email: "cher@example.test",
+  });
   await openDashboard();
 
   await expect(
@@ -776,7 +781,7 @@ test("Esc twice from the household panel cancels the row", async () => {
   await expect(bodyRow("Jen & Mark Holloway")).toBeVisible();
 });
 
-test("splitting a legacy row waits for the required names", async () => {
+test("a legacy row saves as one name, then takes a last name", async () => {
   await openDashboard();
   await bodyRow("Cher & Sonny").locator("td").nth(3).dblclick();
   await page.keyboard.press("Enter");
@@ -788,12 +793,19 @@ test("splitting a legacy row waits for the required names", async () => {
   const last = panel.getByRole("textbox", { name: "Contact last name" });
   await expect(last).toHaveValue("");
   await last.press("Enter");
-  await expect(panel.getByText("Add a last name.")).toBeVisible();
-  await expect(last).toBeFocused();
+  await expect(panel).toHaveCount(0);
+  await expect(table().getByRole("textbox")).toHaveCount(0);
+  await expect(bodyRow("Cher & Sonny")).not.toContainText("not split yet");
+  expect(await getContactNamesByEmail("cher@example.test")).toMatchObject({
+    fullName: "Cher",
+    lastName: null,
+  });
 
-  await last.fill("Sarkisian");
-  await expect(panel.getByText("Add a last name.")).toHaveCount(0);
-  await last.press("Enter");
+  await bodyRow("Cher & Sonny").locator("td").nth(3).dblclick();
+  await page.keyboard.press("Enter");
+  await expect(panel).not.toContainText("Saved as one name");
+  await panel.getByRole("textbox", { name: "Contact last name" }).fill("Sarkisian");
+  await panel.getByRole("textbox", { name: "Contact last name" }).press("Enter");
   await expect(panel).toHaveCount(0);
   await expect(table().getByRole("textbox")).toHaveCount(0);
   const row = bodyRow("Cher & Sonny Sarkisian");
@@ -829,7 +841,13 @@ test("a household edited elsewhere since the page loaded is not overwritten", as
     { first: "Ivy", last: "Holloway" },
   ];
   await setContactKidsByEmail("jen@example.test", updated);
-  await panel.getByRole("textbox", { name: "Partner last name" }).press("Enter");
+  await page.keyboard.press("Escape");
+  const search = page.getByRole("searchbox", { name: "Search contacts" });
+  await search.fill("Jen");
+  await search.press("Enter");
+  await expect(page).toHaveURL(/q=Jen/);
+  await expect(table().locator("tbody tr")).toHaveCount(1);
+  await table().getByRole("button", { name: "Save" }).click();
 
   await expect(
     page.getByRole("alert").filter({ hasText: "names changed since you opened them" }),
@@ -838,8 +856,6 @@ test("a household edited elsewhere since the page loaded is not overwritten", as
     partnerLastName: "Holloway",
     kidsNames: "Zoe, Maxine, Ivy",
   });
-  await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
   await table().getByRole("button", { name: "Cancel" }).click();
   await expect(table().getByRole("textbox")).toHaveCount(0);
 });

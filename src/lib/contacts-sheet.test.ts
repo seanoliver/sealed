@@ -275,7 +275,6 @@ describe("household drafts", () => {
     ).toEqual({
       ok: false,
       errors: {
-        last_name: "Add a last name.",
         partner_first_name: "Add a first name, or remove this row.",
       },
     });

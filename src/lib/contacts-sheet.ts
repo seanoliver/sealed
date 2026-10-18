@@ -5,7 +5,7 @@ import {
   householdPrefill,
   kidsCount,
   kidsSummary,
-  lastNameKey,
+  isSplit,
   type StoredNames,
 } from "@/lib/names";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
@@ -168,7 +168,7 @@ export function sheetName(names: StoredNames): {
   return {
     line: householdLine(names),
     kids: kidsSummary(kidsCount(names)),
-    split: lastNameKey(names) !== undefined,
+    split: isSplit(names),
   };
 }
 
@@ -210,7 +210,7 @@ export function draftToValues(draft: HouseholdDraft): HouseholdValues {
 
 export function householdEdited(names: StoredNames, draft: HouseholdDraft): boolean {
   // An unsplit contact's draft is a proposed split, so it always saves.
-  if (lastNameKey(names) === undefined) return true;
+  if (!isSplit(names)) return true;
   return (
     JSON.stringify(draftToValues(draft)) !==
     JSON.stringify(draftToValues(draftFromNames(names)))

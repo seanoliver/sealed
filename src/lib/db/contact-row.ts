@@ -24,7 +24,7 @@ export function contactInputToRow(d: ContactInput) {
 export function householdToRow(h: HouseholdInput) {
   return {
     firstName: h.first_name,
-    lastName: h.last_name,
+    lastName: h.last_name ?? null,
     fullName: formatPerson({ first: h.first_name, last: h.last_name }) ?? h.first_name,
     partnerFirstName: h.partner_first_name ?? null,
     partnerLastName: h.partner_last_name ?? null,

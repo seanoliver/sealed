@@ -417,7 +417,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
   function saveEdit(
     row: SheetTableRow,
     draft: Partial<SheetValues>,
-    household: HouseholdDraft | null,
+    household: { draft: HouseholdDraft; base: StoredNames } | null,
   ) {
     if (savingRef.current) return;
     if (sendingRef.current) {
@@ -429,8 +429,8 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
     }
     const patch = changedValues(row.original.values, draft);
     const names =
-      household && householdEdited(row.original.names, household)
-        ? draftToValues(household)
+      household && householdEdited(household.base, household.draft)
+        ? draftToValues(household.draft)
         : null;
     if (Object.keys(patch).length === 0 && names === null) {
       finishEdit(row.id);
@@ -452,7 +452,7 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
           await patchContact(row.id, {
             values: patch,
             household: names ? householdPatchInput(names) : undefined,
-            namesBase: names ? row.original.names : undefined,
+            namesBase: names && household ? household.base : undefined,
           })
         ).error;
       } catch {
@@ -1163,12 +1163,16 @@ function EditingRow({
 }: RowProps & {
   isSaving: boolean;
   canCancel: boolean;
-  onSave: (draft: Partial<SheetValues>, household: HouseholdDraft | null) => void;
+  onSave: (
+    draft: Partial<SheetValues>,
+    household: { draft: HouseholdDraft; base: StoredNames } | null,
+  ) => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<Partial<SheetValues>>({});
   // Null until the panel first opens; closing it keeps the draft.
   const [household, setHousehold] = useState<HouseholdDraft | null>(null);
+  const [householdBase, setHouseholdBase] = useState<StoredNames | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [householdErrors, setHouseholdErrors] =
     useState<HouseholdFieldErrors | null>(null);
@@ -1178,7 +1182,8 @@ function EditingRow({
   )?.column.id;
 
   function save() {
-    if (household && householdEdited(names, household)) {
+    const base = householdBase ?? names;
+    if (household && householdEdited(base, household)) {
       const result = validateHousehold(draftToValues(household));
       if (!result.ok) {
         setHouseholdErrors(result.errors);
@@ -1186,7 +1191,7 @@ function EditingRow({
         return;
       }
     }
-    onSave(draft, household);
+    onSave(draft, household && { draft: household, base });
   }
 
   function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -1227,7 +1232,11 @@ function EditingRow({
               <HouseholdNameCell
                 names={names}
                 draft={household}
-                onOpen={() => setHousehold((current) => current ?? draftFromNames(names))}
+                onOpen={() => {
+                  if (household) return;
+                  setHousehold(draftFromNames(names));
+                  setHouseholdBase(names);
+                }}
                 onDraftChange={(next) => {
                   setHousehold(next);
                   if (householdErrors) {

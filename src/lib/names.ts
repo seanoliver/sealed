@@ -63,8 +63,7 @@ export type StoredNames = {
 
 type Person = { first: string; last: string };
 
-const isSplit = (names: StoredNames) =>
-  names.firstName !== null && names.lastName !== null;
+export const isSplit = (names: StoredNames) => names.firstName !== null;
 
 function contactPerson(names: StoredNames): Person {
   return isSplit(names)
@@ -131,7 +130,7 @@ export function householdPrefill(
 }
 
 export function lastNameKey(names: StoredNames): Person | undefined {
-  return isSplit(names) ? contactPerson(names) : undefined;
+  return isSplit(names) && names.lastName !== null ? contactPerson(names) : undefined;
 }
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base" });

@@ -210,9 +210,9 @@ test("changing the slug requires acknowledging the link-break warning", async ()
 test("adds a contact via the form", async () => {
   await page.getByRole("link", { name: "Add contact" }).click();
   await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
-  await page.locator("#first_name").fill("Ada");
   await page.getByRole("button", { name: "Add contact" }).click();
-  await expect(page.getByText("Add a last name.")).toBeVisible();
+  await expect(page.getByText("Add a first name.")).toBeVisible();
+  await page.locator("#first_name").fill("Ada");
   await page.locator("#last_name").fill("Lovelace");
   await page.locator("#email").fill("ada@e2e.test");
   await page.locator("#city").fill("London");

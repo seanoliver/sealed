@@ -7,6 +7,7 @@ import {
   formatPerson,
   householdLine,
   householdPrefill,
+  isSplit,
   kidsCount,
   kidsSummary,
   lastNameKey,
@@ -208,6 +209,16 @@ describe("lastNameKey and compareLastName", () => {
   it("has no key for an unsplit contact", () => {
     expect(lastNameKey(legacy)).toBeUndefined();
     expect(lastNameKey(split)).toEqual({ last: "Holloway", first: "Jen" });
+  });
+
+  it("treats a saved one-word name as split, with no last-name key", () => {
+    const oneWord = { ...legacy, fullName: "Cher", firstName: "Cher" };
+    expect(isSplit(oneWord)).toBe(true);
+    expect(isSplit(legacy)).toBe(false);
+    expect(lastNameKey(oneWord)).toBeUndefined();
+    expect(householdLine({ ...oneWord, partnerName: "Sonny", partnerFirstName: "Sonny" })).toBe(
+      "Cher & Sonny",
+    );
   });
 
   it("sorts by last name, then first name, ignoring case", () => {

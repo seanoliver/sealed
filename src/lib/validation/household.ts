@@ -9,7 +9,6 @@ export const ROW_FIRST_NAME_REQUIRED = "Add a first name, or remove this row.";
 export const lastNameRequired = (ownerName: string) =>
   `Add your last name so ${ownerName} can address your mail.`;
 export const OWNER_FIRST_NAME_REQUIRED = "Add a first name.";
-export const OWNER_LAST_NAME_REQUIRED = "Add a last name.";
 const TOO_LONG = `Keep each name under ${NAME_MAX + 1} characters.`;
 
 const requiredName = (message: string) =>
@@ -34,11 +33,8 @@ export function householdShape({ ownerName }: HouseholdVoice = {}) {
     first_name: requiredName(
       ownerName === undefined ? OWNER_FIRST_NAME_REQUIRED : FIRST_NAME_REQUIRED,
     ),
-    last_name: requiredName(
-      ownerName === undefined
-        ? OWNER_LAST_NAME_REQUIRED
-        : lastNameRequired(ownerName),
-    ),
+    last_name:
+      ownerName === undefined ? optionalName : requiredName(lastNameRequired(ownerName)),
     partner_first_name: requiredName(ROW_FIRST_NAME_REQUIRED).optional(),
     partner_last_name: optionalName,
     kids: z

@@ -176,6 +176,16 @@ describe("parseHouseholdForm", () => {
 });
 
 describe("householdSchema", () => {
+  it("lets the owner save a contact without a last name, but not a recipient", () => {
+    expect(householdSchema().safeParse({ first_name: "Cher", last_name: "" })).toMatchObject({
+      success: true,
+      data: { first_name: "Cher", last_name: undefined },
+    });
+    expect(householdSchema(owner).safeParse({ first_name: "Cher", last_name: "" }).success).toBe(
+      false,
+    );
+  });
+
   const schema = householdSchema(owner);
 
   it("rejects unknown keys and extra kid keys", () => {
