@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { SITE_DESCRIPTION } from "@/lib/branding";
+import { NavigationTracker } from "@/components/navigation-history";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -39,7 +40,10 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${fraunces.variable} h-full bg-background antialiased`}
     >
-      <body className="flex min-h-full flex-col font-sans">{children}</body>
+      <body className="flex min-h-full flex-col font-sans">
+        {children}
+        <NavigationTracker />
+      </body>
     </html>
   );
 }

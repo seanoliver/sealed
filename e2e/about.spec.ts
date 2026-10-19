@@ -51,6 +51,7 @@ test("the about page answers who sent this and who sees the address", async ({ p
 test("a recipient can open the explainer and come back to their link", async ({ page }) => {
   await stubTurnstile(page);
   await page.goto(`/u/${token}/confirm`);
+  await page.waitForFunction(() => "__ts" in window);
   const explainer = page.getByText("Why am I getting this?");
   await explainer.click();
   await expect(page.getByText("Only About Owner sees what you enter.")).toBeVisible();

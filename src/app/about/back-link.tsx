@@ -1,20 +1,9 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-
-const subscribe = () => () => {};
-
-function cameFromSealed(): boolean {
-  try {
-    return new URL(document.referrer).origin === window.location.origin;
-  } catch {
-    return false;
-  }
-}
+import { useCameFromSealed } from "@/components/navigation-history";
 
 export function BackLink() {
-  const canGoBack = useSyncExternalStore(subscribe, cameFromSealed, () => false);
-  if (!canGoBack) return null;
+  if (!useCameFromSealed()) return null;
   return (
     <button
       type="button"
