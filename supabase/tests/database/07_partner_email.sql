@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(32);
+select plan(40);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-000000095001', 'pe@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -13,7 +13,9 @@ insert into public.contacts (id, book_id, full_name, email, partner_email, city)
   ('20000000-0000-4000-8000-000000095004', '10000000-0000-4000-8000-000000095001', 'Gus Hale', 'gus@pe.test', 'hal@pe.test', 'Oslo'),
   ('20000000-0000-4000-8000-000000095005', '10000000-0000-4000-8000-000000095001', 'Ida Moss', 'ida@pe.test', 'jo@pe.test', 'Oslo'),
   ('20000000-0000-4000-8000-000000095006', '10000000-0000-4000-8000-000000095001', 'Kai Ruiz', 'kai@pe.test', 'lu@pe.test', 'Oslo'),
-  ('20000000-0000-4000-8000-000000095007', '10000000-0000-4000-8000-000000095001', 'Mo Park', 'mo@pe.test', 'ned@pe.test', 'Oslo');
+  ('20000000-0000-4000-8000-000000095007', '10000000-0000-4000-8000-000000095001', 'Mo Park', 'mo@pe.test', 'ned@pe.test', 'Oslo'),
+  ('20000000-0000-4000-8000-000000095008', '10000000-0000-4000-8000-000000095001', 'Pat Vu', 'pat@pe.test', 'quy@pe.test', 'Oslo'),
+  ('20000000-0000-4000-8000-000000095009', '10000000-0000-4000-8000-000000095001', 'Rae Kim', 'rae@pe.test', 'sol@pe.test', 'Oslo');
 
 select throws_ok($$
   update public.contacts set partner_email = 'ANA@pe.test'
@@ -75,7 +77,7 @@ select ok((private.get_contact_for_token('wq1') ->> 'updated_at')::timestamptz
           = (select updated_at from public.contacts where id = '20000000-0000-4000-8000-000000095001'),
   'updated_at round-trips exactly');
 
-select is(private.apply_token_update('wq1', '{"email": "ben@other.test"}'), 'applied',
+select is(private.apply_token_reply('wq1', '{"email": "ben@other.test"}'), 'applied',
   'a partner update applies');
 select results_eq(
   $$ select email::text, partner_email::text from public.contacts
@@ -88,7 +90,7 @@ select is((select recipient from public.contact_events
 
 insert into public.update_tokens (contact_id, token_hash, expires_at, recipient)
 values ('20000000-0000-4000-8000-000000095001', extensions.digest('wq2', 'sha256'), now() + interval '1 day', 'partner');
-select is(private.apply_token_update('wq2', '{"email": "ANA@new.test", "city": "Bergen"}'), 'applied',
+select is(private.apply_token_reply('wq2', '{"email": "ANA@new.test", "city": "Bergen"}'), 'applied',
   'a partner email that matches the primary email does not fail the save');
 select results_eq(
   $$ select partner_email::text, city from public.contacts
@@ -97,13 +99,13 @@ select results_eq(
   'that email is ignored and the rest applies');
 
 insert into public.contact_events (contact_id, source, recipient, diff, created_at) values
-  ('20000000-0000-4000-8000-000000095002', 'token', 'primary', '{}', now() - interval '30 min'),
-  ('20000000-0000-4000-8000-000000095003', 'token', 'primary', '{}', now() - interval '30 min'),
-  ('20000000-0000-4000-8000-000000095004', 'token', 'partner', '{}', now() - interval '30 min'),
-  ('20000000-0000-4000-8000-000000095005', 'token', 'primary', '{}', now() - interval '30 min'),
+  ('20000000-0000-4000-8000-000000095002', 'token', 'primary', '{"before": {"city": "Rome"}, "after": {"city": "Oslo"}}', now() - interval '30 min'),
+  ('20000000-0000-4000-8000-000000095003', 'token', 'primary', '{"before": {"city": "Rome"}, "after": {"city": "Oslo"}}', now() - interval '30 min'),
+  ('20000000-0000-4000-8000-000000095004', 'token', 'partner', '{"before": {"city": "Rome"}, "after": {"city": "Oslo"}}', now() - interval '30 min'),
+  ('20000000-0000-4000-8000-000000095005', 'token', 'primary', '{"before": {"city": "Rome"}, "after": {"city": "Oslo"}}', now() - interval '30 min'),
   ('20000000-0000-4000-8000-000000095005', 'owner', null, '{}', now() - interval '10 min'),
-  ('20000000-0000-4000-8000-000000095006', 'token', 'primary', '{}', now() - interval '30 min'),
-  ('20000000-0000-4000-8000-000000095007', 'token', 'primary', '{}', now() - interval '30 min');
+  ('20000000-0000-4000-8000-000000095006', 'token', 'primary', '{"before": {"city": "Rome"}, "after": {"city": "Oslo"}}', now() - interval '30 min'),
+  ('20000000-0000-4000-8000-000000095007', 'token', 'primary', '{"before": {"city": "Rome"}, "after": {"city": "Oslo"}}', now() - interval '30 min');
 insert into public.update_tokens (contact_id, token_hash, expires_at, recipient) values
   ('20000000-0000-4000-8000-000000095002', extensions.digest('c2', 'sha256'), now() + interval '1 day', 'partner'),
   ('20000000-0000-4000-8000-000000095003', extensions.digest('c3', 'sha256'), now() + interval '1 day', 'partner'),
@@ -112,7 +114,7 @@ insert into public.update_tokens (contact_id, token_hash, expires_at, recipient)
   ('20000000-0000-4000-8000-000000095006', extensions.digest('c6', 'sha256'), now() + interval '1 day', 'partner'),
   ('20000000-0000-4000-8000-000000095007', extensions.digest('c7', 'sha256'), now() + interval '1 day', 'partner');
 
-select is(private.apply_token_update('c2',
+select is(private.apply_token_reply('c2',
   '{"city": "Paris", "email": "dee@new.test", "address_line2": "", "hax": 1}', now() - interval '1 hour'),
   'queued', 'a differing answer after the other person''s change is queued');
 select results_eq(
@@ -123,8 +125,13 @@ select results_eq(
 select results_eq(
   $$ select status, payload from public.submissions
      where matched_contact_id = '20000000-0000-4000-8000-000000095002' $$,
-  $$ values ('pending', '{"city": "Paris", "partner_email": "dee@new.test"}'::jsonb) $$,
-  'the review queue gets the answer, without empty or unknown keys, with the partner email under its own key');
+  $$ values ('pending', '{"city": "Paris", "partner_email": "dee@new.test", "address_line2": ""}'::jsonb) $$,
+  'the review queue gets the answer, empty values kept, unknown keys dropped, the partner email under its own key');
+select results_eq(
+  $$ select source, recipient, saved_by from public.submissions
+     where matched_contact_id = '20000000-0000-4000-8000-000000095002' $$,
+  $$ values ('token', 'partner', 'primary') $$,
+  'the queued answer records who sent it and whose change it would replace');
 select isnt((select used_at from public.update_tokens
              where token_hash = extensions.digest('c2', 'sha256')), null,
   'a queued answer spends the token');
@@ -132,9 +139,9 @@ select is((select count(*)::int from public.contact_events
            where contact_id = '20000000-0000-4000-8000-000000095002' and recipient = 'partner'), 0,
   'a queued answer records no change');
 
-select is(private.apply_token_update('c3', '{}', now() - interval '1 hour'), 'applied',
+select is(private.apply_token_reply('c3', '{}', now() - interval '1 hour'), 'applied',
   'a confirm after the other person''s change applies');
-select is(private.apply_token_update('c7', '{"city": "Oslo", "email": "ned@pe.test"}', now() - interval '1 hour'),
+select is(private.apply_token_reply('c7', '{"city": "Oslo", "email": "ned@pe.test"}', now() - interval '1 hour'),
   'applied', 'an answer that matches the current values counts as a confirm');
 select is((select count(*)::int from public.submissions
            where matched_contact_id in ('20000000-0000-4000-8000-000000095003',
@@ -148,22 +155,46 @@ select isnt((select used_at from public.update_tokens
              where token_hash = extensions.digest('c7', 'sha256')), null,
   'a matching answer spends the token');
 
-select is(private.apply_token_update('c4', '{"city": "Paris"}', now() - interval '1 hour'), 'applied',
+select is(private.apply_token_reply('c4', '{"city": "Paris"}', now() - interval '1 hour'), 'applied',
   'a second answer from the same person applies');
 select is((select city from public.contacts where id = '20000000-0000-4000-8000-000000095004'), 'Paris',
   'the same person''s answer overwrites');
 
-select is(private.apply_token_update('c5', '{"city": "Paris"}', now() - interval '1 hour'), 'applied',
-  'an answer after an owner edit applies');
+select is(private.apply_token_reply('c5', '{"city": "Paris"}', now() - interval '1 hour'), 'queued',
+  'an owner edit after the other person''s change does not hide the collision');
 
-select is(private.apply_token_update('c6', '{"city": "Paris"}', now()), 'applied',
+select is(private.apply_token_reply('c6', '{"city": "Paris"}', now()), 'applied',
   'an answer from a page loaded after the change applies');
 select is((select city from public.contacts where id = '20000000-0000-4000-8000-000000095006'), 'Paris',
   'that answer overwrites');
 
+insert into public.update_tokens (contact_id, token_hash, expires_at, recipient) values
+  ('20000000-0000-4000-8000-000000095008', extensions.digest('p8', 'sha256'), now() + interval '1 day', 'primary'),
+  ('20000000-0000-4000-8000-000000095008', extensions.digest('q8', 'sha256'), now() + interval '1 day', 'partner'),
+  ('20000000-0000-4000-8000-000000095009', extensions.digest('p9', 'sha256'), now() + interval '1 day', 'primary'),
+  ('20000000-0000-4000-8000-000000095009', extensions.digest('q9', 'sha256'), now() + interval '1 day', 'partner');
+
+select is(private.apply_token_reply('q8', '{"city": "Rome"}'), 'applied', 'the partner answers first');
+update public.contacts set city = 'Lima' where id = '20000000-0000-4000-8000-000000095008';
+select is(private.apply_token_reply('p8', '{"city": "Paris"}', now() - interval '1 hour'), 'queued',
+  'a stale answer after the partner''s change and an owner edit is queued');
+select is((select city from public.contacts where id = '20000000-0000-4000-8000-000000095008'), 'Lima',
+  'the stale answer overwrites nothing');
+
+select is(private.apply_token_reply('p9', '{}'), 'applied', 'the primary confirms without changes');
+select is(private.apply_token_reply('q9', '{"city": "Paris"}', now() - interval '1 hour'), 'applied',
+  'a real change after the other person''s no-op confirm applies');
+select is((select city from public.contacts where id = '20000000-0000-4000-8000-000000095009'), 'Paris',
+  'that change is saved');
+
 select is((select count(*)::int from public.submissions
-           where book_id = '10000000-0000-4000-8000-000000095001'), 1,
-  'only the differing collision reached review');
+           where book_id = '10000000-0000-4000-8000-000000095001'), 3,
+  'only the differing collisions reached review');
+
+insert into public.update_tokens (contact_id, token_hash, expires_at, recipient) values
+  ('20000000-0000-4000-8000-000000095009', extensions.digest('old2', 'sha256'), now() + interval '1 day', 'primary');
+select is(private.apply_token_update('old2', '{"city": "Bergen"}'), true,
+  'the old two-argument call still applies and returns true for an app deployed before this');
 
 select * from finish();
 rollback;

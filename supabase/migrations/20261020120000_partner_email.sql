@@ -18,6 +18,18 @@ alter table public.contact_events add column recipient text
   check (recipient in ('primary', 'partner') and source = 'token' or recipient is null);
 update public.contact_events set recipient = 'primary' where source = 'token';
 
+-- A reply apply_token_reply queued because it collided with the other
+-- person's: who sent it and whose saved change it would replace.
+alter table public.submissions
+  add column source text not null default 'permalink'
+    constraint submissions_source_check check (source in ('permalink', 'token')),
+  add column recipient text,
+  add column saved_by text,
+  add constraint submissions_token_people_check check (
+    source = 'token' and recipient in ('primary', 'partner')
+      and saved_by in ('primary', 'partner') and recipient <> saved_by
+    or source = 'permalink' and recipient is null and saved_by is null);
+
 drop trigger contacts_revoke_links_on_email_change on public.contacts;
 
 create or replace function private.revoke_links_on_email_change()
@@ -69,9 +81,7 @@ returns jsonb language sql security definer set search_path = '' as $$
     and t.used_at is null
 $$;
 
-drop function private.apply_token_update(text, jsonb);
-
-create function private.apply_token_update(
+create function private.apply_token_reply(
   p_token text, p_payload jsonb, p_seen_at timestamptz default null)
 returns text language plpgsql security definer set search_path = '' as $$
 declare
@@ -149,15 +159,13 @@ begin
   from public.contacts c where c.id = v_contact_id
   for update;
 
-  if p_seen_at is not null and v_updated_at > p_seen_at then
-    select e.source = 'token' and e.recipient is distinct from v_recipient
-      into v_conflict
-    from public.contact_events e
+  -- Any change by the other person since the page loaded, even one the owner
+  -- edited over since. Their no-op confirm (before = after) is not a change.
+  v_conflict := p_seen_at is not null and v_updated_at > p_seen_at and exists (
+    select 1 from public.contact_events e
     where e.contact_id = v_contact_id and e.created_at > p_seen_at
-    order by e.created_at desc
-    limit 1;
-  end if;
-  v_conflict := coalesce(v_conflict, false);
+      and e.source = 'token' and e.recipient is distinct from v_recipient
+      and e.diff -> 'before' is distinct from e.diff -> 'after');
 
   -- Dropped, not saved: an email equal to the other person's trips
   -- contacts_partner_email_differs and fails the whole reply.
@@ -201,9 +209,9 @@ begin
       country       = case when p_payload ? 'country' then nullif(trim(p_payload ->> 'country'), '') else c.country end
     where c.id = v_contact_id;
 
+    select to_jsonb(c) - 'created_at' - 'updated_at' into v_after
+    from public.contacts c where c.id = v_contact_id;
     if v_conflict then
-      select to_jsonb(c) - 'created_at' - 'updated_at' into v_after
-      from public.contacts c where c.id = v_contact_id;
       raise exception using errcode = 'SL001';
     end if;
   exception when sqlstate 'SL001' then
@@ -221,24 +229,34 @@ begin
                     'postal_code', 'country', 'first_name', 'last_name',
                     'partner_first_name', 'partner_last_name', 'kids'));
 
+  -- Empty values stay: approving the reply must be able to clear a field.
   if v_conflict and v_after is distinct from v_before then
-    insert into public.submissions (book_id, payload, matched_contact_id)
+    insert into public.submissions
+      (book_id, payload, matched_contact_id, source, recipient, saved_by)
     select v_book_id,
            coalesce(jsonb_object_agg(
              case when k = 'email' and v_recipient = 'partner' then 'partner_email' else k end, v),
              '{}'::jsonb),
-           v_contact_id
-    from jsonb_each(v_audited) e(k, v)
-    where v not in ('""'::jsonb, '[]'::jsonb, 'null'::jsonb);
+           v_contact_id, 'token', v_recipient,
+           case v_recipient when 'primary' then 'partner' else 'primary' end
+    from jsonb_each(v_audited) e(k, v);
     return 'queued';
   end if;
 
   insert into public.contact_events (contact_id, source, recipient, diff)
   values (v_contact_id, 'token', v_recipient,
-          jsonb_build_object('before', v_before, 'payload', v_audited));
+          jsonb_build_object('before', v_before, 'after', v_after, 'payload', v_audited));
 
   return 'applied';
 end $$;
 
+-- The old contract, for an app deploy that still calls it while or after this
+-- migration runs (deploys push the database first; a rollback can stay).
+create or replace function private.apply_token_update(p_token text, p_payload jsonb)
+returns boolean language sql security definer set search_path = '' as $$
+  select private.apply_token_reply(p_token, p_payload) is not null
+$$;
+
 revoke all on function private.get_contact_for_token(text) from public, anon, authenticated;
-revoke all on function private.apply_token_update(text, jsonb, timestamptz) from public, anon, authenticated;
+revoke all on function private.apply_token_reply(text, jsonb, timestamptz) from public, anon, authenticated;
+revoke all on function private.apply_token_update(text, jsonb) from public, anon, authenticated;

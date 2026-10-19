@@ -116,7 +116,7 @@ select results_eq(
 insert into public.update_tokens (contact_id, token_hash, expires_at) values
   ('20000000-0000-0000-0000-0000000000c3', extensions.digest('namestoken', 'sha256'), now() + interval '1 day'),
   ('20000000-0000-0000-0000-0000000000c3', extensions.digest('namestoken2', 'sha256'), now() + interval '1 day');
-select is(private.apply_token_update('namestoken',
+select is(private.apply_token_reply('namestoken',
   '{"full_name": "Ann Lee", "kids_names": "Bo", "city": "Thirdtown"}'), 'applied',
   'token update with unchanged names succeeds');
 select results_eq(
@@ -124,7 +124,7 @@ select results_eq(
      where id = '20000000-0000-0000-0000-0000000000c3' $$,
   $$ values ('Ann', 'Lee', '[{"first": "Bo", "last": "Lee"}]'::jsonb) $$,
   'a token update that repeats the display strings keeps structured fields');
-select is(private.apply_token_update('namestoken2', '{"full_name": "Annie Lee"}'), 'applied',
+select is(private.apply_token_reply('namestoken2', '{"full_name": "Annie Lee"}'), 'applied',
   'token update with a new name succeeds');
 select results_eq(
   $$ select full_name, first_name, last_name from public.contacts

@@ -3,7 +3,7 @@
 import { after } from "next/server";
 import { sql } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted for src/app/u/**):
-// private.apply_token_update has zero grants for client roles.
+// private.apply_token_reply has zero grants for client roles.
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
@@ -51,12 +51,12 @@ export async function confirmTokenAddress(
   let applied = false;
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.apply_token_update(${token}, '{}'::jsonb,
+      sql`select private.apply_token_reply(${token}, '{}'::jsonb,
             ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
     applied = rows[0]?.outcome === "applied";
   } catch (err) {
-    logDbError("[tu] [confirmTokenAddress] apply_token_update failed", err);
+    logDbError("[tu] [confirmTokenAddress] apply_token_reply failed", err);
     return { error: "Something went wrong. Please try again." };
   }
   if (!applied)

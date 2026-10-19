@@ -34,13 +34,13 @@ select is(
   '["Priya", {"first": "Asha"}]'::jsonb,
   'get_contact_for_token returns the structured names');
 
-select ok(private.apply_token_update('tn1',
+select ok(private.apply_token_reply('tn1',
   '{"first_name": "Jen", "last_name": "Holloway", "kids": [{"first": "  "}]}') is null,
   'invalid kids are refused');
-select ok(private.apply_token_update('tn1', '{"kids": "Zoe"}') is null,
+select ok(private.apply_token_reply('tn1', '{"kids": "Zoe"}') is null,
   'non-array kids are refused');
 
-select is(private.apply_token_update('tn1',
+select is(private.apply_token_reply('tn1',
   '{"first_name": " Jen ", "last_name": "Holloway",
     "partner_first_name": "Mark", "partner_last_name": "Holloway",
     "kids": [{"first": "Zoe", "last": "Holloway"}, {"first": "Max", "last": ""}],
@@ -60,7 +60,7 @@ select is(
   array['first_name', 'kids', 'last_name', 'partner_first_name', 'partner_last_name'],
   'audit keeps the structured keys and drops junk');
 
-select is(private.apply_token_update('tn2',
+select is(private.apply_token_reply('tn2',
   '{"first_name": "Jen", "last_name": "Holloway",
     "partner_first_name": "", "partner_last_name": "", "kids": []}'), 'applied',
   'clearing token update succeeds');
@@ -70,7 +70,7 @@ select results_eq(
   $$ values (null::text, null::text, null::text, null::text, null::jsonb) $$,
   'empty partner and kids clear the partner and kids');
 
-select is(private.apply_token_update('tn6',
+select is(private.apply_token_reply('tn6',
   '{"first_name": "Jen", "last_name": "Holloway",
     "partner_first_name": "", "partner_last_name": "Okafor"}'), 'applied',
   'token update with only a partner last name succeeds');
@@ -80,7 +80,7 @@ select results_eq(
   $$ values (null::text, null::text, null::text) $$,
   'a partner last name without a first name stores no partner');
 
-select is(private.apply_token_update('tn3', '{"partner_name": "Sam Lee", "full_name": "Jen H"}'), 'applied',
+select is(private.apply_token_reply('tn3', '{"partner_name": "Sam Lee", "full_name": "Jen H"}'), 'applied',
   'legacy token update succeeds');
 select results_eq(
   $$ select full_name, first_name, partner_name
@@ -88,7 +88,7 @@ select results_eq(
   $$ values ('Jen H', null::text, 'Sam Lee') $$,
   'legacy keys write display strings and clear the stale structured name');
 
-select is(private.apply_token_update('tn4',
+select is(private.apply_token_reply('tn4',
   '{"first_name": "Priya", "last_name": "Raman-Okafor",
     "partner_first_name": "", "kids": [{"first": "Nope"}]}'), 'applied',
   'token update on a book with partner and kids disabled succeeds');
@@ -99,14 +99,14 @@ select results_eq(
              '[{"first": "Asha"}]'::jsonb) $$,
   'disabled partner and kids keys are ignored');
 
-select is(private.apply_token_update('tn5', '{"first_name": "P", "last_name": " "}'), 'applied',
+select is(private.apply_token_reply('tn5', '{"first_name": "P", "last_name": " "}'), 'applied',
   'token update with a half name succeeds');
 select results_eq(
   $$ select full_name, first_name from public.contacts
      where id = '20000000-0000-0000-0000-0000000000d2' $$,
   $$ values ('Priya Raman-Okafor', 'Priya') $$,
   'a half name leaves the stored name alone');
-select ok(private.apply_token_update('tn5', '{"city": "Again"}') is null,
+select ok(private.apply_token_reply('tn5', '{"city": "Again"}') is null,
   'structured token updates are single-use too');
 select is(
   (select count(*)::int from public.contact_events

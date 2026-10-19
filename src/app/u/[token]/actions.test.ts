@@ -405,7 +405,7 @@ describe("submitTokenUpdate", () => {
       form.set("seen_at", await seenAt(partner));
 
       await dbAdmin.execute(
-        sql`select private.apply_token_update(${primary}, '{"city": "Oslo"}'::jsonb)`,
+        sql`select private.apply_token_reply(${primary}, '{"city": "Oslo"}'::jsonb)`,
       );
       await expect(submitTokenUpdate(partner, {}, form)).rejects.toThrow("REDIRECT");
 
@@ -429,7 +429,7 @@ describe("submitTokenUpdate", () => {
       const primary = await seed(contact);
       const partner = await partnerToken();
       await dbAdmin.execute(
-        sql`select private.apply_token_update(${primary}, '{"city": "Oslo"}'::jsonb)`,
+        sql`select private.apply_token_reply(${primary}, '{"city": "Oslo"}'::jsonb)`,
       );
       const form = prefilledForm(contact, { email: "partner@tu.test", city: "Lima" });
       form.set("seen_at", await seenAt(partner));

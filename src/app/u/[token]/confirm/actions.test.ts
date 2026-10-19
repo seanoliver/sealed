@@ -232,7 +232,7 @@ describe("confirmTokenAddress", () => {
       sql`select private.get_contact_for_token(${partner}) ->> 'updated_at' as seen`,
     );
     await dbAdmin.execute(
-      sql`select private.apply_token_update(${primary}, '{"city": "Salem"}'::jsonb)`,
+      sql`select private.apply_token_reply(${primary}, '{"city": "Salem"}'::jsonb)`,
     );
 
     const form = new FormData();

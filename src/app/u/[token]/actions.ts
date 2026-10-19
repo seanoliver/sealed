@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { sql } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs):
-// private.apply_token_update is a SECURITY DEFINER function with zero grants
+// private.apply_token_reply is a SECURITY DEFINER function with zero grants
 // for client roles — the admin connection is the only path to it. This
 // action and the /u/[token] page are its ONLY consumers.
 import { dbAdmin } from "@/lib/db/admin";
@@ -128,7 +128,7 @@ export async function submitTokenUpdate(
   // 5. Payload keys = exactly the fields the form rendered (present in
   //    formData): a present key with "" clears the column, an absent key
   //    (field disabled for this book) leaves it untouched. A hostile client
-  //    CAN inject extra keys here, but apply_token_update re-gates disabled
+  //    CAN inject extra keys here, but apply_token_reply re-gates disabled
   //    fields against books.enabled_fields server-side, so they are inert.
   //    Test the section markers: a removed partner row posts no partner keys.
   const payload: Record<string, unknown> = {};
@@ -155,13 +155,13 @@ export async function submitTokenUpdate(
   let outcome: unknown = null;
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.apply_token_update(${token}, ${JSON.stringify(payload)}::jsonb,
+      sql`select private.apply_token_reply(${token}, ${JSON.stringify(payload)}::jsonb,
             ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
     outcome = rows[0]?.outcome ?? null;
   } catch (err) {
     // logDbError reports code/constraint only — the token never reaches logs.
-    logDbError("[tu] [submitTokenUpdate] apply_token_update failed", err);
+    logDbError("[tu] [submitTokenUpdate] apply_token_reply failed", err);
     return { error: GENERIC_ERROR, ...echo };
   }
   if (outcome !== "applied" && outcome !== "queued") {
