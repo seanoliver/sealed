@@ -3,8 +3,8 @@ import { sql } from "drizzle-orm";
 import { dbAdmin } from "@/lib/db/admin";
 import { listCsvRows } from "./export";
 
-const U = "00000000-0000-4000-8000-0000000ae001";
-const B = "10000000-0000-4000-8000-0000000ae001";
+const U = "00000000-0000-4000-8000-0000000ef001";
+const B = "10000000-0000-4000-8000-0000000ef001";
 
 describe("listCsvRows", () => {
   beforeAll(async () => {
@@ -14,10 +14,10 @@ describe("listCsvRows", () => {
     await dbAdmin.execute(sql`insert into public.books (id, owner_id, slug) values (${B}, ${U}, 'ex-book')`);
     await dbAdmin.execute(sql`
       insert into public.contacts (id, book_id, full_name, email) values
-        ('20000000-0000-4000-8000-0000000ae004', ${B}, 'Zed Ward', 'zed@ex.test'),
-        ('20000000-0000-4000-8000-0000000ae003', ${B}, 'Amy Fox', 'amy3@ex.test'),
-        ('20000000-0000-4000-8000-0000000ae005', ${B}, 'Bob Lee', 'bob@ex.test'),
-        ('20000000-0000-4000-8000-0000000ae001', ${B}, 'Amy Fox', 'amy1@ex.test')`);
+        ('20000000-0000-4000-8000-0000000ef004', ${B}, 'Zed Ward', 'zed@ex.test'),
+        ('20000000-0000-4000-8000-0000000ef003', ${B}, 'Amy Fox', 'amy3@ex.test'),
+        ('20000000-0000-4000-8000-0000000ef005', ${B}, 'Bob Lee', 'bob@ex.test'),
+        ('20000000-0000-4000-8000-0000000ef001', ${B}, 'Amy Fox', 'amy1@ex.test')`);
   });
 
   afterAll(async () => {
