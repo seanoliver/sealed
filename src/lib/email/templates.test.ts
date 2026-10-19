@@ -10,30 +10,40 @@ import {
 const addressRequest = {
   ownerName: "Sean O",
   updateUrl: "https://self-hosted.example/u/abc123",
+  confirmUrl: "https://self-hosted.example/u/abc123/confirm",
+  envelope: {
+    household: "Priya Raman & Daniel Okafor",
+    address: ["1428 Alder St, Apt 3", "Portland, OR 97214"],
+  },
 };
+const noAddress = { ...addressRequest, envelope: { household: "Satya & Family", address: null } };
 
 describe("addressRequestEmail", () => {
   it("identifies Sealed in every email representation", () => {
-    const { subject, html, text } = addressRequestEmail(addressRequest);
-    for (const part of [subject, html, text]) {
-      expect(part).toContain("Sealed");
+    for (const input of [addressRequest, noAddress]) {
+      const { subject, html, text } = addressRequestEmail(input);
+      for (const part of [subject, html, text]) expect(part).toContain("Sealed");
     }
   });
 
-  it("uses the owner name and title-free address-book copy", () => {
+  it("shows the envelope and asks whether it will arrive", () => {
     const { subject, html, text } = addressRequestEmail(addressRequest);
-    expect(subject).toBe(
-      "Sean O would like your current mailing address · Sealed",
-    );
-    expect(html).toContain("Sean O is updating their address book");
-    expect(text).toContain("Sean O is updating their address book");
+    expect(subject).toBe("Will Sean O's holiday card reach you? · Sealed");
+    expect(html).toContain("Priya Raman &amp; Daniel Okafor<br>1428 Alder St, Apt 3<br>Portland, OR 97214");
+    expect(text).toContain("  Priya Raman & Daniel Okafor\n  1428 Alder St, Apt 3\n  Portland, OR 97214");
+    expect(html).toContain(`href="${addressRequest.confirmUrl}"`);
+    expect(html).toContain(`href="${addressRequest.updateUrl}"`);
+    expect(text).toContain(`Yes, send it here: ${addressRequest.confirmUrl}`);
+    expect(text).toContain(`Fix a name or the address: ${addressRequest.updateUrl}`);
+    expect(`${html}${text}`).not.toContain("sealed.page");
   });
 
-  it("keeps the configured self-hosted update URL in html and text", () => {
-    const { html, text } = addressRequestEmail(addressRequest);
-    expect(html).toContain(`href="${addressRequest.updateUrl}"`);
-    expect(text).toContain(addressRequest.updateUrl);
-    expect(`${html}${text}`).not.toContain("sealed.page");
+  it("asks for an address, with no confirm link, when none is on file", () => {
+    const { subject, html, text } = addressRequestEmail(noAddress);
+    expect(subject).toBe("Where should Sean O send your holiday card? · Sealed");
+    expect(html).toContain("Satya &amp; Family");
+    expect(`${html}${text}`).not.toContain(addressRequest.confirmUrl);
+    expect(text).toContain(`Add your names and address: ${addressRequest.updateUrl}`);
   });
 
   it("mentions the 30-day expiry", () => {
@@ -47,19 +57,20 @@ describe("addressRequestEmail", () => {
       ...addressRequest,
       ownerName: "Eve\r\nBcc: victim@test.dev\tX",
     });
-    expect(subject).toBe(
-      "Eve Bcc: victim@test.dev X would like your current mailing address · Sealed",
-    );
+    expect(subject).toBe("Will Eve Bcc: victim@test.dev X's holiday card reach you? · Sealed");
     expect(subject).not.toMatch(/[\r\n\t]/);
   });
 
-  it("escapes the user-controlled owner name in html", () => {
+  it("escapes the owner name and the envelope in html", () => {
     const { html } = addressRequestEmail({
       ...addressRequest,
       ownerName: `<script>alert("x")</script>`,
+      envelope: { household: "<b>Ana</b>", address: ['1 "Main" <St>'] },
     });
     expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<b>Ana");
     expect(html).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
+    expect(html).toContain("1 &quot;Main&quot; &lt;St&gt;");
   });
 });
 

@@ -1,11 +1,5 @@
 import { TOKEN_TTL_DAYS } from "@/lib/tokens";
 
-/**
- * Address-request email. Deliberately contains NO recipient data (no current
- * address echo) — the personal link is the only sensitive content, and it
- * lets the recipient view/update their own details behind the token.
- */
-
 /** User-controlled values must be escaped before HTML interpolation. */
 function escapeHtml(value: string): string {
   return value
@@ -19,6 +13,9 @@ function escapeHtml(value: string): string {
 export interface AddressRequestEmailInput {
   ownerName: string;
   updateUrl: string;
+  confirmUrl: string;
+  /** What the envelope says today: the household line, then the address lines (none when missing). */
+  envelope: { household: string; address: string[] | null };
 }
 
 export interface EmailContent {
@@ -27,41 +24,72 @@ export interface EmailContent {
   text: string;
 }
 
+const FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
+const BUTTON =
+  "display:block;text-align:center;background:#2f5b86;color:#ffffff;text-decoration:none;padding:15px 20px;border-radius:10px;font-weight:600;font-size:16px";
+
+/**
+ * Address-request email: shows the envelope as it will be addressed and asks
+ * whether it will arrive. It carries the recipient's own name and address,
+ * so it must only ever go to that contact's email.
+ */
 export function addressRequestEmail({
   ownerName,
   updateUrl,
+  confirmUrl,
+  envelope,
 }: AddressRequestEmailInput): EmailContent {
   // Strip control chars (CR/LF included) from the user-controlled name before
   // it enters the subject line. Resend's JSON API can't be header-injected,
   // but that guarantee shouldn't be outsourced to the transport.
   const safeOwnerName = ownerName.replace(/\p{Cc}+/gu, " ").trim();
-  const subject = `${safeOwnerName} would like your current mailing address · Sealed`;
+  const hasAddress = envelope.address !== null;
+  const subject = hasAddress
+    ? `Will ${safeOwnerName}'s holiday card reach you? · Sealed`
+    : `Where should ${safeOwnerName} send your holiday card? · Sealed`;
 
   const owner = escapeHtml(safeOwnerName);
-  const url = escapeHtml(updateUrl);
+  const lines = [envelope.household, ...(envelope.address ?? [])].map(escapeHtml);
+  const envelopeHtml = `<div style="margin:0 0 24px;background:#fffdf8;border:1px solid #ddd3c3;border-radius:6px;padding:18px 18px 26px">
+    <p style="margin:0 0 22px;font-size:11px;color:#6a6157">${owner}</p>
+    <p style="margin:0 0 0 48px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.5;color:#3a332c">${lines.join("<br>")}</p>
+  </div>`;
+  const intro = hasAddress
+    ? `${owner} is addressing holiday cards. Here&#39;s exactly how yours will look:`
+    : `${owner} is addressing holiday cards and wants to send you one. Here&#39;s what&#39;s on your envelope so far:`;
+  const actions = hasAddress
+    ? `<p style="margin:0 0 16px;font-size:17px;font-weight:600;text-align:center">Will this reach you?</p>
+  <p style="margin:0 0 10px"><a href="${escapeHtml(confirmUrl)}" style="${BUTTON}">Yes, send it here</a></p>
+  <p style="margin:0 0 24px;text-align:center"><a href="${escapeHtml(updateUrl)}" style="color:#2f5b86;font-weight:600;font-size:15px">Fix a name or the address</a></p>`
+    : `<p style="margin:0 0 24px"><a href="${escapeHtml(updateUrl)}" style="${BUTTON}">Add your names and address</a></p>`;
 
-  // Minimal single-column HTML: inline styles only, no images, no tracking.
-  const html = `<div style="margin:0 auto;max-width:520px;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:15px;line-height:1.6">
-  <p style="margin:0 0 24px;font-size:17px;font-weight:700">Sealed</p>
-  <p style="margin:0 0 16px">Hi,</p>
-  <p style="margin:0 0 16px">${owner} is updating their address book and would like to make sure your mailing address is current.</p>
-  <p style="margin:0 0 24px">It takes less than a minute — confirm or update your details here:</p>
-  <p style="margin:0 0 24px"><a href="${url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Update my address</a></p>
-  <p style="margin:0 0 16px;color:#6b7280;font-size:13px">This link is personal to you — please don&#39;t forward it. It expires in ${TOKEN_TTL_DAYS} days.</p>
-  <p style="margin:0;color:#6b7280;font-size:13px">If the button doesn&#39;t work, copy and paste this address into your browser:<br>${url}</p>
+  const html = `<div style="margin:0 auto;max-width:520px;padding:24px;background:#f9f6f0;font-family:${FONT};color:#3a332c;font-size:16px;line-height:1.55">
+  <p style="margin:0 0 20px">Hi, ${intro}</p>
+  ${envelopeHtml}
+  ${actions}
+  <p style="margin:0;color:#6a6157;font-size:13px;text-align:center">Sent with Sealed. This link is personal to you, so please don&#39;t forward it. It expires in ${TOKEN_TTL_DAYS} days.</p>
 </div>`;
 
-  const text = `Sealed
+  const plainLines = [envelope.household, ...(envelope.address ?? [])].map((line) => `  ${line}`).join("\n");
+  const text = hasAddress
+    ? `Hi, ${safeOwnerName} is addressing holiday cards. Here's exactly how yours will look:
 
-Hi,
+${plainLines}
 
-${safeOwnerName} is updating their address book and would like to make sure your mailing address is current.
+Will this reach you?
 
-It takes less than a minute — confirm or update your details here:
+Yes, send it here: ${confirmUrl}
+Fix a name or the address: ${updateUrl}
 
-${updateUrl}
+Sent with Sealed. This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
+`
+    : `Hi, ${safeOwnerName} is addressing holiday cards and wants to send you one. Here's what's on your envelope so far:
 
-This link is personal to you — please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
+${plainLines}
+
+Add your names and address: ${updateUrl}
+
+Sent with Sealed. This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
 `;
 
   return { subject, html, text };

@@ -78,6 +78,17 @@ type Person = { first: string; last: string };
 
 export const isSplit = (names: StoredNames) => names.firstName !== null;
 
+export const pickStoredNames = (row: StoredNames): StoredNames => ({
+  fullName: row.fullName,
+  partnerName: row.partnerName,
+  kidsNames: row.kidsNames,
+  firstName: row.firstName,
+  lastName: row.lastName,
+  partnerFirstName: row.partnerFirstName,
+  partnerLastName: row.partnerLastName,
+  kids: row.kids,
+});
+
 function contactPerson(names: StoredNames): Person {
   return isSplit(names)
     ? { first: names.firstName ?? "", last: names.lastName ?? "" }
@@ -106,6 +117,13 @@ export function householdLine(names: StoredNames): string {
   return isSplit(names)
     ? `${formatPerson(person)} & ${formatPerson(partner)}`
     : `${names.fullName} & ${names.partnerName}`;
+}
+
+/** The envelope's name line. A partner the book doesn't collect stays off it, as on every recipient page. */
+export function envelopeLine(names: StoredNames, { partner }: { partner: boolean }): string {
+  return householdLine(
+    partner ? names : { ...names, partnerName: null, partnerFirstName: null, partnerLastName: null },
+  );
 }
 
 export function kidsCount(names: StoredNames): number {

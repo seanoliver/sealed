@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
-import { emailSends, updateTokens } from "@/lib/db/schema";
+import { books, contacts, emailSends, updateTokens } from "@/lib/db/schema";
 import { sendAddressRequests, type SendResult } from "@/lib/email/resend";
 import { hashToken } from "@/lib/tokens";
 import { requestAddresses } from "./actions";
@@ -41,7 +41,7 @@ function sentLinks(): Record<string, string> {
   const links: Record<string, string> = {};
   for (const [items] of send.mock.calls) {
     for (const item of items)
-      links[item.to] = item.text.match(/\/u\/(\S+)/)![1];
+      links[item.to] = item.text.match(/\/u\/([\w-]+)/)![1];
   }
   return links;
 }
@@ -112,6 +112,84 @@ describe("requestAddresses", () => {
       .from(emailSends)
       .where(inArray(emailSends.contactId, [A, C]));
     expect(sends).toHaveLength(2);
+  });
+
+  it("shows each contact their envelope and a confirm link", async () => {
+    await dbAdmin
+      .update(contacts)
+      .set({
+        addressLine1: "1428 Alder St",
+        city: "Portland",
+        stateRegion: "OR",
+        postalCode: "97214",
+      })
+      .where(eq(contacts.id, A));
+    answer();
+    await requestAddresses({ contactIds: [A, C] });
+    const [items] = send.mock.calls[0];
+    const ana = items.find((item) => item.to === "ana@ra.test")!;
+    const cal = items.find((item) => item.to === "cal@ra.test")!;
+    const token = sentLinks()["ana@ra.test"];
+    expect(ana.text).toContain(
+      "  Ana Reyes\n  1428 Alder St\n  Portland, OR 97214",
+    );
+    expect(ana.text).toContain(
+      `Yes, send it here: https://app.example/u/${token}/confirm`,
+    );
+    expect(cal.subject).toContain("Where should");
+    expect(cal.text).not.toContain("/confirm");
+  });
+
+  it("puts the partner on the envelope only when the book collects partners", async () => {
+    await dbAdmin
+      .update(contacts)
+      .set({ partnerName: "Mark Reyes" })
+      .where(eq(contacts.id, A));
+    const envelopeFor = async (partner: boolean) => {
+      await dbAdmin
+        .update(books)
+        .set({
+          enabledFields: {
+            partner_name: partner,
+            kids_names: false,
+            birthday: false,
+          },
+        })
+        .where(eq(books.id, B));
+      send.mockReset();
+      answer();
+      await requestAddresses({ contactIds: [A] });
+      return send.mock.calls[0][0][0].text;
+    };
+    expect(await envelopeFor(true)).toContain("Ana & Mark Reyes");
+    expect(await envelopeFor(false)).not.toContain("Mark");
+  });
+
+  it("uses the split names on the envelope", async () => {
+    await dbAdmin
+      .update(contacts)
+      .set({
+        firstName: "Ana María",
+        lastName: "Reyes Díaz",
+        partnerFirstName: "Mark",
+        partnerLastName: "Lee",
+      })
+      .where(eq(contacts.id, A));
+    await dbAdmin
+      .update(books)
+      .set({
+        enabledFields: {
+          partner_name: true,
+          kids_names: false,
+          birthday: false,
+        },
+      })
+      .where(eq(books.id, B));
+    answer();
+    await requestAddresses({ contactIds: [A] });
+    expect(send.mock.calls[0][0][0].text).toContain(
+      "Ana María Reyes Díaz & Mark Lee",
+    );
   });
 
   it("never emails another owner's contact", async () => {
@@ -226,7 +304,9 @@ describe("requestAddresses", () => {
     answer();
     const transaction = dbAdmin.transaction.bind(dbAdmin);
     vi.spyOn(dbAdmin, "transaction").mockImplementation((...args) =>
-      send.mock.calls.length > 0 ? Promise.reject(new Error("db down")) : transaction(...args),
+      send.mock.calls.length > 0
+        ? Promise.reject(new Error("db down"))
+        : transaction(...args),
     );
     await expect(requestAddresses({ contactIds: [A] })).resolves.toMatchObject({
       sent: 1,
