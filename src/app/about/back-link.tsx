@@ -12,7 +12,6 @@ function cameFromSealed(): boolean {
   }
 }
 
-/** Shown only when the visitor came from another Sealed page, such as their link. */
 export function BackLink() {
   const canGoBack = useSyncExternalStore(subscribe, cameFromSealed, () => false);
   if (!canGoBack) return null;

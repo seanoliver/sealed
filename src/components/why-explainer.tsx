@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-/** "Why am I getting this?" answers for recipients, collapsed under the form. */
 export function WhyExplainer({ ownerName }: { ownerName: string }) {
   return (
     <details className="group rounded-xl border border-border bg-card">
