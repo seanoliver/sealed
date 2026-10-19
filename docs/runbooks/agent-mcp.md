@@ -1,9 +1,9 @@
 # Connect an agent to the MCP server
 
-**Status:** Current
-**Last verified:** branch `feat/agent-mcp-read` on 2026-10-19 in local development
-**Owner:** Sean
-**Related:** Issue #109 (MCP server and API for agents to manage the address book)
+- **Status:** Current
+- **Last verified:** branch `feat/agent-mcp-read` on 2026-10-19 in local development
+- **Owner:** Sean
+- **Related:** Issue #109 (MCP server and API for agents to manage the address book)
 
 ## Purpose
 
