@@ -8,7 +8,7 @@ import {
 } from "@/app/auth/actions";
 import { RequestReceived } from "@/components/request-received";
 import { SubmitButton } from "@/components/submit-button";
-import { TurnstileWidget } from "@/components/turnstile-widget";
+import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-widget";
 
 const initialState: RequestAccessState = { status: "idle" };
 
@@ -39,7 +39,7 @@ function RequestAccessForm({
   onReset: () => void;
 }) {
   const [state, formAction] = useActionState(requestAccess, initialState);
-  const [hasToken, setHasToken] = useState(false);
+  const [turnstile, setTurnstile] = useState<TurnstileStatus>("checking");
   const message =
     state.status === "error"
       ? state.message
@@ -100,13 +100,13 @@ function RequestAccessForm({
           defaultValue={state.status === "error" ? state.email : undefined}
           className="h-12 rounded-xl border border-input bg-background/60 px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25"
         />
-        <TurnstileWidget resetOn={state} onTokenChange={setHasToken} />
+        <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
         <SubmitButton
-          disabled={!hasToken}
+          disabled={turnstile !== "ready"}
           pendingLabel="Sending…"
           className="mt-1 h-12 rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/85"
         >
-          Request access
+          {turnstile === "checking" ? "Checking you’re human…" : "Request access"}
         </SubmitButton>
       </form>
 

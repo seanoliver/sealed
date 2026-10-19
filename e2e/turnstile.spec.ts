@@ -10,7 +10,7 @@ test("the widget resets after a failed submit and is replaced on a different ema
   await stubTurnstile(page);
   await page.goto("/");
 
-  const submit = page.getByRole("button", { name: "Request access" });
+  const submit = page.getByRole("button", { name: /Request access|Checking you’re human/ });
   await expect(submit).toBeEnabled();
   expect(await calls(page)).toEqual({ renders: 1, resets: 0, removes: 0 });
 
@@ -21,6 +21,7 @@ test("the widget resets after a failed submit and is replaced on a different ema
   await expect(page.getByLabel("Email address")).toHaveValue("nobody@localhost");
   await expect.poll(() => calls(page)).toEqual({ renders: 1, resets: 1, removes: 0 });
   await expect(submit).toBeDisabled();
+  await expect(submit).toHaveText("Checking you’re human…");
 
   await page.evaluate(() => (window as unknown as { __ts: { solve: () => void } }).__ts.solve());
   await expect(submit).toBeEnabled();
@@ -60,4 +61,35 @@ test("a failed challenge explains itself and clears once a retry solves it", asy
   await page.evaluate(() => (window as unknown as { __ts: { solve: () => void } }).__ts.solve());
   await expect(alert).toBeHidden();
   await expect(submit).toBeEnabled();
+});
+
+type StubControls = {
+  __ts: { appearance: string; interact: () => void; finishInteraction: () => void; expire: () => void };
+};
+
+test("the widget stays hidden until Cloudflare asks for a click", async ({ page }) => {
+  await stubTurnstile(page, { pending: true });
+  await page.goto("/");
+  await page.waitForFunction(() => "__ts" in window);
+  expect(await page.evaluate(() => (window as unknown as StubControls).__ts.appearance)).toBe(
+    "interaction-only",
+  );
+  const challenge = page.getByText("Stub challenge");
+  await expect(challenge).toBeHidden();
+  await page.evaluate(() => (window as unknown as StubControls).__ts.interact());
+  await expect(challenge).toBeVisible();
+  await page.evaluate(() => (window as unknown as StubControls).__ts.finishInteraction());
+  await expect(challenge).toBeHidden();
+});
+
+test("an expired check disables Request access until it passes again", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto("/");
+  const submit = page.getByRole("button", { name: /Request access|Checking you’re human/ });
+  await expect(submit).toBeEnabled();
+  await page.evaluate(() => (window as unknown as StubControls).__ts.expire());
+  await expect(submit).toBeDisabled();
+  await expect(submit).toHaveText("Checking you’re human…");
+  await page.evaluate(() => (window as unknown as { __ts: { solve: () => void } }).__ts.solve());
+  await expect(submit).toHaveText("Request access");
 });

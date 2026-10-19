@@ -147,7 +147,7 @@ export type TurnstileCalls = { renders: number; resets: number; removes: number 
 /** Replace the Cloudflare script with a stub that records render/reset/remove calls. */
 export async function stubTurnstile(
   page: Page,
-  { failChallenge = false }: { failChallenge?: boolean } = {},
+  { failChallenge = false, pending = false }: { failChallenge?: boolean; pending?: boolean } = {},
 ): Promise<void> {
   await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) =>
     route.fulfill({
@@ -165,8 +165,15 @@ export async function stubTurnstile(
             el.closest("form").appendChild(input);
             window.__ts.renders.push(id);
             window.__ts.solve = opts.callback;
+            window.__ts.appearance = opts.appearance;
+            window.__ts.interact = opts["before-interactive-callback"];
+            window.__ts.finishInteraction = opts["after-interactive-callback"];
+            window.__ts.expire = opts["expired-callback"];
+            const challenge = document.createElement("p");
+            challenge.textContent = "Stub challenge";
+            el.appendChild(challenge);
             if (${failChallenge}) opts["error-callback"]();
-            else opts.callback();
+            else if (!${pending}) opts.callback();
             return id;
           },
           reset(id) { window.__ts.resets.push(id); },

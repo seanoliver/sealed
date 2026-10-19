@@ -143,12 +143,30 @@ test("a dropped connection asks for another tap", async ({ page }) => {
 });
 
 test("the button waits for the bot check", async ({ page }) => {
-  await stubTurnstile(page, { failChallenge: true });
+  await stubTurnstile(page, { pending: true });
   await page.goto(`/u/${fixToken}/confirm`);
+  await page.waitForFunction(() => "__ts" in window);
   await expect(
     page.getByRole("button", { name: "Checking you're human…" }),
   ).toBeDisabled();
+  await page.evaluate(() =>
+    (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
+  );
+  await expect(
+    page.getByRole("button", { name: "Yes, send it here" }),
+  ).toBeEnabled();
+});
+
+test("a failed bot check keeps the button disabled until a retry solves it", async ({ page }) => {
+  await stubTurnstile(page, { failChallenge: true });
+  await page.goto(`/u/${fixToken}/confirm`);
   await page.waitForFunction(() => "__ts" in window);
+  await expect(
+    page.getByRole("button", { name: "Yes, send it here" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "verification check didn’t load" }),
+  ).toBeVisible();
   await page.evaluate(() =>
     (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
   );
