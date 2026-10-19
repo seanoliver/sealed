@@ -1531,7 +1531,7 @@ function EditingRow({
         return (
           <td
             key={cell.id}
-            className={`${cellClasses} px-1 text-right whitespace-nowrap`}
+            className={`${cellClasses} sticky right-0 z-10 px-1 text-right whitespace-nowrap shadow-[-8px_0_8px_-8px_rgb(0_0_0/0.25)]`}
           >
             <span className="inline-flex gap-1">
               <button

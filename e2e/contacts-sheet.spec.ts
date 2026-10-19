@@ -361,6 +361,22 @@ test("double-clicking a row edits it", async () => {
   await expect(table().getByRole("textbox")).toHaveCount(0);
 });
 
+test("Save and Cancel stay in view when the table is wider than the window", async () => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  try {
+    await openDashboard();
+    await bodyRow("Bea Brown").locator("td").nth(3).dblclick();
+    const frame = await table().locator("xpath=..").boundingBox();
+    for (const name of ["Save", "Cancel"]) {
+      const box = await table().getByRole("button", { name, exact: true }).boundingBox();
+      expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width);
+    }
+    await page.keyboard.press("Escape");
+  } finally {
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+});
+
 test("a save that only adds whitespace does not touch the row", async () => {
   const before = await getContactRow(adaId);
   await openDashboard();
