@@ -62,6 +62,13 @@ const eslintConfig = defineConfig([
       "src/lib/queries/contacts.test.ts",
       "src/lib/queries/submissions.test.ts",
       "src/app/dashboard/review/actions.test.ts",
+      // Sanctioned: agent tokens are minted like update_tokens (clients have
+      // no insert grant) and verified through private.verify_agent_token.
+      // Listing and revoking go through withRls.
+      "src/lib/agent/tokens.ts",
+      "src/lib/agent/*.test.ts",
+      "src/app/api/mcp/route.test.ts",
+      "src/app/dashboard/settings/agent-token-actions.test.ts",
     ],
     rules: {
       "no-restricted-imports": ["error", { patterns: [supabaseAdminImport] }],

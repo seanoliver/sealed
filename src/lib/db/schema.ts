@@ -3,6 +3,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Kid } from "../names";
 import type { Recipient } from "../recipients";
+import type { AgentScope } from "../agent/scopes";
 
 const citext = customType<{ data: string }>({ dataType: () => "citext" });
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -89,4 +90,16 @@ export const contactEvents = pgTable("contact_events", {
   diff: jsonb("diff").notNull(),
   recipient: text("recipient").$type<Recipient>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const agentTokens = pgTable("agent_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  name: text("name").notNull(),
+  tokenHash: bytea("token_hash").notNull(),
+  scopes: text("scopes").array().notNull().$type<AgentScope[]>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });
