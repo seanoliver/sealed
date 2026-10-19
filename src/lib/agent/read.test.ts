@@ -13,6 +13,7 @@ import {
   listAddressGaps,
   listReviewQueue,
   normalizeStreet,
+  normalizeText,
   reviewQueueInput,
   searchContacts,
   searchContactsInput,
@@ -148,6 +149,7 @@ describe("agent read tools", () => {
         complained: 0,
         failed: 1,
         unconfirmed: 0,
+        updated: 0,
       },
       byCountry: [
         { country: "USA", count: 3 },
@@ -215,5 +217,76 @@ describe("agent read tools", () => {
 
     const second = await exportContacts(claims, exportContactsInput.parse({ page: 2, limit: 4 }));
     expect(second.csv.trimEnd().split("\r\n")).toEqual([lines[0], lines[5]]);
+  });
+});
+
+describe("agent read tools match the dashboard", () => {
+  const U2 = "00000000-0000-4000-8000-0000000a9101";
+  const B2 = "10000000-0000-4000-8000-0000000a9101";
+  const GIA = "20000000-0000-4000-8000-0000000a9101";
+  const IVY = "20000000-0000-4000-8000-0000000a9102";
+  const WANG = "20000000-0000-4000-8000-0000000a9103";
+  const LI = "20000000-0000-4000-8000-0000000a9104";
+  const IVAN = "20000000-0000-4000-8000-0000000a9105";
+  const IVAN_AGAIN = "20000000-0000-4000-8000-0000000a9106";
+  const owner = { sub: U2 };
+
+  beforeAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${B2}`);
+    await dbAdmin.execute(sql`
+      insert into auth.users (id, email) values (${U2}, 'rt-parity@rt.test') on conflict (id) do nothing`);
+    await dbAdmin.execute(sql`insert into public.books (id, owner_id, slug) values (${B2}, ${U2}, 'rt-parity-book')`);
+    await dbAdmin.execute(sql`
+      insert into public.contacts (id, book_id, full_name, partner_name, email, partner_email, address_line1)
+      values
+        (${GIA}, ${B2}, 'Gia Long', 'Hal Long', 'gia@rt.test', 'hal@rt.test', null),
+        (${IVY}, ${B2}, 'Ivy Chen', null, 'ivy@rt.test', null, null),
+        (${WANG}, ${B2}, '王伟', null, null, null, '人民路5'),
+        (${LI}, ${B2}, '李娜', null, null, null, '人民路5'),
+        (${IVAN}, ${B2}, 'Иван Петров', null, null, null, 'ул. Ленина 5'),
+        (${IVAN_AGAIN}, ${B2}, 'иван петров', null, null, null, 'Ул Ленина, 5')`);
+    await dbAdmin.execute(sql`
+      insert into public.email_sends (contact_id, book_id, recipient, status, sent_at) values
+        (${GIA}, ${B2}, 'primary', 'delivered', now() - interval '20 min'),
+        (${GIA}, ${B2}, 'partner', 'bounced', now() - interval '20 min')`);
+    await dbAdmin.execute(sql`
+      insert into public.email_sends (contact_id, book_id, status, failure_reason, sent_at)
+      values (${IVY}, ${B2}, 'failed', 'rejected', now() - interval '10 min')`);
+    await dbAdmin.execute(sql`
+      insert into public.contact_events (contact_id, source, recipient, diff, created_at)
+      values (${IVY}, 'token', 'primary', '{}', now() - interval '5 min')`);
+    await dbAdmin.execute(sql`update public.contacts set partner_email = null where id = ${GIA}`);
+  });
+
+  afterAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${B2}`);
+    await dbAdmin.execute(sql`delete from auth.users where id = ${U2}`);
+  });
+
+  const search = (input: object) => searchContacts(owner, searchContactsInput.parse(input));
+
+  it("ignores a removed person's bounce and clears attention after a reply", async () => {
+    expect((await search({ needs_attention: true })).items).toEqual([]);
+    expect(ids((await search({ status: "updated" })).items)).toEqual([IVY]);
+    expect(ids((await search({ status: "delivered" })).items)).toEqual([GIA]);
+
+    const summary = await bookSummary(owner);
+    expect(summary.needsAttention).toBe(0);
+    expect(summary.byStatus).toMatchObject({ updated: 1, delivered: 1, failed: 0, bounced: 0 });
+
+    const ivy = await getContact(owner, getContactInput.parse({ id: IVY }));
+    expect(ivy?.sendStatus).toMatchObject({ status: "updated", needsAttention: false, attention: [] });
+    const gia = await getContact(owner, getContactInput.parse({ id: GIA }));
+    expect(gia?.sendStatus).toMatchObject({ status: "delivered", needsAttention: false });
+  });
+
+  it("keeps non-Latin names and streets distinct when finding duplicates", async () => {
+    expect(normalizeText("王伟")).toBe("王伟");
+    expect(normalizeText("Иван Петров")).toBe("иван петров");
+    expect(normalizeStreet("ул. Ленина 5")).toBe(normalizeStreet("Ул Ленина, 5"));
+    expect(normalizeText("!!!")).toBe("");
+
+    const { items } = await findDuplicates(owner, findDuplicatesInput.parse({}));
+    expect(items.map((group) => ids(group.contacts))).toEqual([[IVAN, IVAN_AGAIN]]);
   });
 });

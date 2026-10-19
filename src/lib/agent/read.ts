@@ -2,7 +2,7 @@ import "server-only";
 import { count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { type SessionClaims } from "@/lib/auth";
-import { combineSends, type RecipientSend } from "@/lib/contacts-sheet";
+import { effectiveSends, type EffectiveSends, type StatusKey } from "@/lib/contacts-sheet";
 import { contactsToCsv } from "@/lib/csv/export";
 import { withRls } from "@/lib/db";
 import { emailSends, submissions } from "@/lib/db/schema";
@@ -63,13 +63,17 @@ export type ContactSummary = {
   stateRegion: string | null;
   postalCode: string | null;
   country: string | null;
-  status: SendStatus;
+  status: StatusKey;
   needsAttention: boolean;
+  attention: EffectiveSends["attention"];
   updatedAfterSend: boolean;
   missing: (GapField | "email")[];
 };
 
+const STATUS_FILTERS = ["none", ...SEND_STATUSES, "updated"] as const;
+
 function summarize(row: ContactListRow): ContactSummary {
+  const { status, attention } = effectiveSends(row);
   return {
     id: row.id,
     name: householdLine(pickStoredNames(row)),
@@ -79,8 +83,9 @@ function summarize(row: ContactListRow): ContactSummary {
     stateRegion: row.stateRegion,
     postalCode: row.postalCode,
     country: row.country,
-    status: row.sendStatus,
-    needsAttention: row.needsAttention,
+    status,
+    needsAttention: attention.length > 0,
+    attention,
     updatedAfterSend: row.updatedAfterSend,
     missing: [...addressGaps(row), ...(blank(row.email) ? (["email"] as const) : [])],
   };
@@ -94,15 +99,17 @@ export const searchContactsInput = z.object({
     .optional()
     .describe("Case-insensitive text matched against names, emails and city."),
   status: z
-    .enum(["none", ...SEND_STATUSES])
+    .enum(STATUS_FILTERS)
     .optional()
     .describe(
-      "Overall send status: the best of each person's latest send, as the dashboard shows it. 'none' means never emailed.",
+      "Status as the dashboard shows it: 'updated' when the recipient replied after the last send, otherwise the best latest send among people who still have an email. 'none' means never emailed.",
     ),
   needs_attention: z
     .boolean()
     .optional()
-    .describe("True: someone's latest send failed, bounced, complained or was never confirmed."),
+    .describe(
+      "True: someone who still has an email has a latest send that failed, bounced, complained or was never confirmed, and the contact has not replied since.",
+    ),
   missing_address: z
     .boolean()
     .optional()
@@ -121,7 +128,13 @@ export async function searchContacts(
   const rows = await listContacts(claims);
   const query = input.query?.toLowerCase();
   const country = input.country?.toLowerCase();
-  const matches = rows.filter((row) => {
+  const matches = rows.flatMap((row) => {
+    const summary = summarize(row);
+    return keep(row, summary) ? [summary] : [];
+  });
+  return paginate(matches, input);
+
+  function keep(row: ContactListRow, summary: ContactSummary): boolean {
     if (query) {
       const haystack = [
         householdLine(pickStoredNames(row)),
@@ -133,8 +146,8 @@ export async function searchContacts(
       ];
       if (!haystack.some((value) => value?.toLowerCase().includes(query))) return false;
     }
-    if (input.status !== undefined && row.sendStatus !== input.status) return false;
-    if (input.needs_attention !== undefined && row.needsAttention !== input.needs_attention) {
+    if (input.status !== undefined && summary.status !== input.status) return false;
+    if (input.needs_attention !== undefined && summary.needsAttention !== input.needs_attention) {
       return false;
     }
     if (
@@ -147,8 +160,7 @@ export async function searchContacts(
     if (country !== undefined && (row.country ?? "").trim().toLowerCase() !== country) return false;
     if (input.couples_only && !isCouple(row)) return false;
     return true;
-  });
-  return paginate(matches.map(summarize), input);
+  }
 }
 
 export const getContactInput = z.object({
@@ -184,18 +196,39 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
       .orderBy(desc(emailSends.sentAt), desc(emailSends.id))
       .limit(20),
   );
-  const latest = (recipient: Recipient): RecipientSend & { sentAt: Date | null } => {
+  const latest = (recipient: Recipient) => {
     const send = sends.find((row) => row.recipient === recipient);
     return send
       ? { status: send.status as SendStatus, failureReason: send.failureReason, sentAt: send.sentAt }
-      : { status: "none", failureReason: null, sentAt: null };
+      : { status: "none" as const, failureReason: null, sentAt: null };
   };
   const primary = latest("primary");
   const partner = latest("partner");
   const { contact, events } = detail;
+  // Mirrors listContacts' updatedAfterSend: a token reply newer than either person's latest send.
+  const sentTimes = [primary.sentAt, partner.sentAt].flatMap((at) => (at ? [at.getTime()] : []));
+  const updatedAfterSend =
+    sentTimes.length > 0 &&
+    events.some(
+      (event) => event.source === "token" && event.createdAt.getTime() > Math.max(...sentTimes),
+    );
+  const { status, failureReason, attention } = effectiveSends({
+    email: contact.email,
+    partnerEmail: contact.partnerEmail,
+    sendStatuses: { primary, partner },
+    updatedAfterSend,
+  });
   return {
     contact: { ...contact, name: householdLine(pickStoredNames(contact)) },
-    sendStatus: { ...combineSends(primary, partner), primary, partner },
+    sendStatus: {
+      status,
+      failureReason,
+      needsAttention: attention.length > 0,
+      attention,
+      updatedAfterSend,
+      primary,
+      partner,
+    },
     recentSends: sends,
     events: events.slice(0, input.events_limit).map((event) => ({
       id: event.id,
@@ -218,8 +251,8 @@ export async function bookSummary(claims: SessionClaims) {
   ]);
 
   const byStatus = Object.fromEntries(
-    (["none", ...SEND_STATUSES] as const).map((status) => [status, 0]),
-  ) as Record<SendStatus, number>;
+    STATUS_FILTERS.map((status) => [status, 0]),
+  ) as Record<StatusKey, number>;
   const countries = new Map<string, { country: string | null; count: number }>();
   const missing = { street: 0, city: 0, postal_code: 0, country: 0, any_address_field: 0, email: 0 };
   let couples = 0;
@@ -227,8 +260,9 @@ export async function bookSummary(claims: SessionClaims) {
   let updatedAfterSend = 0;
 
   for (const row of rows) {
-    byStatus[row.sendStatus] += 1;
-    if (row.needsAttention) needsAttention += 1;
+    const { status, attention } = effectiveSends(row);
+    byStatus[status] += 1;
+    if (attention.length > 0) needsAttention += 1;
     if (row.updatedAfterSend) updatedAfterSend += 1;
     if (isCouple(row)) couples += 1;
     const gaps = addressGaps(row);
@@ -303,9 +337,9 @@ const STREET_WORDS: Record<string, string> = {
 export function normalizeText(value: string): string {
   return value
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 
@@ -373,10 +407,11 @@ function duplicateKeys(row: ContactListRow): [key: string, reason: string][] {
     const normalized = email!.trim().toLowerCase();
     keys.push([`email:${normalized}`, `same email ${normalized}`]);
   }
-  if (!blank(row.addressLine1)) {
-    const street = normalizeStreet(row.addressLine1!);
+  const street = normalizeStreet(row.addressLine1 ?? "");
+  if (street !== "") {
     for (const name of new Set([householdLine(pickStoredNames(row)), row.fullName])) {
-      keys.push([`home:${normalizeText(name)}|${street}`, "same household name and street"]);
+      const normalized = normalizeText(name);
+      if (normalized !== "") keys.push([`home:${normalized}|${street}`, "same household name and street"]);
     }
   }
   return keys;
