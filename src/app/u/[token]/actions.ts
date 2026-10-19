@@ -8,6 +8,8 @@ import { sql } from "drizzle-orm";
 // action and the /u/[token] page are its ONLY consumers.
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
+import { sendNotification } from "@/lib/email/resend";
+import { contactUpdatedEmail } from "@/lib/email/templates";
 import { logDbError } from "@/lib/log";
 import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
@@ -57,6 +59,41 @@ async function tokenData(token: string): Promise<TokenData | null> {
     logDbError("[tu] [tokenData] get_contact_for_token failed", err);
     return null;
   }
+}
+
+type TokenOwner = { contactId: string; email: string };
+
+async function ownerForToken(token: string): Promise<TokenOwner | null> {
+  try {
+    const rows = await dbAdmin.execute(
+      sql`select c.id as contact_id, u.email as email
+          from public.update_tokens t
+          join public.contacts c on c.id = t.contact_id
+          join public.books b on b.id = c.book_id
+          join auth.users u on u.id = b.owner_id
+          where t.token_hash = extensions.digest(${token}, 'sha256')`,
+    );
+    const { contact_id: contactId, email } = rows[0] ?? {};
+    return typeof contactId === "string" && typeof email === "string" && email
+      ? { contactId, email }
+      : null;
+  } catch (err) {
+    logDbError("[tu] [ownerForToken] lookup failed", err);
+    return null;
+  }
+}
+
+/** Best effort: the recipient's update is already saved, so this never fails the submit. */
+async function notifyOwner({ contactId, email }: TokenOwner): Promise<void> {
+  const appUrl = process.env.APP_URL;
+  if (!appUrl) {
+    console.error("[tu] [notifyOwner] APP_URL is not set");
+    return;
+  }
+  await sendNotification({
+    to: email,
+    ...contactUpdatedEmail({ contactUrl: `${appUrl}/dashboard/contacts/${contactId}` }),
+  });
 }
 
 /**
@@ -144,6 +181,9 @@ export async function submitTokenUpdate(
     if (formData.has(field)) payload[field] = details.data[field] ?? "";
   }
 
+  // Look up before applying: an email change deletes the token with the update.
+  const owner = await ownerForToken(token);
+
   // 6. Single-use apply. `false` covers unknown/expired/used token AND
   //    non-object/oversized payload — all get the identical generic copy.
   let applied = false;
@@ -161,5 +201,6 @@ export async function submitTokenUpdate(
     return { error: INVALID_LINK_MESSAGE, ...echo };
   }
 
+  if (owner) await notifyOwner(owner);
   redirect("/u/thanks");
 }

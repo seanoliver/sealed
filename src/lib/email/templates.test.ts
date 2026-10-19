@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addressRequestEmail,
   healthCheckFailedEmail,
+  contactUpdatedEmail,
   submissionNotificationEmail,
   waitlistApprovedEmail,
 } from "./templates";
@@ -145,5 +146,21 @@ describe("waitlistApprovedEmail", () => {
     });
     expect(html).toContain('<a href="https://app.example"');
     expect(text).toContain("go to https://app.example and enter this email address");
+  });
+});
+
+describe("contactUpdatedEmail", () => {
+  const contactUrl = "https://self-hosted.example/dashboard/contacts/c1";
+
+  it("links to the contact in html and text", () => {
+    const { subject, html, text } = contactUpdatedEmail({ contactUrl });
+    expect(subject).toBe("A contact updated their details · Sealed");
+    expect(html).toContain(`href="${contactUrl}"`);
+    expect(text).toContain(`View contact: ${contactUrl}`);
+  });
+
+  it("escapes the URL in html", () => {
+    const { html } = contactUpdatedEmail({ contactUrl: 'https://x.example/"><b>' });
+    expect(html).not.toContain('"><b>');
   });
 });

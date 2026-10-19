@@ -5,6 +5,7 @@ import { contacts } from "@/lib/db/schema";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { generateToken } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { sendNotification } from "@/lib/email/resend";
 import { householdPrefill } from "@/lib/names";
 import { INVALID_LINK_MESSAGE } from "../notice";
 import { submitTokenUpdate } from "./actions";
@@ -15,6 +16,7 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/email/resend", () => ({ sendNotification: vi.fn() }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: vi.fn() }));
 vi.mock("@/lib/request-ip", () => ({
   requestIp: async () => "203.0.113.9",
@@ -114,12 +116,14 @@ async function stored() {
 describe("submitTokenUpdate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("APP_URL", "https://app.example");
     vi.mocked(checkRateLimit).mockResolvedValue(true);
     vi.mocked(verifyTurnstile).mockResolvedValue(true);
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);
   });
 
@@ -225,6 +229,38 @@ describe("submitTokenUpdate", () => {
     expect(result).toMatchObject({ error: "Invalid email address" });
     expect(result.fieldErrors).toBeUndefined();
     expect((await stored()).city).toBe("Paris");
+  });
+
+  it("emails the owner a link to the contact after a save", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    expect(sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "tu-owner@test.dev",
+        subject: "A contact updated their details · Sealed",
+        text: expect.stringContaining(`https://app.example/dashboard/contacts/${C}`),
+      }),
+    );
+  });
+
+  it("emails the owner when the recipient changes their email", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const form = prefilledForm(contact, { email: "new@tu.test" });
+    await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+    expect((await stored()).email).toBe("new@tu.test");
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends nothing when the save is refused", async () => {
+    const contact = { fullName: "Jen Holloway", kidsNames: TWELVE_KIDS };
+    const token = await seed(contact);
+    await submitTokenUpdate(token, {}, prefilledForm(contact, { first_name: "Jenny" }));
+    await dbAdmin.execute(sql`update public.update_tokens set used_at = now() where contact_id = ${C}`);
+    await submitTokenUpdate(token, {}, prefilledForm(contact));
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 
   it("refuses a malformed token without touching the database", async () => {
