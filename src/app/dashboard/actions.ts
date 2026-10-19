@@ -15,6 +15,8 @@ import { dbAdmin } from "@/lib/db/admin";
 import { books, contacts, emailSends, profiles, updateTokens } from "@/lib/db/schema";
 import { isEmailDryRun, sendAddressRequests } from "@/lib/email/resend";
 import { addressRequestEmail } from "@/lib/email/templates";
+import { addressLines } from "@/lib/address";
+import { envelopeLine, pickStoredNames } from "@/lib/names";
 import { logDbError } from "@/lib/log";
 import { generateToken, TOKEN_TTL_DAYS } from "@/lib/tokens";
 
@@ -64,13 +66,14 @@ export async function requestAddresses(
     | {
         bookId: string;
         ownerName: string;
-        rows: { id: string; email: string | null }[];
+        showPartner: boolean;
+        rows: (typeof contacts.$inferSelect)[];
       }
     | undefined;
   try {
     scope = await withRls(claims, async (tx) => {
       const [book] = await tx
-        .select({ id: books.id })
+        .select({ id: books.id, enabledFields: books.enabledFields })
         .from(books)
         .where(eq(books.ownerId, claims.sub))
         .limit(1);
@@ -83,7 +86,7 @@ export async function requestAddresses(
         .limit(1);
 
       const rows = await tx
-        .select({ id: contacts.id, email: contacts.email })
+        .select()
         .from(contacts)
         .where(
           and(
@@ -95,6 +98,7 @@ export async function requestAddresses(
       return {
         bookId: book.id,
         ownerName: profile?.displayName.trim() ?? "",
+        showPartner: book.enabledFields.partner_name,
         rows,
       };
     });
@@ -104,8 +108,8 @@ export async function requestAddresses(
   }
   if (!scope) return { error: "Set up your address book first." };
 
-  const targets = scope.rows.filter(
-    (row): row is { id: string; email: string } => row.email !== null,
+  const targets = scope.rows.flatMap((row) =>
+    row.email === null ? [] : [{ ...row, email: row.email }],
   );
   const skippedNoEmail = scope.rows.length - targets.length;
   if (targets.length === 0) {
@@ -145,6 +149,11 @@ export async function requestAddresses(
       ...addressRequestEmail({
         ownerName: scope.ownerName,
         updateUrl: `${appUrl}/u/${token}`,
+        confirmUrl: `${appUrl}/u/${token}/confirm`,
+        envelope: {
+          household: envelopeLine(pickStoredNames(target), { partner: scope.showPartner }),
+          address: addressLines(target),
+        },
       }),
     })),
     { batchKey: randomUUID() },

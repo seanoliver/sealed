@@ -6,6 +6,7 @@ import {
   compareLastName,
   formatKids,
   formatPerson,
+  envelopeLine,
   householdLine,
   householdPrefill,
   isHouseholdLabel,
@@ -315,5 +316,18 @@ describe("isUntouchedPrefill", () => {
     const shown = householdPrefill(legacy, sections);
     expect(isUntouchedPrefill(legacy, shown, sections)).toBe(true);
     expect(isUntouchedPrefill(legacy, shown)).toBe(false);
+  });
+});
+
+describe("envelopeLine", () => {
+  const couple = { ...legacy, fullName: "Priya Raman", partnerName: "Daniel Okafor" };
+
+  it("includes the partner when the book collects partners", () => {
+    expect(envelopeLine(couple, { partner: true })).toBe("Priya Raman & Daniel Okafor");
+  });
+
+  it("leaves the partner off when it does not", () => {
+    expect(envelopeLine(couple, { partner: false })).toBe("Priya Raman");
+    expect(envelopeLine({ ...split, partnerFirstName: "Mark" }, { partner: false })).toBe("Jen Holloway");
   });
 });
