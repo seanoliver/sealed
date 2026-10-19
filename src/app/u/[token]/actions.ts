@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { sql } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs):
 // private.apply_token_update is a SECURITY DEFINER function with zero grants
@@ -201,6 +202,6 @@ export async function submitTokenUpdate(
     return { error: INVALID_LINK_MESSAGE, ...echo };
   }
 
-  if (owner) await notifyOwner(owner);
+  if (owner) after(() => notifyOwner(owner));
   redirect("/u/thanks");
 }

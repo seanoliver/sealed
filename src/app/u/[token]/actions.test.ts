@@ -17,6 +17,11 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/email/resend", () => ({ sendNotification: vi.fn() }));
+const deferred = vi.hoisted(() => [] as (() => unknown)[]);
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => deferred.push(fn) }));
+const flushAfter = async () => {
+  for (const fn of deferred.splice(0)) await fn();
+};
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: vi.fn() }));
 vi.mock("@/lib/request-ip", () => ({
   requestIp: async () => "203.0.113.9",
@@ -116,6 +121,8 @@ async function stored() {
 describe("submitTokenUpdate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deferred.length = 0;
+    vi.restoreAllMocks();
     vi.stubEnv("APP_URL", "https://app.example");
     vi.mocked(checkRateLimit).mockResolvedValue(true);
     vi.mocked(verifyTurnstile).mockResolvedValue(true);
@@ -235,11 +242,13 @@ describe("submitTokenUpdate", () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);
     await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+    expect(sendNotification).not.toHaveBeenCalled();
+    await flushAfter();
     expect(sendNotification).toHaveBeenCalledTimes(1);
     expect(sendNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "tu-owner@test.dev",
-        subject: "A contact updated their details · Sealed",
+        subject: "A contact checked their details · Sealed",
         text: expect.stringContaining(`https://app.example/dashboard/contacts/${C}`),
       }),
     );
@@ -251,6 +260,71 @@ describe("submitTokenUpdate", () => {
     const form = prefilledForm(contact, { email: "new@tu.test" });
     await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
     expect((await stored()).email).toBe("new@tu.test");
+    await flushAfter();
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("redirects even when the owner lookup fails", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    vi.spyOn(dbAdmin, "execute").mockRejectedValueOnce(new Error("db down"));
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+    expect((await stored()).city).toBe("Oslo");
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("puts no recipient data in the email", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const form = prefilledForm(contact, { email: "secret@tu.test", address_line1: "9 Hidden Ln" });
+    await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+    await flushAfter();
+    const sent = JSON.stringify(vi.mocked(sendNotification).mock.calls);
+    for (const value of ["Ana", "Reyes", "secret@tu.test", "9 Hidden Ln", "Oslo"]) {
+      expect(sent).not.toContain(value);
+    }
+  });
+
+  it("skips the email without APP_URL, still saving", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    vi.stubEnv("APP_URL", "");
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect((await stored()).city).toBe("Oslo");
+  });
+
+  it("skips the email when the owner has no email address", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    vi.spyOn(dbAdmin, "execute").mockResolvedValueOnce([{ contact_id: C, email: "" }] as never);
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the apply refuses after the lookup", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const execute = dbAdmin.execute.bind(dbAdmin);
+    vi.spyOn(dbAdmin, "execute")
+      .mockImplementationOnce(execute)
+      .mockResolvedValueOnce([{ ok: false }] as never);
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).resolves.toMatchObject({
+      error: INVALID_LINK_MESSAGE,
+    });
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("still redirects when the send fails", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    vi.mocked(sendNotification).mockResolvedValueOnce(false);
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+    await flushAfter();
     expect(sendNotification).toHaveBeenCalledTimes(1);
   });
 
@@ -260,6 +334,7 @@ describe("submitTokenUpdate", () => {
     await submitTokenUpdate(token, {}, prefilledForm(contact, { first_name: "Jenny" }));
     await dbAdmin.execute(sql`update public.update_tokens set used_at = now() where contact_id = ${C}`);
     await submitTokenUpdate(token, {}, prefilledForm(contact));
+    await flushAfter();
     expect(sendNotification).not.toHaveBeenCalled();
   });
 

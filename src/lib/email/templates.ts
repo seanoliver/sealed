@@ -108,7 +108,7 @@ export interface ContactUpdatedEmailInput {
 
 /** Owner notification for a token update. Same rule as submissions: no recipient data. */
 export function contactUpdatedEmail({ contactUrl }: ContactUpdatedEmailInput): EmailContent {
-  const subject = "A contact updated their details · Sealed";
+  const subject = "A contact checked their details · Sealed";
   const url = escapeHtml(contactUrl);
 
   const html = `<div style="margin:0 auto;max-width:520px;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:15px;line-height:1.6">

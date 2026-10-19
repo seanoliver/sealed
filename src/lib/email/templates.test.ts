@@ -154,7 +154,7 @@ describe("contactUpdatedEmail", () => {
 
   it("links to the contact in html and text", () => {
     const { subject, html, text } = contactUpdatedEmail({ contactUrl });
-    expect(subject).toBe("A contact updated their details · Sealed");
+    expect(subject).toBe("A contact checked their details · Sealed");
     expect(html).toContain(`href="${contactUrl}"`);
     expect(text).toContain(`View contact: ${contactUrl}`);
   });
