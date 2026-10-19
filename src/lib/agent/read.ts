@@ -205,7 +205,6 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
   const primary = latest("primary");
   const partner = latest("partner");
   const { contact, events } = detail;
-  // Mirrors listContacts' updatedAfterSend: a token reply newer than either person's latest send.
   const sentTimes = [primary.sentAt, partner.sentAt].flatMap((at) => (at ? [at.getTime()] : []));
   const updatedAfterSend =
     sentTimes.length > 0 &&

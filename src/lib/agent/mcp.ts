@@ -48,9 +48,8 @@ function bearerToken(req: Request): string | undefined {
 }
 
 /**
- * Bearer auth for the MCP route. Verifies before withMcpAuth because it turns
- * any verifier throw into 401 invalid_token, and a database outage must not
- * look like a dead credential.
+ * Verify before withMcpAuth: it turns any verifier throw into 401, and a
+ * database outage must answer 503, not look like a dead credential.
  */
 export function withAgentAuth(
   handler: (req: Request) => Promise<Response>,

@@ -108,14 +108,12 @@ export function toSheetRow(
 }
 
 export type EffectiveSends = {
-  /** People who still have an email; only their sends count. */
   emailed: Recipient[];
   status: StatusKey;
   failureReason: FailureReason | null;
   attention: { recipient: Recipient; status: SendStatus }[];
 };
 
-/** The status and attention the dashboard shows for a contact; agent tools must use this too. */
 export function effectiveSends(
   row: Pick<ContactListRow, "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend">,
 ): EffectiveSends {
