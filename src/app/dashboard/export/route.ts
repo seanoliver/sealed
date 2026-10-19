@@ -13,7 +13,7 @@ export async function GET(): Promise<Response> {
 
   // UTF-8 BOM so Excel decodes accented names correctly; parseContactsCsv
   // strips it on re-import, so round-tripping is unaffected.
-  return new Response("﻿" + contactsToCsv(rows), {
+  return new Response("\uFEFF" + contactsToCsv(rows), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="address-book.csv"',
