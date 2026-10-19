@@ -8,9 +8,15 @@ import {
   isSplit,
   type StoredNames,
 } from "@/lib/names";
+import { addressLines } from "@/lib/address";
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
+import type { Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
+import {
+  CLEARABLE_FIELDS,
+  type SubmissionDisplayFields,
+} from "@/lib/validation/submission";
 import {
   householdSchema,
   type HouseholdFieldErrors,
@@ -23,6 +29,7 @@ export type StatusKey = SendStatus | "updated";
 export type SheetField = Extract<
   keyof ContactFormValues,
   | "email"
+  | "partner_email"
   | "address_line1"
   | "city"
   | "state_region"
@@ -32,20 +39,58 @@ export type SheetField = Extract<
 
 export type SheetValues = Record<SheetField, string>;
 
+export type PersonSend = RecipientSend & { name: string };
+
 export interface SheetRow {
   id: string;
   names: StoredNames;
   values: SheetValues;
   status: StatusKey;
   failureReason: FailureReason | null;
+  people: PersonSend[];
+  needsAttention: boolean;
+  attention: { recipient: Recipient; status: SendStatus }[];
+  answers: TwoAnswers | null;
   updatedAtIso: string;
   updatedAtLabel: string;
 }
 
+export type PendingAnswer = {
+  submissionId: string;
+  display: SubmissionDisplayFields;
+  from: Recipient;
+  savedBy: Recipient;
+};
+
 export function toSheetRow(
   row: ContactListRow,
   formatDate: (date: Date) => string,
+  { answer }: { answer?: PendingAnswer } = {},
 ): SheetRow {
+  const values: SheetValues = {
+    email: row.email ?? "",
+    partner_email: row.partnerEmail ?? "",
+    address_line1: row.addressLine1 ?? "",
+    city: row.city ?? "",
+    state_region: row.stateRegion ?? "",
+    postal_code: row.postalCode ?? "",
+    country: row.country ?? "",
+  };
+  // A person whose email was removed no longer counts: their old bounce
+  // can't be resent, so it must not hold the row in Needs attention.
+  const emailed = (["primary", "partner"] as const).filter(
+    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
+  );
+  const sendOf = (recipient: Recipient): RecipientSend =>
+    emailed.includes(recipient)
+      ? row.sendStatuses[recipient]
+      : { status: "none", failureReason: null };
+  const combined = combineSends(sendOf("primary"), sendOf("partner"));
+  const attention = row.updatedAfterSend
+    ? []
+    : emailed
+        .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
+        .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status }));
   return {
     id: row.id,
     names: {
@@ -58,16 +103,19 @@ export function toSheetRow(
       partnerLastName: row.partnerLastName,
       kids: row.kids,
     },
-    values: {
-      email: row.email ?? "",
-      address_line1: row.addressLine1 ?? "",
-      city: row.city ?? "",
-      state_region: row.stateRegion ?? "",
-      postal_code: row.postalCode ?? "",
-      country: row.country ?? "",
-    },
-    status: row.updatedAfterSend ? "updated" : row.sendStatus,
-    failureReason: row.sendFailureReason,
+    values,
+    status: row.updatedAfterSend ? "updated" : combined.status,
+    failureReason: combined.failureReason,
+    people:
+      emailed.length === 2
+        ? emailed.map((recipient) => ({
+          name: personName(row, recipient) ?? (recipient === "primary" ? "First" : "Partner"),
+          ...row.sendStatuses[recipient],
+        }))
+      : [],
+    needsAttention: attention.length > 0,
+    attention,
+    answers: answer ? twoAnswers(row, answer) : null,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
   };
@@ -93,6 +141,202 @@ export const NEEDS_ATTENTION: ReadonlySet<StatusKey> = new Set([
   "complained",
   "unconfirmed",
 ]);
+
+export type RecipientSend = {
+  status: SendStatus;
+  failureReason: FailureReason | null;
+};
+
+export function combineSends(
+  primary: RecipientSend,
+  partner: RecipientSend,
+): RecipientSend & { needsAttention: boolean } {
+  const sends = [primary, partner].filter((send) => send.status !== "none");
+  const best =
+    sends.length === 0
+      ? primary
+      : sends.reduce((a, b) => (STATUS_RANK[b.status] > STATUS_RANK[a.status] ? b : a));
+  return {
+    ...best,
+    needsAttention: sends.some((send) => NEEDS_ATTENTION.has(send.status)),
+  };
+}
+
+/** Not the best person's status: "Failed / Delivered" must sort with the problems. */
+export function statusRank(row: Pick<SheetRow, "status" | "people" | "needsAttention">): number {
+  const ranks = row.needsAttention
+    ? row.people.filter((person) => person.status !== "none").map((person) => STATUS_RANK[person.status])
+    : [];
+  return Math.min(STATUS_RANK[row.status], ...ranks);
+}
+
+const HAS_LINK: ReadonlySet<StatusKey> = new Set(["sent", "delivered", "opened", "unconfirmed"]);
+
+export type SendPlan = {
+  input: { contactIds: string[] } | { recipients: { contactId: string; recipient: Recipient }[] };
+  contacts: number;
+  emails: number;
+  skipped: number;
+  replacedLinks: number;
+};
+
+export function sendPlan(
+  rows: SheetRow[],
+  { attentionOnly }: { attentionOnly: boolean },
+): SendPlan {
+  if (attentionOnly) {
+    const targets = rows.flatMap((row) =>
+      row.attention.map((person) => ({ row, ...person })),
+    );
+    return {
+      input: {
+        recipients: targets.map(({ row, recipient }) => ({ contactId: row.id, recipient })),
+      },
+      contacts: rows.filter((row) => row.attention.length > 0).length,
+      emails: targets.length,
+      skipped: 0,
+      replacedLinks: targets.filter((target) => HAS_LINK.has(target.status)).length,
+    };
+  }
+  const emailable = rows.filter((row) => emailCount(row.values) > 0);
+  return {
+    input: { contactIds: rows.map((row) => row.id) },
+    contacts: emailable.length,
+    emails: emailable.reduce((sum, row) => sum + emailCount(row.values), 0),
+    skipped: rows.length - emailable.length,
+    replacedLinks: rows.filter((row) => HAS_LINK.has(row.status)).length,
+  };
+}
+
+export function emailCount(values: Pick<SheetValues, "email" | "partner_email">): number {
+  return (values.email === "" ? 0 : 1) + (values.partner_email === "" ? 0 : 1);
+}
+
+function personName(names: StoredNames, recipient: Recipient): string | null {
+  const first = recipient === "primary" ? names.firstName : names.partnerFirstName;
+  const full = recipient === "primary" ? names.fullName : names.partnerName;
+  return first ?? full?.trim().split(/\s+/)[0] ?? null;
+}
+
+export type AnswerPart = { text: string; changed: boolean };
+export type AnswerLine = { label: string | null; parts: AnswerPart[] };
+export type AnswerSide = { name: string | null; lines: AnswerLine[] };
+export type TwoAnswers = {
+  submissionId: string;
+  saved: AnswerSide;
+  incoming: AnswerSide;
+};
+
+const ADDRESS_FIELDS = [
+  ["address_line1", "Street"],
+  ["address_line2", "Line 2"],
+  ["city", "City"],
+  ["state_region", "State"],
+  ["postal_code", "Postal code"],
+  ["country", "Country"],
+] as const;
+
+const CLEARABLE: ReadonlySet<string> = new Set(CLEARABLE_FIELDS);
+
+const REMOVED = "(removed)";
+
+const MARK_START = "\u0001";
+const MARK_END = "\u0002";
+// split() with a capture group alternates plain and marked text.
+const MARKED = /\u0001(.*?)\u0002/;
+
+const OTHER_FIELDS = [
+  ["full_name", "Name"],
+  ["partner_name", "Partner"],
+  ["kids_names", "Kids"],
+  ["birthday", "Birthday"],
+  ["email", "Email"],
+  ["partner_email", "Partner email"],
+] as const;
+
+type AnswerField =
+  | (typeof ADDRESS_FIELDS)[number][0]
+  | (typeof OTHER_FIELDS)[number][0];
+
+export function twoAnswers(
+  row: ContactListRow,
+  { submissionId, display, from, savedBy }: PendingAnswer,
+): TwoAnswers {
+  const saved: Record<AnswerField, string> = {
+    full_name: row.fullName,
+    partner_name: row.partnerName ?? "",
+    kids_names: row.kidsNames ?? "",
+    birthday: row.birthday ?? "",
+    email: row.email ?? "",
+    partner_email: row.partnerEmail ?? "",
+    address_line1: row.addressLine1 ?? "",
+    address_line2: row.addressLine2 ?? "",
+    city: row.city ?? "",
+    state_region: row.stateRegion ?? "",
+    postal_code: row.postalCode ?? "",
+    country: row.country ?? "",
+  };
+  const reply = (field: AnswerField) => {
+    const value = display[field];
+    return value === undefined || (value === "" && !CLEARABLE.has(field))
+      ? saved[field]
+      : value;
+  };
+  const changed = (field: AnswerField) => reply(field) !== saved[field];
+
+  const address = (value: (field: AnswerField) => string, mark: boolean) => {
+    const at = (field: AnswerField) => {
+      const text = value(field);
+      if (text === "") return null;
+      return mark && changed(field) ? `${MARK_START}${text}${MARK_END}` : text;
+    };
+    const lines =
+      addressLines({
+        addressLine1: at("address_line1"),
+        addressLine2: at("address_line2"),
+        city: at("city"),
+        stateRegion: at("state_region"),
+        postalCode: at("postal_code"),
+        country: at("country"),
+      }) ?? ADDRESS_FIELDS.map(([field]) => at(field)).filter((text) => text !== null);
+    return {
+      label: null,
+      parts: lines
+        .join(", ")
+        .split(MARKED)
+        .map((text, i) => ({ text, changed: i % 2 === 1 }))
+        .filter((part) => part.text !== ""),
+    };
+  };
+  const others = OTHER_FIELDS.filter(([field]) => changed(field));
+  const removedAddress = ADDRESS_FIELDS.filter(
+    ([field]) => changed(field) && reply(field) === "",
+  );
+  return {
+    submissionId,
+    saved: {
+      name: personName(row, savedBy),
+      lines: [
+        address((field) => saved[field], false),
+        ...others.map(([field, label]) => ({
+          label,
+          parts: [{ text: saved[field] || "—", changed: false }],
+        })),
+      ],
+    },
+    incoming: {
+      name: personName(row, from),
+      lines: [
+        address(reply, true),
+        ...[...removedAddress, ...others].map(([field, label]) => ({
+          label,
+          parts: [{ text: reply(field) || REMOVED, changed: true }],
+        })),
+      ],
+    },
+  };
+}
+
 
 export function changedValues(
   values: SheetValues,

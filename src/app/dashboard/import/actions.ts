@@ -8,7 +8,7 @@ import { withRls } from "@/lib/db";
 import { contactInputToRow } from "@/lib/db/contact-row";
 import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { contactSchema } from "@/lib/validation/contact";
+import { contactSchema, withoutSamePartnerEmail } from "@/lib/validation/contact";
 
 const importSchema = z.array(contactSchema).max(1000);
 
@@ -39,7 +39,10 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
       const inserted = await tx
         .insert(contacts)
         .values(
-          parsed.data.map((d) => ({ bookId: book.id, ...contactInputToRow(d) })),
+          parsed.data.map((d) => ({
+            bookId: book.id,
+            ...contactInputToRow(withoutSamePartnerEmail(d)),
+          })),
         )
         // Targets the partial unique index contacts_book_email_unique
         // (book_id, email) WHERE email IS NOT NULL — the `where` here is the

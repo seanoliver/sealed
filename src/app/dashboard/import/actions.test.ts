@@ -59,6 +59,25 @@ describe("importContacts", () => {
     ]);
   });
 
+  it("imports the partner's email, dropping one that repeats the email", async () => {
+    await expect(
+      importContacts([
+        { full_name: "Jen Holloway", email: "jen@im.test", partner_email: "mark@im.test" },
+        { full_name: "Cal Ortiz", email: "cal@im.test", partner_email: "CAL@im.test" },
+      ]),
+    ).resolves.toEqual({ imported: 2, skipped: 0 });
+    const stored = await dbAdmin
+      .select({ fullName: contacts.fullName, partnerEmail: contacts.partnerEmail })
+      .from(contacts)
+      .where(eq(contacts.bookId, B))
+      .orderBy(contacts.fullName);
+    expect(stored).toEqual([
+      { fullName: "Cal Ortiz", partnerEmail: null },
+      { fullName: "Existing Ana", partnerEmail: null },
+      { fullName: "Jen Holloway", partnerEmail: "mark@im.test" },
+    ]);
+  });
+
   it("keeps the first of two rows sharing an email in one file", async () => {
     await expect(
       importContacts([

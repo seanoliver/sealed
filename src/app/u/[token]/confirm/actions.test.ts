@@ -215,4 +215,44 @@ describe("confirmTokenAddress", () => {
       .where(eq(contactEvents.contactId, C));
     expect(events).toHaveLength(0);
   });
+
+  it("confirms after the other person changed the contact, without queuing", async () => {
+    const primary = await seed();
+    await dbAdmin.execute(
+      sql`update public.contacts set partner_email = 'ben@cf.test' where id = ${C}`,
+    );
+    const { token: partner, hash } = generateToken();
+    await dbAdmin.insert(updateTokens).values({
+      contactId: C,
+      tokenHash: hash,
+      recipient: "partner",
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    const [{ seen }] = await dbAdmin.execute(
+      sql`select private.get_contact_for_token(${partner}) ->> 'updated_at' as seen`,
+    );
+    await dbAdmin.execute(
+      sql`select private.apply_token_reply(${primary}, '{"city": "Salem"}'::jsonb)`,
+    );
+
+    const form = new FormData();
+    form.set("seen_at", String(seen));
+    await expect(confirmTokenAddress(partner, {}, form)).resolves.toEqual({
+      confirmed: true,
+    });
+    expect((await stored()).city).toBe("Salem");
+    const events = await dbAdmin
+      .select({ recipient: contactEvents.recipient })
+      .from(contactEvents)
+      .where(eq(contactEvents.contactId, C));
+    expect(events.map((e) => e.recipient).sort()).toEqual(["partner", "primary"]);
+    const queued = await dbAdmin.execute(
+      sql`select 1 from public.submissions where matched_contact_id = ${C}`,
+    );
+    expect(queued).toHaveLength(0);
+    await flushAfter();
+    expect(sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: "A contact checked their details · Sealed" }),
+    );
+  });
 });

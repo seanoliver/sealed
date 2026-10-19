@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-locale";
 
 const emailSchema = z.email().max(254);
 

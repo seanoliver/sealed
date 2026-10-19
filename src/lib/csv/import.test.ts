@@ -151,6 +151,32 @@ describe("parseContactsCsv", () => {
     expect(valid).toEqual([{ full_name: "From Canonical" }]);
   });
 
+  it.each(["Email 2", "Partner Email", "Second Email", "partner_email"])(
+    "reads a %s column as the partner's email",
+    (header) => {
+      const { valid, errors } = parseContactsCsv(
+        `Name,Email,${header}\nJen Holloway,jen@example.com,mark@example.com`,
+      );
+      expect(errors).toEqual([]);
+      expect(valid[0]).toMatchObject({
+        email: "jen@example.com",
+        partner_email: "mark@example.com",
+      });
+    },
+  );
+
+  it("drops a partner email that repeats the email", () => {
+    const { valid } = parseContactsCsv("Name,Email,Email 2\nJen,jen@example.com,JEN@example.com");
+    expect(valid[0]).toMatchObject({ email: "jen@example.com" });
+    expect(valid[0].partner_email).toBeUndefined();
+  });
+
+  it("reports an invalid partner email like any other field", () => {
+    const { errors } = parseContactsCsv("Name,Email 2\nJen,not-an-email");
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(/^partner_email/);
+  });
+
   it("ignores unknown columns", () => {
     const csv = "full_name,favorite_color,email\nAda,mauve,ada@example.com";
     const { valid, errors } = parseContactsCsv(csv);

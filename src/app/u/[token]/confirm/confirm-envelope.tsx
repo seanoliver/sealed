@@ -9,6 +9,7 @@ type Props = {
   ownerName: string;
   lines: string[];
   updateHref: string;
+  seenAt: string;
 };
 
 export function ConfirmEnvelope({
@@ -16,6 +17,7 @@ export function ConfirmEnvelope({
   ownerName,
   lines,
   updateHref,
+  seenAt,
 }: Props) {
   const [state, formAction, pending] = useActionState(
     async (
@@ -75,6 +77,7 @@ export function ConfirmEnvelope({
           ))}
         </address>
       </div>
+      <input type="hidden" name="seen_at" value={seenAt} />
       <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
       <button
         type="submit"

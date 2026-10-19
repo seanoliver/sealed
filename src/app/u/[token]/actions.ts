@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { sql } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs):
-// private.apply_token_update is a SECURITY DEFINER function with zero grants
+// private.apply_token_reply is a SECURITY DEFINER function with zero grants
 // for client roles — the admin connection is the only path to it. This
 // action and the /u/[token] page are its ONLY consumers.
 import { dbAdmin } from "@/lib/db/admin";
@@ -31,7 +31,7 @@ import {
 import { type RecipientFormState } from "@/components/recipient-form";
 import { INVALID_LINK_MESSAGE } from "../notice";
 import { notifyOwner, ownerForToken } from "./owner";
-import { storedNames, type TokenData, tokenDataSchema } from "./token-data";
+import { readSeenAt, storedNames, type TokenData, tokenDataSchema } from "./token-data";
 
 export type TokenUpdateState = RecipientFormState;
 
@@ -128,7 +128,7 @@ export async function submitTokenUpdate(
   // 5. Payload keys = exactly the fields the form rendered (present in
   //    formData): a present key with "" clears the column, an absent key
   //    (field disabled for this book) leaves it untouched. A hostile client
-  //    CAN inject extra keys here, but apply_token_update re-gates disabled
+  //    CAN inject extra keys here, but apply_token_reply re-gates disabled
   //    fields against books.enabled_fields server-side, so they are inert.
   //    Test the section markers: a removed partner row posts no partner keys.
   const payload: Record<string, unknown> = {};
@@ -149,23 +149,25 @@ export async function submitTokenUpdate(
   // Look up before applying: an email change deletes the token with the update.
   const owner = await ownerForToken(token);
 
-  // 6. Single-use apply. `false` covers unknown/expired/used token AND
-  //    non-object/oversized payload — all get the identical generic copy.
-  let applied = false;
+  // 6. Single-use apply. NULL (unknown/expired/used token, bad payload) gets the
+  //    generic copy. 'queued' still thanks the recipient: anything else would
+  //    leak the other person's answer.
+  let outcome: unknown = null;
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.apply_token_update(${token}, ${JSON.stringify(payload)}::jsonb) as ok`,
+      sql`select private.apply_token_reply(${token}, ${JSON.stringify(payload)}::jsonb,
+            ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
-    applied = rows[0]?.ok === true;
+    outcome = rows[0]?.outcome ?? null;
   } catch (err) {
     // logDbError reports code/constraint only — the token never reaches logs.
-    logDbError("[tu] [submitTokenUpdate] apply_token_update failed", err);
+    logDbError("[tu] [submitTokenUpdate] apply_token_reply failed", err);
     return { error: GENERIC_ERROR, ...echo };
   }
-  if (!applied) {
+  if (outcome !== "applied" && outcome !== "queued") {
     return { error: INVALID_LINK_MESSAGE, ...echo };
   }
 
-  if (owner) after(() => notifyOwner(owner));
+  if (owner) after(() => notifyOwner({ ...owner, queued: outcome === "queued" }));
   redirect("/u/thanks");
 }

@@ -9,7 +9,12 @@ import { dbAdmin } from "@/lib/db/admin";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { parseSubmissionPayload } from "@/lib/validation/submission";
+import {
+  clearedFields,
+  parsePartnerEmail,
+  parseSubmissionPayload,
+  withoutBlanks,
+} from "@/lib/validation/submission";
 import {
   changedFields,
   definedFields,
@@ -218,8 +223,11 @@ export async function approveMerge(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       // Same strict-parse + gate as approveNew (see module doc).
-      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
-      if (!parsed.success) return { kind: "invalid" };
+      const token = submission.source === "token";
+      const payload = token ? withoutBlanks(submission.payload) : submission.payload;
+      const parsed = parseSubmissionPayload(payload, book.enabledFields);
+      const partnerEmail = parsePartnerEmail(payload);
+      if (!parsed.success || !partnerEmail.success) return { kind: "invalid" };
       const gated = parsed.data;
 
       // Scoped by id AND bookId (RLS backstops the same predicate). The FK
@@ -244,7 +252,10 @@ export async function approveMerge(
       // as absent and can never CLEAR a column. This intentionally differs
       // from token updates, where a present-but-empty key means "clear".
       const before = rowToSnapshot(existing);
-      const set = mergeUpdate(before, gated);
+      const set = mergeUpdate(before, gated, {
+        partnerEmail: partnerEmail.data,
+        clear: token ? clearedFields(submission.payload, book.enabledFields) : [],
+      });
 
       // Concurrency gate: atomically flip pending → approved after all the
       // read-only checks and BEFORE the contact write; a concurrent approval
@@ -336,6 +347,8 @@ export async function reject(
   }
   if (!rejected) return { error: NOT_FOUND };
 
+  // Else the sheet keeps a stale "Two answers" chip for this reply.
+  revalidatePath("/dashboard");
   revalidatePath("/dashboard/review");
   return {};
 }

@@ -3,7 +3,7 @@
 import { after } from "next/server";
 import { sql } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted for src/app/u/**):
-// private.apply_token_update has zero grants for client roles.
+// private.apply_token_reply has zero grants for client roles.
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
@@ -12,6 +12,7 @@ import { TOKEN_SHAPE } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { INVALID_LINK_MESSAGE } from "../../notice";
 import { isSpentToken, notifyOwner, ownerForToken } from "../owner";
+import { readSeenAt } from "../token-data";
 
 export type ConfirmState = { error?: string; confirmed?: boolean };
 
@@ -50,11 +51,12 @@ export async function confirmTokenAddress(
   let applied = false;
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.apply_token_update(${token}, '{}'::jsonb) as ok`,
+      sql`select private.apply_token_reply(${token}, '{}'::jsonb,
+            ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
-    applied = rows[0]?.ok === true;
+    applied = rows[0]?.outcome === "applied";
   } catch (err) {
-    logDbError("[tu] [confirmTokenAddress] apply_token_update failed", err);
+    logDbError("[tu] [confirmTokenAddress] apply_token_reply failed", err);
     return { error: "Something went wrong. Please try again." };
   }
   if (!applied)

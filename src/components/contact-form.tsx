@@ -31,6 +31,7 @@ type FieldProps = {
   type?: "text" | "email" | "date";
   maxLength?: number;
   hint?: string;
+  error?: string;
 };
 
 function Field({
@@ -40,6 +41,7 @@ function Field({
   type = "text",
   maxLength,
   hint,
+  error,
 }: FieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -52,9 +54,16 @@ function Field({
         type={type}
         maxLength={maxLength}
         defaultValue={value}
-        className={inputClasses}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${name}-error` : undefined}
+        className={`${inputClasses} ${error ? "border-red-400 dark:border-red-800" : ""}`}
       />
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {error ? (
+        <p id={`${name}-error`} className="text-xs text-red-700 dark:text-red-300">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -105,6 +114,15 @@ export function ContactForm({
         value={v.email}
         type="email"
         maxLength={320}
+      />
+      <Field
+        name="partner_email"
+        label="Partner email"
+        value={v.partner_email}
+        type="email"
+        maxLength={320}
+        hint="Optional. The partner gets their own update link."
+        error={state.fieldErrors?.partner_email}
       />
       <Field name="birthday" label="Birthday" value={v.birthday} type="date" />
       <Field

@@ -225,7 +225,7 @@ test("an invalid edit shows the error and stays in edit mode", async () => {
   await bodyRow("Bea Brown")
     .getByRole("button", { name: "Edit Bea Brown" })
     .click();
-  const email = table().getByRole("textbox", { name: "Email" });
+  const email = table().getByRole("textbox", { name: "Email", exact: true });
   await email.fill("ada@example.test");
   await email.press("Enter");
 
@@ -485,7 +485,7 @@ test("a save refused during a send replaces the row's old error", async () => {
   let held: Route | undefined;
   await bodyRow("Bea Brown").locator("td").nth(3).click();
   await page.keyboard.press("Enter");
-  const email = table().getByRole("textbox", { name: "Email" });
+  const email = table().getByRole("textbox", { name: "Email", exact: true });
   await email.fill("ada@example.test");
   await email.press("Enter");
   const alert = page.getByRole("alert").filter({ hasText: /\S/ });
@@ -676,7 +676,7 @@ test("a selected contact whose email is cleared drops out of the request", async
   await bodyRow("Bea Brown")
     .getByRole("button", { name: "Edit Bea Brown" })
     .click();
-  const email = table().getByRole("textbox", { name: "Email" });
+  const email = table().getByRole("textbox", { name: "Email", exact: true });
   await email.fill("");
   await email.press("Enter");
   await expect(table().getByRole("textbox")).toHaveCount(0);

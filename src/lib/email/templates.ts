@@ -12,6 +12,7 @@ function escapeHtml(value: string): string {
 
 export interface AddressRequestEmailInput {
   ownerName: string;
+  recipientName?: string | null;
   updateUrl: string;
   confirmUrl: string;
   /** What the envelope says today: the household line, then the address lines (none when missing). */
@@ -35,6 +36,7 @@ const BUTTON =
  */
 export function addressRequestEmail({
   ownerName,
+  recipientName,
   updateUrl,
   confirmUrl,
   envelope,
@@ -44,6 +46,8 @@ export function addressRequestEmail({
   // but that guarantee shouldn't be outsourced to the transport.
   const safeOwnerName = ownerName.replace(/\p{Cc}+/gu, " ").trim();
   const aboutUrl = new URL("/about", updateUrl).href;
+  const safeName = recipientName?.replace(/\p{Cc}+/gu, " ").trim() ?? "";
+  const greeting = safeName === "" ? "Hi," : `Hi ${safeName},`;
   const hasAddress = envelope.address !== null;
   const subject = hasAddress
     ? `Will ${safeOwnerName}'s holiday card reach you? · Sealed`
@@ -65,7 +69,7 @@ export function addressRequestEmail({
     : `<p style="margin:0 0 24px"><a href="${escapeHtml(updateUrl)}" style="${BUTTON}">Add your names and address</a></p>`;
 
   const html = `<div style="margin:0 auto;max-width:520px;padding:24px;background:#f9f6f0;font-family:${FONT};color:#3a332c;font-size:16px;line-height:1.55">
-  <p style="margin:0 0 20px">Hi, ${intro}</p>
+  <p style="margin:0 0 20px">${escapeHtml(greeting)} ${intro}</p>
   ${envelopeHtml}
   ${actions}
   <p style="margin:0;color:#6a6157;font-size:13px;text-align:center">Sent with <a href="${escapeHtml(aboutUrl)}" style="color:#6a6157">Sealed</a>. This link is personal to you, so please don&#39;t forward it. It expires in ${TOKEN_TTL_DAYS} days.</p>
@@ -73,7 +77,7 @@ export function addressRequestEmail({
 
   const plainLines = [envelope.household, ...(envelope.address ?? [])].map((line) => `  ${line}`).join("\n");
   const text = hasAddress
-    ? `Hi, ${safeOwnerName} is addressing holiday cards. Here's exactly how yours will look:
+    ? `${greeting} ${safeOwnerName} is addressing holiday cards. Here's exactly how yours will look:
 
 ${plainLines}
 
@@ -84,7 +88,7 @@ Fix a name or the address: ${updateUrl}
 
 Sent with Sealed (${aboutUrl}). This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
 `
-    : `Hi, ${safeOwnerName} is addressing holiday cards and wants to send you one. Here's what's on your envelope so far:
+    : `${greeting} ${safeOwnerName} is addressing holiday cards and wants to send you one. Here's what's on your envelope so far:
 
 ${plainLines}
 
@@ -155,6 +159,35 @@ Hi,
 One of your contacts just checked their details through their personal link. Your address book already has the update.
 
 View contact: ${contactUrl}
+`;
+
+  return { subject, html, text };
+}
+
+export interface ContactNeedsReviewEmailInput {
+  reviewUrl: string;
+}
+
+/** No recipient data: the email only links to the review queue. */
+export function contactNeedsReviewEmail({ reviewUrl }: ContactNeedsReviewEmailInput): EmailContent {
+  const subject = "A contact's reply needs review · Sealed";
+  const url = escapeHtml(reviewUrl);
+
+  const html = `<div style="margin:0 auto;max-width:520px;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:15px;line-height:1.6">
+  <p style="margin:0 0 24px;font-size:17px;font-weight:700">Sealed</p>
+  <p style="margin:0 0 16px">Hi,</p>
+  <p style="margin:0 0 16px">Both people on one of your contacts replied, and their details differ. The second reply is waiting in your review queue so you can pick which one to keep.</p>
+  <p style="margin:0 0 24px"><a href="${url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">Review it</a></p>
+  <p style="margin:0;color:#6b7280;font-size:13px">If the button doesn&#39;t work, copy and paste this address into your browser:<br>${url}</p>
+</div>`;
+
+  const text = `Sealed
+
+Hi,
+
+Both people on one of your contacts replied, and their details differ. The second reply is waiting in your review queue so you can pick which one to keep.
+
+Review it: ${reviewUrl}
 `;
 
   return { subject, html, text };

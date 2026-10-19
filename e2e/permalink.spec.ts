@@ -130,7 +130,7 @@ test("a validation error keeps the typed household rows", async ({
 }) => {
   const page = await openInvitePage(browser);
   await page.locator("#first_name").fill("");
-  await page.getByRole("button", { name: "Add partner" }).click();
+  await page.getByRole("button", { name: "Add a second person" }).click();
   await page.locator("#partner_first").fill("Pat");
   await page.getByRole("button", { name: "Add a child" }).click();
   await page.getByRole("button", { name: "Add a child" }).click();
@@ -165,11 +165,11 @@ test("a visitor adds a partner and two kids", async ({ browser }) => {
   await page.locator("#first_name").fill("Hana");
   await page.locator("#last_name").fill("Household");
 
-  await page.getByRole("button", { name: "Add partner" }).click();
+  await page.getByRole("button", { name: "Add a second person" }).click();
   await page.locator("#partner_first").fill("Sam");
   await expect(page.locator("#partner_last")).toHaveValue("Household");
-  await expect(page.getByText("Same last name as you")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add partner" })).toHaveCount(0);
+  await expect(page.getByText("Same last name")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a second person" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add a child" }).click();
   await page.locator("#kid_0_first").fill("Zoe");

@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 // reads update_tokens, which has no grants for client roles.
 import { dbAdmin } from "@/lib/db/admin";
 import { sendNotification } from "@/lib/email/resend";
-import { contactUpdatedEmail } from "@/lib/email/templates";
+import { contactNeedsReviewEmail, contactUpdatedEmail } from "@/lib/email/templates";
 import { logDbError } from "@/lib/log";
 
 export type TokenOwner = { contactId: string; email: string };
@@ -33,7 +33,8 @@ export async function ownerForToken(token: string): Promise<TokenOwner | null> {
 export async function notifyOwner({
   contactId,
   email,
-}: TokenOwner): Promise<void> {
+  queued = false,
+}: TokenOwner & { queued?: boolean }): Promise<void> {
   const appUrl = process.env.APP_URL;
   if (!appUrl) {
     console.error("[tu] [notifyOwner] APP_URL is not set");
@@ -41,9 +42,9 @@ export async function notifyOwner({
   }
   await sendNotification({
     to: email,
-    ...contactUpdatedEmail({
-      contactUrl: `${appUrl}/dashboard/contacts/${contactId}`,
-    }),
+    ...(queued
+      ? contactNeedsReviewEmail({ reviewUrl: `${appUrl}/dashboard/review` })
+      : contactUpdatedEmail({ contactUrl: `${appUrl}/dashboard/contacts/${contactId}` })),
   });
 }
 

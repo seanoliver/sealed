@@ -29,9 +29,20 @@ export const tokenDataSchema = z.object({
     birthday: z.boolean(),
   }),
   owner_name: z.string(),
+  recipient: z.enum(["primary", "partner"]),
+  /** A string, not a Date: a Date drops the microseconds seen_at is compared at. */
+  updated_at: z.string(),
 });
 
 export type TokenData = z.infer<typeof tokenDataSchema>;
+
+// Postgres jsonb timestamptz: 2026-10-19T12:34:56.123456+00:00
+const SEEN_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:\d{2})?)$/;
+
+export function readSeenAt(formData: FormData): string | null {
+  const value = formData.get("seen_at");
+  return typeof value === "string" && SEEN_AT.test(value) ? value : null;
+}
 type TokenContact = TokenData["contact"];
 
 export const storedNames = (contact: TokenContact): StoredNames => ({

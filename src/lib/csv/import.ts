@@ -4,6 +4,7 @@ import {
   contactSchema,
   type ContactField,
   type ContactInput,
+  withoutSamePartnerEmail,
 } from "@/lib/validation/contact";
 
 // NOTE: keep this module dependency-clean (no server-only imports, no db/env
@@ -45,6 +46,8 @@ const HEADER_ALIASES: Record<string, ContactField> = {
   address2: "address_line2",
   "e-mail": "email",
   email_address: "email",
+  email_2: "partner_email",
+  second_email: "partner_email",
   dob: "birthday",
   date_of_birth: "birthday",
   note: "notes",
@@ -154,7 +157,7 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
 
     const result = contactSchema.safeParse(candidate);
     if (result.success) {
-      valid.push(result.data);
+      valid.push(withoutSamePartnerEmail(result.data));
     } else {
       const issue = result.error.issues[0];
       const message = issue

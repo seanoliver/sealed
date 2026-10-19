@@ -23,6 +23,7 @@ export async function GET(): Promise<Response> {
         partner_first_name: contacts.partnerFirstName,
         partner_last_name: contacts.partnerLastName,
         email: contacts.email,
+        partner_email: contacts.partnerEmail,
         birthday: contacts.birthday,
         address_line1: contacts.addressLine1,
         address_line2: contacts.addressLine2,

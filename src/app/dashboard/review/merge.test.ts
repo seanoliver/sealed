@@ -3,13 +3,20 @@ import { eq, sql } from "drizzle-orm";
 import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
-import { parseSubmissionPayload } from "@/lib/validation/submission";
+import {
+  clearedFields,
+  parsePartnerEmail,
+  parseSubmissionPayload,
+  withoutBlanks,
+} from "@/lib/validation/submission";
 import { changedFields, mergeUpdate, rowToSnapshot, toInsertRow } from "./merge";
 
 const U = "00000000-0000-0000-0000-00000000d001";
 const B = "10000000-0000-0000-0000-00000000d001";
 const C_LEGACY = "20000000-0000-0000-0000-00000000d001";
 const C_SPLIT = "20000000-0000-0000-0000-00000000d002";
+const C_COUPLE = "20000000-0000-0000-0000-00000000d003";
+const C_CLEAR = "20000000-0000-0000-0000-00000000d004";
 
 const ALL_ENABLED = { partner_name: true, kids_names: true, birthday: true };
 
@@ -24,9 +31,20 @@ async function load(id: string) {
   return row;
 }
 
-async function merge(id: string, payload: unknown, enabled = ALL_ENABLED) {
+async function merge(
+  id: string,
+  payload: unknown,
+  enabled = ALL_ENABLED,
+  { token = false }: { token?: boolean } = {},
+) {
   const before = rowToSnapshot(await load(id));
-  const set = mergeUpdate(before, gate(payload, enabled));
+  const parsable = token ? withoutBlanks(payload) : payload;
+  const partnerEmail = parsePartnerEmail(parsable);
+  if (!partnerEmail.success) throw new Error("partner email did not parse");
+  const set = mergeUpdate(before, gate(parsable, enabled), {
+    partnerEmail: partnerEmail.data,
+    clear: token ? clearedFields(payload, enabled) : [],
+  });
   if (!set) return { set, row: await load(id), diff: undefined };
   const [row] = await withRls({ sub: U }, (tx) =>
     tx.update(contacts).set(set).where(eq(contacts.id, id)).returning(),
@@ -152,6 +170,115 @@ describe("approving a household submission", () => {
       fullName: "Priya Raman",
       partnerName: "Daniel Okafor",
       kidsNames: "Asha",
+    });
+  });
+
+  describe("a partner's reply from the review queue", () => {
+    beforeAll(async () => {
+      await dbAdmin.insert(contacts).values({
+        id: C_COUPLE,
+        bookId: B,
+        fullName: "placeholder",
+        firstName: "Satya",
+        lastName: "Rao",
+        partnerFirstName: "Mei",
+        email: "satya@rao.test",
+        partnerEmail: "mei@rao.test",
+        addressLine1: "4410 Fremont Ave N",
+        city: "Seattle",
+      });
+    });
+
+    it("applies the address and the partner's own email", async () => {
+      const { row, diff } = await merge(C_COUPLE, {
+        first_name: "Satya",
+        last_name: "Rao",
+        partner_first_name: "Mei",
+        partner_email: "mei@new.test",
+        address_line1: "4410 Fremont Ave N",
+        address_line2: "Apt 2",
+        city: "Seattle",
+      });
+      expect(row).toMatchObject({
+        email: "satya@rao.test",
+        partnerEmail: "mei@new.test",
+        addressLine2: "Apt 2",
+      });
+      expect(diff?.after).toMatchObject({
+        partner_email: "mei@new.test",
+        address_line2: "Apt 2",
+      });
+    });
+
+    it("ignores an email that repeats the other person's address", async () => {
+      const { set, row } = await merge(C_COUPLE, {
+        first_name: "Satya",
+        last_name: "Rao",
+        partner_first_name: "Mei",
+        email: "MEI@new.test",
+        partner_email: "satya@rao.test",
+        city: "Tacoma",
+      });
+      expect(set).toEqual({ city: "Tacoma" });
+      expect(row).toMatchObject({ email: "satya@rao.test", partnerEmail: "mei@new.test" });
+    });
+
+    it("refuses a malformed partner email", () => {
+      expect(parsePartnerEmail({ partner_email: "not an email" })).toEqual({ success: false });
+      expect(parsePartnerEmail({ city: "Seattle" })).toEqual({ success: true, data: undefined });
+    });
+  });
+
+  describe("a token reply that empties fields", () => {
+    const emptied = {
+      first_name: "Jen",
+      last_name: "Holloway",
+      partner_first_name: "",
+      partner_last_name: "",
+      kids: [],
+      email: "",
+      address_line1: "2140 NE Alberta St",
+      address_line2: "",
+      city: "Portland",
+    };
+
+    beforeAll(async () => {
+      await dbAdmin.insert(contacts).values({
+        id: C_CLEAR,
+        bookId: B,
+        fullName: "placeholder",
+        firstName: "Jen",
+        lastName: "Holloway",
+        partnerFirstName: "Mark",
+        kids: [{ first: "Zoe", last: "Holloway" }],
+        email: "jen@clear.test",
+        addressLine1: "2140 NE Alberta St",
+        addressLine2: "Apt 4",
+        city: "Portland",
+      });
+    });
+
+    it("clears nothing for the same values from the public link", async () => {
+      const { set } = await merge(C_CLEAR, withoutBlanks(emptied));
+      expect(set).toBeUndefined();
+    });
+
+    it("clears the emptied address line, partner and kids, but never the email", async () => {
+      const { row } = await merge(C_CLEAR, emptied, ALL_ENABLED, { token: true });
+      expect(row).toMatchObject({
+        email: "jen@clear.test",
+        addressLine2: null,
+        partnerFirstName: null,
+        partnerName: null,
+        kids: null,
+        kidsNames: null,
+      });
+    });
+
+    it("leaves a group the book does not collect", () => {
+      expect(
+        clearedFields(emptied, { partner_name: false, kids_names: false, birthday: false }),
+      ).toEqual(["address_line2"]);
     });
   });
 });

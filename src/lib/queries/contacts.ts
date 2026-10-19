@@ -4,7 +4,9 @@ import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
 import type { FailureReason } from "@/lib/email/resend";
+import { combineSends, type RecipientSend } from "@/lib/contacts-sheet";
 import { type StoredNames } from "@/lib/names";
+import { type Recipient } from "@/lib/recipients";
 
 const SEND_STATUSES = [
   "sent",
@@ -22,7 +24,10 @@ export type SendStatus = "none" | (typeof SEND_STATUSES)[number];
 export interface ContactListRow extends StoredNames {
   id: string;
   email: string | null;
+  partnerEmail: string | null;
+  birthday: string | null;
   addressLine1: string | null;
+  addressLine2: string | null;
   city: string | null;
   stateRegion: string | null;
   postalCode: string | null;
@@ -31,6 +36,8 @@ export interface ContactListRow extends StoredNames {
   sendStatus: SendStatus;
   /** Why the latest send failed; set only when sendStatus is "failed". */
   sendFailureReason: FailureReason | null;
+  sendStatuses: Record<Recipient, RecipientSend>;
+  needsAttention: boolean;
   /** True if a token-sourced contact_events row is newer than the latest send. */
   updatedAfterSend: boolean;
   updatedAt: Date;
@@ -74,20 +81,25 @@ export async function listContacts(
       .limit(1);
     if (!book) return [];
 
-    // Greatest-n-per-group: rank each contact's sends newest-first and keep
+    // Greatest-n-per-group: rank each person's sends newest-first and keep
     // rank 1 in the join condition (id desc breaks exact sent_at ties).
-    const latestSend = tx
-      .select({
-        contactId: emailSends.contactId,
-        status: emailSends.status,
-        failureReason: emailSends.failureReason,
-        sentAt: emailSends.sentAt,
-        rn: sql<number>`row_number() over (
-          partition by ${emailSends.contactId}
-          order by ${emailSends.sentAt} desc, ${emailSends.id} desc)`.as("rn"),
-      })
-      .from(emailSends)
-      .as("latest_send");
+    // Distinct rn aliases: drizzle leaves the alias unqualified in the join.
+    const latestSend = (recipient: Recipient) =>
+      tx
+        .select({
+          contactId: emailSends.contactId,
+          status: emailSends.status,
+          failureReason: emailSends.failureReason,
+          sentAt: emailSends.sentAt,
+          rn: sql<number>`row_number() over (
+            partition by ${emailSends.contactId}
+            order by ${emailSends.sentAt} desc, ${emailSends.id} desc)`.as(`${recipient}_rn`),
+        })
+        .from(emailSends)
+        .where(eq(emailSends.recipient, recipient))
+        .as(`${recipient}_send`);
+    const primarySend = latestSend("primary");
+    const partnerSend = latestSend("partner");
 
     const term = search?.trim();
     const pattern = term ? `%${escapeLike(term)}%` : undefined;
@@ -104,27 +116,35 @@ export async function listContacts(
         partnerLastName: contacts.partnerLastName,
         kids: contacts.kids,
         email: contacts.email,
+        partnerEmail: contacts.partnerEmail,
+        birthday: contacts.birthday,
         addressLine1: contacts.addressLine1,
+        addressLine2: contacts.addressLine2,
         city: contacts.city,
         stateRegion: contacts.stateRegion,
         postalCode: contacts.postalCode,
         country: contacts.country,
         // Wrapped in sql`` because drizzle types flat partial selects from a
         // left-joined subquery as non-nullable; this is string | null.
-        sendStatus: sql<string | null>`${latestSend.status}`,
-        sendFailureReason: sql<FailureReason | null>`${latestSend.failureReason}`,
-        // NULL sent_at (never emailed) makes the comparison NULL → false.
+        primaryStatus: sql<string | null>`${primarySend.status}`,
+        primaryFailureReason: sql<FailureReason | null>`${primarySend.failureReason}`,
+        partnerStatus: sql<string | null>`${partnerSend.status}`,
+        partnerFailureReason: sql<FailureReason | null>`${partnerSend.failureReason}`,
         updatedAfterSend: sql<boolean>`exists (
           select 1 from ${contactEvents}
           where ${contactEvents.contactId} = ${contacts.id}
             and ${contactEvents.source} = 'token'
-            and ${contactEvents.createdAt} > ${latestSend.sentAt})`,
+            and ${contactEvents.createdAt} > greatest(${primarySend.sentAt}, ${partnerSend.sentAt}))`,
         updatedAt: contacts.updatedAt,
       })
       .from(contacts)
       .leftJoin(
-        latestSend,
-        and(eq(latestSend.contactId, contacts.id), eq(latestSend.rn, 1)),
+        primarySend,
+        and(eq(primarySend.contactId, contacts.id), eq(primarySend.rn, 1)),
+      )
+      .leftJoin(
+        partnerSend,
+        and(eq(partnerSend.contactId, contacts.id), eq(partnerSend.rn, 1)),
       )
       .where(
         and(
@@ -139,10 +159,25 @@ export async function listContacts(
       )
       .orderBy(asc(contacts.fullName));
 
-    return rows.map((row) => ({
-      ...row,
-      sendStatus: toSendStatus(row.sendStatus),
-    }));
+    return rows.map(
+      ({ primaryStatus, primaryFailureReason, partnerStatus, partnerFailureReason, ...row }) => {
+        const sendStatuses = {
+          primary: { status: toSendStatus(primaryStatus), failureReason: primaryFailureReason },
+          partner: { status: toSendStatus(partnerStatus), failureReason: partnerFailureReason },
+        };
+        const { status, failureReason, needsAttention } = combineSends(
+          sendStatuses.primary,
+          sendStatuses.partner,
+        );
+        return {
+          ...row,
+          sendStatus: status,
+          sendFailureReason: failureReason,
+          sendStatuses,
+          needsAttention,
+        };
+      },
+    );
   });
 }
 

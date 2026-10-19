@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { formatKids, formatPerson, type Kid } from "@/lib/names";
-import { tokenUpdateSchema, type TokenUpdateField } from "./contact";
+import { contactSchema, tokenUpdateSchema, type TokenUpdateField } from "./contact";
 import { householdShape, requirePartnerFirstName } from "./household";
 
 /**
@@ -48,6 +48,17 @@ export function parseSubmissionPayload(
     : { success: false };
 }
 
+const partnerEmailSchema = z.object({ partner_email: contactSchema.shape.partner_email });
+
+export function parsePartnerEmail(
+  payload: unknown,
+): { success: true; data: string | undefined } | { success: false } {
+  const parsed = partnerEmailSchema.safeParse(payload);
+  return parsed.success
+    ? { success: true, data: parsed.data.partner_email }
+    : { success: false };
+}
+
 export function isHouseholdPayload(
   payload: SubmissionPayload,
 ): payload is HouseholdPayload {
@@ -87,6 +98,7 @@ export const submissionDisplaySchema = z.object({
   partner_name: displayValue,
   kids_names: displayValue,
   email: displayValue,
+  partner_email: displayValue,
   birthday: displayValue,
   address_line1: displayValue,
   address_line2: displayValue,
@@ -101,7 +113,9 @@ export const submissionDisplaySchema = z.object({
   kids: z.array(z.unknown()).optional().catch(undefined),
 });
 
-export type SubmissionDisplayFields = Partial<Record<TokenUpdateField, string>>;
+export type SubmissionDisplayFields = Partial<
+  Record<TokenUpdateField | "partner_email", string>
+>;
 
 function capDisplay(value: string | null): string | undefined {
   if (value === null) return undefined;
@@ -164,11 +178,63 @@ export function parseSubmissionForDisplay(
   return {
     ...display,
     full_name: capDisplay(formatPerson({ first: first_name, last: last_name })),
-    partner_name: capDisplay(
-      formatPerson({ first: partner_first_name, last: partner_last_name }),
-    ),
-    kids_names: capDisplay(
-      formatKids({ kids: displayKids(kids ?? []), familyLast: last_name }),
-    ),
+    // A present but empty partner or kids group reads "" (cleared), not absent.
+    partner_name:
+      partner_first_name === undefined
+        ? undefined
+        : (capDisplay(formatPerson({ first: partner_first_name, last: partner_last_name })) ?? ""),
+    kids_names:
+      kids === undefined
+        ? undefined
+        : (capDisplay(formatKids({ kids: displayKids(kids), familyLast: last_name })) ?? ""),
   };
+}
+
+export const CLEARABLE_FIELDS = [
+  "address_line1",
+  "address_line2",
+  "city",
+  "state_region",
+  "postal_code",
+  "country",
+  "birthday",
+  "partner_name",
+  "kids_names",
+] as const;
+
+export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
+
+const isBlank = (value: unknown) =>
+  value === null || (typeof value === "string" && value.trim() === "");
+
+export function withoutBlanks(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return payload;
+  }
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([, value]) => !isBlank(value) && !(Array.isArray(value) && value.length === 0),
+    ),
+  );
+}
+
+/** Token replies only: an empty value in a permalink payload never means "clear". */
+export function clearedFields(
+  payload: unknown,
+  enabled: EnabledFields,
+): ClearableField[] {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return [];
+  }
+  const raw = payload as Record<string, unknown>;
+  const cleared = new Set<ClearableField>(
+    CLEARABLE_FIELDS.filter((field) => field in raw && isBlank(raw[field])),
+  );
+  if ("partner_first_name" in raw && isBlank(raw.partner_first_name)) {
+    cleared.add("partner_name");
+  }
+  if (Array.isArray(raw.kids) && raw.kids.length === 0) cleared.add("kids_names");
+  return [...cleared].filter(
+    (field) => !(field in enabled) || enabled[field as keyof EnabledFields],
+  );
 }
