@@ -339,3 +339,52 @@ test("using a reply that removed a line clears it", async () => {
   expect(await getSubmissionStatus(reply)).toBe("approved");
   expect((await getContactEmails(vuId)).addressLine2).toBeNull();
 });
+
+test("a bounce for a partner whose email was removed no longer needs attention", async () => {
+  const fieldId = await seedContact({
+    bookId,
+    fullName: "Uma Field",
+    email: "uma@field.test",
+    household: household("Uma", "Field", "Ben"),
+  });
+  await seedEmailSend({ contactId: fieldId, bookId, resendId: `re_uma_${Date.now()}`, status: "delivered" });
+  await seedEmailSend({
+    contactId: fieldId,
+    bookId,
+    resendId: `re_ben_${Date.now()}`,
+    status: "bounced",
+    recipient: "partner",
+  });
+
+  await openDashboard();
+  await expect(row("Uma & Ben Field")).toContainText("Delivered");
+  await expect(row("Uma & Ben Field")).not.toContainText("Bounced");
+  await expect(page.getByRole("button", { name: /^Needs attention/ })).toHaveCount(0);
+});
+
+test("a phone adds a partner email on the contact page and sees it on the sheet", async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  try {
+    await page.goto(`/dashboard/contacts/${adaId}`);
+    const partner = page.getByLabel("Partner email");
+    await partner.fill("ADA@lovelace.test");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator("#partner_email-error")).toHaveText(
+      "The partner's email must differ from the email",
+    );
+    await expect(partner).toHaveAttribute("aria-invalid", "true");
+
+    await partner.fill("byron@lovelace.test");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("status")).toHaveText("Saved.");
+
+    await page.goto("/dashboard");
+    const card = page
+      .getByRole("list", { name: "Contacts" })
+      .getByRole("listitem")
+      .filter({ hasText: "Ada Lovelace" });
+    await expect(card).toContainText("ada@lovelace.test · byron@lovelace.test");
+  } finally {
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+});

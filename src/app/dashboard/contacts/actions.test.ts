@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
 import { SAME_PARTNER_EMAIL } from "@/lib/validation/contact";
-import { patchContact, updateContact } from "./actions";
+import { createContact, patchContact, updateContact } from "./actions";
 
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -85,9 +85,36 @@ describe("owner edits of the partner's email", () => {
     expect((await stored()).partnerEmail).toBeNull();
   });
 
-  it("refuses a posted partner email that repeats the email", async () => {
+  it("refuses a posted partner email that repeats the email, on that field", async () => {
+    const state = await updateContact({}, editForm({ partner_email: "Ana@ce.test" }));
+    expect(state).toMatchObject({ fieldErrors: { partner_email: SAME_PARTNER_EMAIL } });
+    expect(state.error).toBeUndefined();
+    expect((await stored()).partnerEmail).toBe("mark@ce.test");
+  });
+
+  it("shows an invalid partner email on that field", async () => {
     await expect(
-      updateContact({}, editForm({ partner_email: "Ana@ce.test" })),
-    ).resolves.toMatchObject({ error: SAME_PARTNER_EMAIL });
+      updateContact({}, editForm({ partner_email: "not-an-email" })),
+    ).resolves.toMatchObject({ fieldErrors: { partner_email: "Invalid email address" } });
+  });
+
+  it("saves the partner email on a new contact", async () => {
+    const form = editForm({ email: "bo@ce.test", partner_email: "cy@ce.test" });
+    form.delete("id");
+    form.set("first_name", "Bo");
+    await createContact({}, form);
+    const [row] = await dbAdmin
+      .select({ partnerEmail: contacts.partnerEmail })
+      .from(contacts)
+      .where(eq(contacts.email, "bo@ce.test"));
+    expect(row?.partnerEmail).toBe("cy@ce.test");
+  });
+
+  it("refuses a new contact whose partner email repeats the email, on that field", async () => {
+    const form = editForm({ email: "di@ce.test", partner_email: "DI@ce.test" });
+    form.delete("id");
+    await expect(createContact({}, form)).resolves.toMatchObject({
+      fieldErrors: { partner_email: SAME_PARTNER_EMAIL },
+    });
   });
 });

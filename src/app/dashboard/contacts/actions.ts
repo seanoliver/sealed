@@ -128,16 +128,30 @@ type ParsedContactForm =
 
 type ParsedDetails =
   | { success: true; data: ContactDetailsInput }
-  | { success: false; error: string };
+  | { success: false; error: string; field?: "partner_email" };
 
 function parseDetails(values: Partial<ContactFormValues>): ParsedDetails {
   const details = contactDetailsSchema.safeParse(values);
   if (!details.success) {
-    return { success: false, error: details.error.issues[0]?.message ?? "Invalid input" };
+    const issue = details.error.issues[0];
+    return {
+      success: false,
+      error: issue?.message ?? "Invalid input",
+      field: issue?.path[0] === "partner_email" ? "partner_email" : undefined,
+    };
   }
   return samePartnerEmail(details.data)
-    ? { success: false, error: SAME_PARTNER_EMAIL }
+    ? { success: false, error: SAME_PARTNER_EMAIL, field: "partner_email" }
     : details;
+}
+
+/** The contact form shows a field's error under that field, the rest on top. */
+function detailsErrorState(
+  details: Extract<ParsedDetails, { success: false }>,
+): Pick<ContactFormState, "error" | "fieldErrors"> {
+  return details.field
+    ? { fieldErrors: { [details.field]: details.error } }
+    : { error: details.error };
 }
 
 function withStoredPartnerEmail(
@@ -159,15 +173,16 @@ function parseContactForm(
   if (household.ok && details.success) {
     return { ok: true, details: details.data, household: household.data };
   }
+  const detailErrors = details.success ? {} : detailsErrorState(details);
+  const fieldErrors = {
+    ...(household.ok ? {} : household.fieldErrors),
+    ...detailErrors.fieldErrors,
+  };
   return {
     ok: false,
     state: {
-      error: details.success
-        ? household.ok
-          ? undefined
-          : household.error
-        : details.error,
-      fieldErrors: household.ok ? undefined : household.fieldErrors,
+      error: detailErrors.error ?? (household.ok ? undefined : household.error),
+      fieldErrors: Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined,
       values,
       household: household.values,
     },
@@ -291,7 +306,7 @@ export async function updateContact(
       if (keepNames) {
         const details = parseDetails(values);
         if (!details.success) {
-          invalid = { error: details.error, ...echo };
+          invalid = { ...detailsErrorState(details), ...echo };
           return existing;
         }
         row = contactDetailsToRow(details.data);
