@@ -308,3 +308,28 @@ export async function clearRateLimits(): Promise<void> {
 export async function clearRequestAccessLimits(): Promise<void> {
   await db`delete from private.rate_limits where key like 'request-access%'`;
 }
+
+export async function countSends(
+  contactId: string,
+  recipient: "primary" | "partner",
+): Promise<number> {
+  const rows = await db`
+    select count(*)::int as count from public.email_sends
+    where contact_id = ${contactId} and recipient = ${recipient}`;
+  return rows[0].count as number;
+}
+
+export async function isTokenLive(token: string): Promise<boolean> {
+  const rows = await db`
+    select 1 from public.update_tokens
+    where token_hash = ${generateHash(token)} and used_at is null`;
+  return rows.length === 1;
+}
+
+function generateHash(token: string): Buffer {
+  return createHash("sha256").update(token).digest();
+}
+
+export async function setContactAddressLine2(contactId: string, line2: string): Promise<void> {
+  await db`update public.contacts set address_line2 = ${line2} where id = ${contactId}`;
+}

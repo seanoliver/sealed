@@ -2,14 +2,17 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupUser,
   clearRateLimits,
+  countSends,
   getContactEmails,
   getSubmissionStatus,
   getUserIdByEmail,
+  isTokenLive,
   seedBook,
   seedContact,
   seedEmailSend,
   seedPendingReply,
   seedUpdateToken,
+  setContactAddressLine2,
 } from "./db";
 import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
@@ -266,4 +269,73 @@ test("the partner's link labels both people neutrally and shows their own email"
   );
   await expect(page.getByText(/your partner|your name/i)).toHaveCount(0);
   await expect(page.locator("#email")).toHaveValue("mark@holloway.test");
+});
+
+test("a resend from Needs attention emails only the person whose email failed", async () => {
+  const kimId = await seedContact({
+    bookId,
+    fullName: "Lee Kim",
+    email: "lee@kim.test",
+    partnerEmail: "noa@kim.test",
+    household: household("Lee", "Kim", "Noa"),
+  });
+  await seedEmailSend({ contactId: kimId, bookId, resendId: `re_lee_${Date.now()}`, status: "delivered" });
+  await seedEmailSend({
+    contactId: kimId,
+    bookId,
+    resendId: null,
+    status: "failed",
+    failureReason: "rejected",
+    recipient: "partner",
+  });
+  const leeLink = await seedUpdateToken(kimId);
+
+  await openDashboard();
+  await page.getByRole("button", { name: /^Needs attention/ }).click();
+  await page.getByRole("button", { name: "Send to all shown" }).click();
+  const dialog = page.getByRole("dialog", { name: "Confirm address request" });
+  await expect(dialog).toContainText("Send 2 emails to the 2 shown that still need attention");
+  await page.getByRole("button", { name: "Confirm and send" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Sent 2 of 2" })).toBeVisible();
+
+  expect(await countSends(kimId, "partner")).toBe(2);
+  expect(await countSends(kimId, "primary")).toBe(1);
+  expect(await isTokenLive(leeLink)).toBe(true);
+});
+
+test("using a reply that removed a line clears it", async () => {
+  const vuId = await seedContact({
+    bookId,
+    fullName: "Pat Vu",
+    email: "pat@vu.test",
+    partnerEmail: "quy@vu.test",
+    household: household("Pat", "Vu", "Quy"),
+    addressLine1: "12 Elm St",
+    city: "Austin",
+  });
+  await setContactAddressLine2(vuId, "Unit 5");
+  const reply = await seedPendingReply({
+    bookId,
+    contactId: vuId,
+    savedBy: "primary",
+    payload: {
+      first_name: "Pat",
+      last_name: "Vu",
+      partner_first_name: "Quy",
+      partner_last_name: "Vu",
+      partner_email: "quy@vu.test",
+      address_line1: "12 Elm St",
+      address_line2: "",
+      city: "Austin",
+    },
+  });
+
+  await openDashboard();
+  await row("Pat & Quy Vu").getByRole("button", { name: "Two answers" }).click();
+  const panel = page.getByRole("region", { name: "Two answers for Pat Vu" });
+  await expect(panel.locator("mark")).toHaveText(["(removed)"]);
+  await panel.getByRole("button", { name: "Use Quy's" }).click();
+  await expect(row("Pat & Quy Vu").getByRole("button", { name: "Two answers" })).toHaveCount(0);
+  expect(await getSubmissionStatus(reply)).toBe("approved");
+  expect((await getContactEmails(vuId)).addressLine2).toBeNull();
 });
