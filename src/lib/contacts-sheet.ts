@@ -13,7 +13,10 @@ import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
 import type { Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
-import type { SubmissionDisplayFields } from "@/lib/validation/submission";
+import {
+  CLEARABLE_FIELDS,
+  type SubmissionDisplayFields,
+} from "@/lib/validation/submission";
 import {
   householdSchema,
   type HouseholdFieldErrors,
@@ -51,10 +54,12 @@ export interface SheetRow {
   updatedAtLabel: string;
 }
 
+/** A reply queued because it collided, already parsed for display. */
 export type PendingAnswer = {
   submissionId: string;
   display: SubmissionDisplayFields;
-  savedBy: Recipient | null;
+  from: Recipient;
+  savedBy: Recipient;
 };
 
 export function toSheetRow(
@@ -162,13 +167,17 @@ export type TwoAnswers = {
 };
 
 const ADDRESS_FIELDS = [
-  "address_line1",
-  "address_line2",
-  "city",
-  "state_region",
-  "postal_code",
-  "country",
+  ["address_line1", "Street"],
+  ["address_line2", "Line 2"],
+  ["city", "City"],
+  ["state_region", "State"],
+  ["postal_code", "Postal code"],
+  ["country", "Country"],
 ] as const;
+
+const CLEARABLE: ReadonlySet<string> = new Set(CLEARABLE_FIELDS);
+
+const REMOVED = "(removed)";
 
 const MARK_START = "\u0001";
 const MARK_END = "\u0002";
@@ -185,12 +194,12 @@ const OTHER_FIELDS = [
 ] as const;
 
 type AnswerField =
-  | (typeof ADDRESS_FIELDS)[number]
+  | (typeof ADDRESS_FIELDS)[number][0]
   | (typeof OTHER_FIELDS)[number][0];
 
 export function twoAnswers(
   row: ContactListRow,
-  { submissionId, display, savedBy }: PendingAnswer,
+  { submissionId, display, from, savedBy }: PendingAnswer,
 ): TwoAnswers {
   const saved: Record<AnswerField, string> = {
     full_name: row.fullName,
@@ -206,8 +215,12 @@ export function twoAnswers(
     postal_code: row.postalCode ?? "",
     country: row.country ?? "",
   };
-  // `||`, not `??`: an empty value counts as absent, as it does on approval.
-  const reply = (field: AnswerField) => display[field] || saved[field];
+  const reply = (field: AnswerField) => {
+    const value = display[field];
+    return value === undefined || (value === "" && !CLEARABLE.has(field))
+      ? saved[field]
+      : value;
+  };
   const changed = (field: AnswerField) => reply(field) !== saved[field];
 
   const address = (value: (field: AnswerField) => string, mark: boolean) => {
@@ -224,7 +237,7 @@ export function twoAnswers(
         stateRegion: at("state_region"),
         postalCode: at("postal_code"),
         country: at("country"),
-      }) ?? ADDRESS_FIELDS.map(at).filter((text) => text !== null);
+      }) ?? ADDRESS_FIELDS.map(([field]) => at(field)).filter((text) => text !== null);
     return {
       label: null,
       parts: lines
@@ -235,17 +248,13 @@ export function twoAnswers(
     };
   };
   const others = OTHER_FIELDS.filter(([field]) => changed(field));
-
-  // A partner's reply stores their email as partner_email; otherwise the reply
-  // is from whoever did not make the saved change.
-  const from: Recipient =
-    display.partner_email !== undefined || savedBy === "primary"
-      ? "partner"
-      : "primary";
+  const removedAddress = ADDRESS_FIELDS.filter(
+    ([field]) => changed(field) && reply(field) === "",
+  );
   return {
     submissionId,
     saved: {
-      name: savedBy && savedBy !== from ? personName(row, savedBy) : null,
+      name: personName(row, savedBy),
       lines: [
         address((field) => saved[field], false),
         ...others.map(([field, label]) => ({
@@ -258,9 +267,9 @@ export function twoAnswers(
       name: personName(row, from),
       lines: [
         address(reply, true),
-        ...others.map(([field, label]) => ({
+        ...[...removedAddress, ...others].map(([field, label]) => ({
           label,
-          parts: [{ text: reply(field) || "—", changed: true }],
+          parts: [{ text: reply(field) || REMOVED, changed: true }],
         })),
       ],
     },

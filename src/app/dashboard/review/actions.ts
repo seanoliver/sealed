@@ -10,8 +10,10 @@ import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
 import {
+  clearedFields,
   parsePartnerEmail,
   parseSubmissionPayload,
+  withoutBlanks,
 } from "@/lib/validation/submission";
 import {
   changedFields,
@@ -221,8 +223,11 @@ export async function approveMerge(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       // Same strict-parse + gate as approveNew (see module doc).
-      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
-      const partnerEmail = parsePartnerEmail(submission.payload);
+      // A token reply keeps its emptied keys; they become `clear` below.
+      const token = submission.source === "token";
+      const payload = token ? withoutBlanks(submission.payload) : submission.payload;
+      const parsed = parseSubmissionPayload(payload, book.enabledFields);
+      const partnerEmail = parsePartnerEmail(payload);
       if (!parsed.success || !partnerEmail.success) return { kind: "invalid" };
       const gated = parsed.data;
 
@@ -248,7 +253,10 @@ export async function approveMerge(
       // as absent and can never CLEAR a column. This intentionally differs
       // from token updates, where a present-but-empty key means "clear".
       const before = rowToSnapshot(existing);
-      const set = mergeUpdate(before, gated, { partnerEmail: partnerEmail.data });
+      const set = mergeUpdate(before, gated, {
+        partnerEmail: partnerEmail.data,
+        clear: token ? clearedFields(submission.payload, book.enabledFields) : [],
+      });
 
       // Concurrency gate: atomically flip pending → approved after all the
       // read-only checks and BEFORE the contact write; a concurrent approval

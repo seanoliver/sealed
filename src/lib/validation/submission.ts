@@ -178,11 +178,67 @@ export function parseSubmissionForDisplay(
   return {
     ...display,
     full_name: capDisplay(formatPerson({ first: first_name, last: last_name })),
-    partner_name: capDisplay(
-      formatPerson({ first: partner_first_name, last: partner_last_name }),
-    ),
-    kids_names: capDisplay(
-      formatKids({ kids: displayKids(kids ?? []), familyLast: last_name }),
-    ),
+    // A present but empty partner or kids group reads "" (cleared), not absent.
+    partner_name:
+      partner_first_name === undefined
+        ? undefined
+        : (capDisplay(formatPerson({ first: partner_first_name, last: partner_last_name })) ?? ""),
+    kids_names:
+      kids === undefined
+        ? undefined
+        : (capDisplay(formatKids({ kids: displayKids(kids), familyLast: last_name })) ?? ""),
   };
+}
+
+export const CLEARABLE_FIELDS = [
+  "address_line1",
+  "address_line2",
+  "city",
+  "state_region",
+  "postal_code",
+  "country",
+  "birthday",
+  "partner_name",
+  "kids_names",
+] as const;
+
+export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
+
+const isBlank = (value: unknown) =>
+  value === null || (typeof value === "string" && value.trim() === "");
+
+/** A token reply's payload minus its emptied keys, for the strict parse. */
+export function withoutBlanks(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return payload;
+  }
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([, value]) => !isBlank(value) && !(Array.isArray(value) && value.length === 0),
+    ),
+  );
+}
+
+/**
+ * Fields a reply queued by apply_token_reply empties, which approving it
+ * clears. Only for token replies: permalink payloads never mean "clear".
+ */
+export function clearedFields(
+  payload: unknown,
+  enabled: EnabledFields,
+): ClearableField[] {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return [];
+  }
+  const raw = payload as Record<string, unknown>;
+  const cleared = new Set<ClearableField>(
+    CLEARABLE_FIELDS.filter((field) => field in raw && isBlank(raw[field])),
+  );
+  if ("partner_first_name" in raw && isBlank(raw.partner_first_name)) {
+    cleared.add("partner_name");
+  }
+  if (Array.isArray(raw.kids) && raw.kids.length === 0) cleared.add("kids_names");
+  return [...cleared].filter(
+    (field) => !(field in enabled) || enabled[field as keyof EnabledFields],
+  );
 }

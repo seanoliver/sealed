@@ -38,6 +38,7 @@ export default async function DashboardPage({
     answers.set(reply.contactId, {
       submissionId: reply.id,
       display,
+      from: reply.from,
       savedBy: reply.savedBy,
     });
   }

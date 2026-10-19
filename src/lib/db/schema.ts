@@ -55,6 +55,10 @@ export const submissions = pgTable("submissions", {
   status: text("status").notNull().default("pending"),
   matchedContactId: uuid("matched_contact_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /** 'token': a reply apply_token_reply queued because it collided. */
+  source: text("source").$type<"permalink" | "token">().notNull().default("permalink"),
+  recipient: text("recipient").$type<Recipient>(),
+  savedBy: text("saved_by").$type<Recipient>(),
 });
 
 export const updateTokens = pgTable("update_tokens", {

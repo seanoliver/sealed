@@ -9,6 +9,7 @@ import {
 } from "@/lib/validation/contact";
 import {
   isHouseholdPayload,
+  type ClearableField,
   type SubmissionPayload,
 } from "@/lib/validation/submission";
 
@@ -148,12 +149,27 @@ function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
 const sameAddress = (a: string | null | undefined, b: string | null | undefined) =>
   a != null && b != null && a.toLowerCase() === b.toLowerCase();
 
+const CLEARS: Record<ClearableField, readonly SnapshotField[]> = {
+  address_line1: ["address_line1"],
+  address_line2: ["address_line2"],
+  city: ["city"],
+  state_region: ["state_region"],
+  postal_code: ["postal_code"],
+  country: ["country"],
+  birthday: ["birthday"],
+  partner_name: ["partner_first_name", "partner_last_name", "partner_name"],
+  kids_names: ["kids", "kids_names"],
+};
+
 export function mergeUpdate(
   before: Snapshot,
   payload: SubmissionPayload,
-  { partnerEmail }: { partnerEmail?: string } = {},
+  { partnerEmail, clear = [] }: { partnerEmail?: string; clear?: readonly ClearableField[] } = {},
 ): Partial<typeof contacts.$inferInsert> | undefined {
   const patch = mergePatch(payload);
+  for (const field of clear.flatMap((cleared) => CLEARS[cleared])) {
+    if (!(field in patch)) patch[field] = null;
+  }
   // Dropped, not saved: an email equal to the other person's trips contacts_partner_email_differs.
   if (sameAddress(patch.email, before.partner_email)) delete patch.email;
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {

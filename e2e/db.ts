@@ -213,20 +213,21 @@ export async function seedEmailSend(opts: {
             ${opts.failureReason ?? null}, ${opts.recipient ?? "primary"})`;
 }
 
+/** A reply apply_token_reply queued, after the other person's link update. */
 export async function seedPendingReply(opts: {
   bookId: string;
   contactId: string;
   payload: Record<string, unknown>;
-  savedBy?: "primary" | "partner";
+  savedBy: "primary" | "partner";
 }): Promise<string> {
-  if (opts.savedBy) {
-    await db`
-      insert into public.contact_events (contact_id, source, recipient, diff)
-      values (${opts.contactId}, 'token', ${opts.savedBy}, '{}')`;
-  }
+  await db`
+    insert into public.contact_events (contact_id, source, recipient, diff)
+    values (${opts.contactId}, 'token', ${opts.savedBy}, '{}')`;
   const rows = await db`
-    insert into public.submissions (book_id, payload, matched_contact_id)
-    values (${opts.bookId}, ${db.json(opts.payload as never)}, ${opts.contactId})
+    insert into public.submissions
+      (book_id, payload, matched_contact_id, source, recipient, saved_by)
+    values (${opts.bookId}, ${db.json(opts.payload as never)}, ${opts.contactId}, 'token',
+            ${opts.savedBy === "primary" ? "partner" : "primary"}, ${opts.savedBy})
     returning id`;
   return rows[0].id as string;
 }

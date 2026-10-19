@@ -4,8 +4,10 @@ import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
 import {
+  clearedFields,
   parsePartnerEmail,
   parseSubmissionPayload,
+  withoutBlanks,
 } from "@/lib/validation/submission";
 import { changedFields, mergeUpdate, rowToSnapshot, toInsertRow } from "./merge";
 
@@ -14,6 +16,7 @@ const B = "10000000-0000-0000-0000-00000000d001";
 const C_LEGACY = "20000000-0000-0000-0000-00000000d001";
 const C_SPLIT = "20000000-0000-0000-0000-00000000d002";
 const C_COUPLE = "20000000-0000-0000-0000-00000000d003";
+const C_CLEAR = "20000000-0000-0000-0000-00000000d004";
 
 const ALL_ENABLED = { partner_name: true, kids_names: true, birthday: true };
 
@@ -28,12 +31,19 @@ async function load(id: string) {
   return row;
 }
 
-async function merge(id: string, payload: unknown, enabled = ALL_ENABLED) {
+async function merge(
+  id: string,
+  payload: unknown,
+  enabled = ALL_ENABLED,
+  { token = false }: { token?: boolean } = {},
+) {
   const before = rowToSnapshot(await load(id));
-  const partnerEmail = parsePartnerEmail(payload);
+  const parsable = token ? withoutBlanks(payload) : payload;
+  const partnerEmail = parsePartnerEmail(parsable);
   if (!partnerEmail.success) throw new Error("partner email did not parse");
-  const set = mergeUpdate(before, gate(payload, enabled), {
+  const set = mergeUpdate(before, gate(parsable, enabled), {
     partnerEmail: partnerEmail.data,
+    clear: token ? clearedFields(payload, enabled) : [],
   });
   if (!set) return { set, row: await load(id), diff: undefined };
   const [row] = await withRls({ sub: U }, (tx) =>
@@ -216,6 +226,59 @@ describe("approving a household submission", () => {
     it("refuses a malformed partner email", () => {
       expect(parsePartnerEmail({ partner_email: "not an email" })).toEqual({ success: false });
       expect(parsePartnerEmail({ city: "Seattle" })).toEqual({ success: true, data: undefined });
+    });
+  });
+
+  describe("a token reply that empties fields", () => {
+    const emptied = {
+      first_name: "Jen",
+      last_name: "Holloway",
+      partner_first_name: "",
+      partner_last_name: "",
+      kids: [],
+      email: "",
+      address_line1: "2140 NE Alberta St",
+      address_line2: "",
+      city: "Portland",
+    };
+
+    beforeAll(async () => {
+      await dbAdmin.insert(contacts).values({
+        id: C_CLEAR,
+        bookId: B,
+        fullName: "placeholder",
+        firstName: "Jen",
+        lastName: "Holloway",
+        partnerFirstName: "Mark",
+        kids: [{ first: "Zoe", last: "Holloway" }],
+        email: "jen@clear.test",
+        addressLine1: "2140 NE Alberta St",
+        addressLine2: "Apt 4",
+        city: "Portland",
+      });
+    });
+
+    it("clears nothing for the same values from the public link", async () => {
+      const { set } = await merge(C_CLEAR, withoutBlanks(emptied));
+      expect(set).toBeUndefined();
+    });
+
+    it("clears the emptied address line, partner and kids, but never the email", async () => {
+      const { row } = await merge(C_CLEAR, emptied, ALL_ENABLED, { token: true });
+      expect(row).toMatchObject({
+        email: "jen@clear.test",
+        addressLine2: null,
+        partnerFirstName: null,
+        partnerName: null,
+        kids: null,
+        kidsNames: null,
+      });
+    });
+
+    it("leaves a group the book does not collect", () => {
+      expect(
+        clearedFields(emptied, { partner_name: false, kids_names: false, birthday: false }),
+      ).toEqual(["address_line2"]);
     });
   });
 });

@@ -156,6 +156,7 @@ describe("twoAnswers", () => {
   it("puts the saved contact beside a partner's reply and marks what differs", () => {
     const answers = twoAnswers(couple, {
       submissionId: "s1",
+      from: "partner",
       savedBy: "primary",
       display: {
         full_name: "Satya Rao",
@@ -188,6 +189,7 @@ describe("twoAnswers", () => {
   it("adds a line for each other field the reply changes", () => {
     const answers = twoAnswers(couple, {
       submissionId: "s1",
+      from: "primary",
       savedBy: "partner",
       display: { email: "satya@new.test", city: "Tacoma" },
     });
@@ -207,7 +209,7 @@ describe("twoAnswers", () => {
   it("lists the parts when there is no street line", () => {
     const answers = twoAnswers(
       { ...couple, addressLine1: null, stateRegion: null, postalCode: null },
-      { submissionId: "s1", savedBy: "primary", display: { country: "Canada" } },
+      { submissionId: "s1", from: "partner", savedBy: "primary", display: { country: "Canada" } },
     );
     expect(answers.incoming.lines[0]?.parts).toEqual([
       { text: "Seattle, ", changed: false },
@@ -215,14 +217,39 @@ describe("twoAnswers", () => {
     ]);
   });
 
-  it("leaves the saved side unnamed when no link made the saved change", () => {
+  it("names each side from the stored sender, whatever the payload holds", () => {
     const answers = twoAnswers(couple, {
       submissionId: "s1",
-      savedBy: null,
-      display: { city: "Tacoma" },
+      from: "primary",
+      savedBy: "partner",
+      display: { partner_email: "mei@rao.test", city: "Tacoma" },
     });
-    expect(answers.saved.name).toBeNull();
     expect(answers.incoming.name).toBe("Satya");
+    expect(answers.saved.name).toBe("Mei");
+  });
+
+  it("shows a cleared field as removed, but never clears an email or a name", () => {
+    const answers = twoAnswers(
+      { ...couple, addressLine2: "Apt 2", kidsNames: "Zoe" },
+      {
+        submissionId: "s1",
+        from: "partner",
+        savedBy: "primary",
+        display: { address_line2: "", kids_names: "", email: "", full_name: "" },
+      },
+    );
+    expect(answers.incoming.lines).toEqual([
+      {
+        label: null,
+        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103, USA", changed: false }],
+      },
+      { label: "Line 2", parts: [{ text: "(removed)", changed: true }] },
+      { label: "Kids", parts: [{ text: "(removed)", changed: true }] },
+    ]);
+    expect(answers.saved.lines[1]).toEqual({
+      label: "Kids",
+      parts: [{ text: "Zoe", changed: false }],
+    });
   });
 });
 

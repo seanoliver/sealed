@@ -449,6 +449,44 @@ describe("requestAddresses", () => {
     expect(count).toBe(0);
   });
 
+  it("sends exactly 1000 emails", async () => {
+    answer();
+    const rows = await dbAdmin.execute(sql`
+      insert into public.contacts (book_id, full_name, email, partner_email)
+      select ${B}, 'Couple ' || n, 'a' || n || '@cap.test', 'b' || n || '@cap.test'
+      from generate_series(1, 500) n
+      returning id`);
+    const ids = rows.map((row) => String(row.id));
+    await expect(requestAddresses({ contactIds: ids })).resolves.toMatchObject({
+      sent: 1000,
+      failed: 0,
+    });
+  });
+
+  it("emails only the people asked for and leaves the other's link live", async () => {
+    answer();
+    await requestAddresses({ contactIds: [COUPLE] });
+    const first = sentLinks();
+
+    send.mockReset();
+    answer();
+    await expect(
+      requestAddresses({ recipients: [{ contactId: COUPLE, recipient: "partner" }] }),
+    ).resolves.toEqual({ sent: 1, skippedNoEmail: 0, failed: 0, failedContactIds: [] });
+    const [items] = send.mock.calls[0];
+    expect(items.map((item) => item.to)).toEqual(["quinn@ra.test"]);
+    expect(await isLive(COUPLE, first["pia@ra.test"])).toBe(true);
+    expect(await isLive(COUPLE, first["quinn@ra.test"])).toBe(false);
+  });
+
+  it("skips a person asked for who has no email", async () => {
+    answer();
+    await expect(
+      requestAddresses({ recipients: [{ contactId: A, recipient: "partner" }] }),
+    ).resolves.toEqual({ sent: 0, skippedNoEmail: 1, failed: 0, failedContactIds: [] });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed ids", async () => {
     await expect(requestAddresses({ contactIds: ["nope"] })).resolves.toEqual({
       error: "Invalid request.",

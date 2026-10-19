@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
-import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
+import { books, contacts, submissions } from "@/lib/db/schema";
 import { type Recipient } from "@/lib/recipients";
 
 export type PendingSubmission = {
@@ -53,11 +53,18 @@ export async function listPendingSubmissions(
 export type PendingReply = {
   id: string;
   contactId: string;
-  /** ATTACKER-CONTROLLED jsonb: parse it before display, never cast it. */
+  /** ATTACKER-CONTROLLED jsonb, as in listPendingSubmissions. */
   payload: unknown;
-  savedBy: Recipient | null;
+  /** Who sent the reply, and whose saved change it would replace. */
+  from: Recipient;
+  savedBy: Recipient;
 };
 
+/**
+ * The oldest reply per contact that apply_token_reply queued because it
+ * collided with the other person's, for the sheet's "Two answers" chip.
+ * Permalink submissions stay on the review page only.
+ */
 export async function listPendingReplies(
   claims: SessionClaims,
 ): Promise<PendingReply[]> {
@@ -69,23 +76,21 @@ export async function listPendingReplies(
       .limit(1);
     if (!book) return [];
 
-    const rows = await tx
+    // The token_people check makes recipient and saved_by non-null here.
+    return tx
       .selectDistinctOn([submissions.matchedContactId], {
         id: submissions.id,
         contactId: sql<string>`${submissions.matchedContactId}`,
         payload: submissions.payload,
-        savedBy: sql<Recipient | null>`(
-          select ${contactEvents.recipient} from ${contactEvents}
-          where ${contactEvents.contactId} = ${submissions.matchedContactId}
-            and ${contactEvents.source} = 'token'
-          order by ${contactEvents.createdAt} desc, ${contactEvents.id} desc
-          limit 1)`,
+        from: sql<Recipient>`${submissions.recipient}`,
+        savedBy: sql<Recipient>`${submissions.savedBy}`,
       })
       .from(submissions)
       .where(
         and(
           eq(submissions.bookId, book.id),
           eq(submissions.status, "pending"),
+          eq(submissions.source, "token"),
           isNotNull(submissions.matchedContactId),
         ),
       )
@@ -94,6 +99,5 @@ export async function listPendingReplies(
         asc(submissions.createdAt),
         asc(submissions.id),
       );
-    return rows;
   });
 }

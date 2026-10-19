@@ -25,9 +25,17 @@ import { generateToken, TOKEN_TTL_DAYS } from "@/lib/tokens";
 // of the rows it actually displayed, so what the user confirmed in the dialog
 // is exactly what fans out (a search-filtered "Send to all" must not quietly
 // email — and rotate the live links of — the rest of the book).
-const requestSchema = z.object({
-  contactIds: z.array(z.uuid()).min(1).max(1000),
-});
+const requestSchema = z.union([
+  z.object({ contactIds: z.array(z.uuid()).min(1).max(1000) }),
+  // Only these people, e.g. a resend to whoever's last email failed: the
+  // other person keeps their live link and gets no duplicate.
+  z.object({
+    recipients: z
+      .array(z.object({ contactId: z.uuid(), recipient: z.enum(["primary", "partner"]) }))
+      .min(1)
+      .max(1000),
+  }),
+]);
 
 const MAX_EMAILS = 1000;
 
@@ -50,6 +58,18 @@ export async function requestAddresses(
 
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success) return { error: "Invalid request." };
+  const wanted =
+    "recipients" in parsed.data
+      ? Map.groupBy(parsed.data.recipients, (target) => target.contactId)
+      : null;
+  const contactIds =
+    "recipients" in parsed.data ? [...wanted!.keys()] : parsed.data.contactIds;
+  const recipientsOf = (row: typeof contacts.$inferSelect) =>
+    addressRecipients(row).filter(
+      ({ recipient }) =>
+        wanted === null ||
+        wanted.get(row.id)?.some((target) => target.recipient === recipient),
+    );
 
   const appUrl = process.env.APP_URL;
   if (!appUrl) throw new Error("APP_URL is not set");
@@ -91,7 +111,7 @@ export async function requestAddresses(
         .where(
           and(
             eq(contacts.bookId, book.id),
-            inArray(contacts.id, parsed.data.contactIds),
+            inArray(contacts.id, contactIds),
           ),
         );
 
@@ -109,10 +129,10 @@ export async function requestAddresses(
   if (!scope) return { error: "Set up your address book first." };
 
   const targets = scope.rows.flatMap((row) =>
-    addressRecipients(row).map((recipient) => ({ ...recipient, row })),
+    recipientsOf(row).map((recipient) => ({ ...recipient, row })),
   );
   const skippedNoEmail = scope.rows.filter(
-    (row) => addressRecipients(row).length === 0,
+    (row) => recipientsOf(row).length === 0,
   ).length;
   if (targets.length === 0) {
     return { sent: 0, skippedNoEmail, failed: 0, failedContactIds: [] };

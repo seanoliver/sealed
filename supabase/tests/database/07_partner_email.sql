@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(40);
+select plan(42);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-000000095001', 'pe@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -195,6 +195,14 @@ insert into public.update_tokens (contact_id, token_hash, expires_at, recipient)
   ('20000000-0000-4000-8000-000000095009', extensions.digest('old2', 'sha256'), now() + interval '1 day', 'primary');
 select is(private.apply_token_update('old2', '{"city": "Bergen"}'), true,
   'the old two-argument call still applies and returns true for an app deployed before this');
+
+select ok(private.submit_to_book('pe-test-book', '{"full_name": "Ana Reyes", "email": "ana@new.test"}'),
+  'a permalink submission is accepted');
+select results_eq(
+  $$ select source, recipient, saved_by from public.submissions
+     where matched_contact_id = '20000000-0000-4000-8000-000000095001' $$,
+  $$ values ('permalink', null::text, null::text) $$,
+  'a permalink submission matched by email is not marked as a reply');
 
 select * from finish();
 rollback;

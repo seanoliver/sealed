@@ -10,6 +10,7 @@ import {
   type TokenUpdateField,
 } from "@/lib/validation/contact";
 import {
+  CLEARABLE_FIELDS,
   DISPLAY_VALUE_MAX,
   parseSubmissionForDisplay,
   type EnabledFields,
@@ -29,6 +30,9 @@ import { ReviewCardActions } from "./review-card-actions";
  */
 
 type ReviewField = TokenUpdateField | "partner_email";
+
+
+const REMOVED = "(removed)";
 
 const MERGE_FIELDS: readonly ReviewField[] = [...TOKEN_UPDATE_FIELDS, "partner_email"];
 
@@ -119,8 +123,19 @@ function toCardModel(
     ...base,
     kind: "merge",
     contactName: matchedContact.fullName,
-    rows: present(MERGE_FIELDS).map((field) => {
-      const value = parsed[field] ?? "";
+    rows: [
+      ...present(MERGE_FIELDS),
+      // A token reply's emptied field clears it when approved.
+      ...(submission.source === "token"
+        ? MERGE_FIELDS.filter(
+            (field) =>
+              parsed[field] === "" &&
+              currentByField[field] !== null &&
+              (CLEARABLE_FIELDS as readonly string[]).includes(field),
+          )
+        : []),
+    ].map((field) => {
+      const value = parsed[field] || REMOVED;
       const current =
         currentByField[field] === null
           ? null
