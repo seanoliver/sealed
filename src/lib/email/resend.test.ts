@@ -262,6 +262,12 @@ describe("sendAddressRequests", () => {
     expect(results[100]).toEqual({ status: "sent", id: "b0", to: "r100@example.test" });
   });
 
+  it("refuses to send without EMAIL_FROM", async () => {
+    vi.stubEnv("EMAIL_FROM", "");
+    await expect(sendAddressRequests(items(1), opts)).rejects.toThrow("EMAIL_FROM is not set");
+    expect(batchSend).not.toHaveBeenCalled();
+  });
+
   it("returns sent dry-run ids without calling Resend", async () => {
     vi.stubEnv("EMAIL_DRY_RUN", "1");
     vi.spyOn(console, "info").mockImplementation(() => {});
