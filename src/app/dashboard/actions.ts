@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, inArray, isNull, and } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
@@ -28,14 +29,13 @@ const requestSchema = z.object({
 export type RequestAddressesInput = z.input<typeof requestSchema>;
 
 export type RequestAddressesResult =
-  | { sent: number; skippedNoEmail: number; failed: number }
+  | { sent: number; skippedNoEmail: number; failed: number; failedContactIds: string[] }
   | { error: string };
 
 /**
  * Mint update tokens for the targeted contacts and email each a personal
- * `/u/<token>` link. Single-active-token semantics: minting deletes the
- * contact's previous unused tokens, so re-running the request invalidates
- * old links and only the newest one works.
+ * `/u/<token>` link. Single-active-token semantics: once a contact's new
+ * email is confirmed sent, their older unused links stop working.
  *
  * Invariant: the raw token exists only transiently to build the email URL.
  * Only its sha256 is persisted, and it is never logged here (the dev-only
@@ -51,9 +51,8 @@ export async function requestAddresses(
 
   const appUrl = process.env.APP_URL;
   if (!appUrl) throw new Error("APP_URL is not set");
-  // Validate email config BEFORE minting: failing after the mint would have
-  // already rotated away working links and left orphan tokens for emails
-  // that never went out. Same predicate the email layer uses to pick a mode.
+  // Validate email config BEFORE minting, or a throw mid-send leaves live
+  // tokens for emails that never went out. Same predicate the email layer uses.
   if (!isEmailDryRun()) {
     if (!process.env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
     if (!process.env.EMAIL_FROM) throw new Error("EMAIL_FROM is not set");
@@ -110,38 +109,31 @@ export async function requestAddresses(
   );
   const skippedNoEmail = scope.rows.length - targets.length;
   if (targets.length === 0) {
-    return { sent: 0, skippedNoEmail, failed: 0 };
+    return { sent: 0, skippedNoEmail, failed: 0, failedContactIds: [] };
   }
 
-  // Mint one token per target. Hashes are persisted BEFORE the emails go out
-  // so a recipient clicking instantly always finds a live row.
+  // Hashes are persisted BEFORE the emails go out so a recipient clicking
+  // instantly always finds a live row. Old links stay live until the new
+  // email is confirmed sent, so a failed send never strands a contact.
   const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
   const minted = targets.map((target) => {
     const { token, hash } = generateToken();
     return { target, token, hash };
   });
 
+  let mintedAt: Date;
   try {
-    await dbAdmin.transaction(async (tx) => {
-      // Single-active-token: previous unused tokens for these contacts die
-      // now — re-requesting rotates the link rather than stacking live ones.
-      await tx.delete(updateTokens).where(
-        and(
-          inArray(
-            updateTokens.contactId,
-            targets.map((t) => t.id),
-          ),
-          isNull(updateTokens.usedAt),
-        ),
-      );
-      await tx.insert(updateTokens).values(
+    const [first] = await dbAdmin
+      .insert(updateTokens)
+      .values(
         minted.map(({ target, hash }) => ({
           contactId: target.id,
           tokenHash: hash,
           expiresAt,
         })),
-      );
-    });
+      )
+      .returning({ createdAt: updateTokens.createdAt });
+    mintedAt = first.createdAt;
   } catch (err) {
     logDbError("[ra] [requestAddresses] token mint failed", err);
     return { error: "Something went wrong. Please try again." };
@@ -155,42 +147,63 @@ export async function requestAddresses(
         updateUrl: `${appUrl}/u/${token}`,
       }),
     })),
+    { batchKey: randomUUID() },
   );
 
   // Positional: results[i] corresponds to minted[i].
-  const paired = minted.map((mint, i) => ({ ...mint, resendId: results[i].id }));
-  const delivered = paired.filter(
-    (p): p is typeof p & { resendId: string } => p.resendId !== null,
+  const paired = minted.map((mint, i) => ({ ...mint, result: results[i] }));
+  const delivered = paired.flatMap((p) =>
+    p.result.status === "sent" ? [{ ...p, resendId: p.result.id }] : [],
   );
-  const failedMints = paired.filter((p) => p.resendId === null);
+  const rejected = paired.filter((p) => p.result.status === "failed");
+  const failedContactIds = paired
+    .filter((p) => p.result.status !== "sent")
+    .map((p) => p.target.id);
 
   try {
-    if (delivered.length > 0) {
-      await dbAdmin.insert(emailSends).values(
-        delivered.map(({ target, resendId }) => ({
-          contactId: target.id,
-          bookId: scope.bookId,
-          resendId,
-          status: "sent",
-        })),
-      );
-    }
-    if (failedMints.length > 0) {
-      // A token whose email never went out must not stay live — delete by
-      // exact hash so concurrent re-sends can't be affected.
-      await dbAdmin.delete(updateTokens).where(
-        inArray(
-          updateTokens.tokenHash,
-          failedMints.map(({ hash }) => hash),
-        ),
-      );
-    }
+    await dbAdmin.transaction(async (tx) => {
+      if (delivered.length > 0) {
+        await tx.insert(emailSends).values(
+          delivered.map(({ target, resendId }) => ({
+            contactId: target.id,
+            bookId: scope.bookId,
+            resendId,
+            status: "sent",
+          })),
+        );
+        // createdAt < mintedAt: a newer concurrent send's link must survive.
+        await tx.delete(updateTokens).where(
+          and(
+            inArray(
+              updateTokens.contactId,
+              delivered.map(({ target }) => target.id),
+            ),
+            isNull(updateTokens.usedAt),
+            lt(updateTokens.createdAt, mintedAt),
+          ),
+        );
+      }
+      // A rejected email never went out, so its token must not stay live.
+      // An unconfirmed one may have, so it keeps both links.
+      if (rejected.length > 0) {
+        await tx.delete(updateTokens).where(
+          inArray(
+            updateTokens.tokenHash,
+            rejected.map(({ hash }) => hash),
+          ),
+        );
+      }
+    });
   } catch (err) {
-    // Emails are already out; surface a success count but log the
-    // bookkeeping failure loudly.
+    // No error result: the emails went out, and a retry would send them twice.
     logDbError("[ra] [requestAddresses] send bookkeeping failed", err);
   }
 
   revalidatePath("/dashboard");
-  return { sent: delivered.length, skippedNoEmail, failed: failedMints.length };
+  return {
+    sent: delivered.length,
+    skippedNoEmail,
+    failed: failedContactIds.length,
+    failedContactIds,
+  };
 }

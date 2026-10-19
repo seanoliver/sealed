@@ -7,6 +7,9 @@ import { listContacts } from "@/lib/queries/contacts";
 import { toSheetRow } from "@/lib/contacts-sheet";
 import { ContactsTable } from "./contacts-table";
 
+// Covers requestAddresses: its Resend time budget plus bookkeeping.
+export const maxDuration = 300;
+
 export default async function DashboardPage({
   searchParams,
 }: {
