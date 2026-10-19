@@ -45,6 +45,8 @@ export const contacts = pgTable("contacts", {
   postalCode: text("postal_code"),
   country: text("country"),
   notes: text("notes"),
+  nameReading: text("name_reading"),
+  partnerNameReading: text("partner_name_reading"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -3,6 +3,7 @@ import { formatKids, formatPerson } from "@/lib/names";
 import {
   type ContactDetailsInput,
   type ContactInput,
+  type ReadingsInput,
 } from "@/lib/validation/contact";
 import { type HouseholdInput } from "@/lib/validation/household";
 
@@ -46,5 +47,12 @@ export function contactDetailsToRow(d: ContactDetailsInput) {
     postalCode: d.postal_code ?? null,
     country: d.country ?? null,
     notes: d.notes ?? null,
+  };
+}
+
+export function readingsToRow(r: ReadingsInput) {
+  return {
+    nameReading: r.name_reading ?? null,
+    partnerNameReading: r.partner_name_reading ?? null,
   };
 }

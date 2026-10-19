@@ -42,6 +42,8 @@ const listRow: ContactListRow = {
   stateRegion: null,
   postalCode: "SW1Y 4JH",
   country: "United Kingdom",
+  nameReading: null,
+  partnerNameReading: null,
   sendStatus: "delivered",
   sendFailureReason: null,
   sendStatuses: {

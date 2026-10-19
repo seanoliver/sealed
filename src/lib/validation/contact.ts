@@ -59,6 +59,20 @@ export const contactDetailsSchema = contactSchema.omit({
 });
 export type ContactDetailsInput = z.infer<typeof contactDetailsSchema>;
 
+/**
+ * The owner's pinyin for a name. Owner-only: kept out of CONTACT_FIELDS so it
+ * never reaches CSV export, import or any recipient schema.
+ */
+export const READING_FIELDS = ["name_reading", "partner_name_reading"] as const;
+export type ReadingField = (typeof READING_FIELDS)[number];
+export type ReadingValues = Record<ReadingField, string>;
+export const READING_MAX = 200;
+export const readingsSchema = z.object({
+  name_reading: opt(READING_MAX),
+  partner_name_reading: opt(READING_MAX),
+});
+export type ReadingsInput = z.infer<typeof readingsSchema>;
+
 /** Form field names in display order; shared by the form, actions, and diffs. */
 export const CONTACT_FIELDS = [
   "full_name",
