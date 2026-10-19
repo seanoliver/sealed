@@ -332,3 +332,11 @@ function generateHash(token: string): Buffer {
 export async function setContactAddressLine2(contactId: string, line2: string): Promise<void> {
   await db`update public.contacts set address_line2 = ${line2} where id = ${contactId}`;
 }
+
+export async function getContactReadings(
+  contactId: string,
+): Promise<{ nameReading: string | null; partnerNameReading: string | null }> {
+  const rows = await db`
+    select name_reading, partner_name_reading from public.contacts where id = ${contactId}`;
+  return { nameReading: rows[0].name_reading, partnerNameReading: rows[0].partner_name_reading };
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, type KeyboardEvent, type Ref } from "react";
+import { useId, useRef, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { Plus, X } from "lucide-react";
 import {
@@ -44,13 +44,15 @@ export function UnsplitDot() {
 export function HouseholdLabel({
   line,
   kids,
+  renderLine = (text) => text,
 }: {
   line: string;
   kids: string | null;
+  renderLine?: (line: string) => ReactNode;
 }) {
   return (
     <>
-      <span className="truncate">{line}</span>
+      <span className="truncate">{renderLine(line)}</span>
       {kids ? (
         <span className="shrink-0 pl-1 font-normal text-muted-foreground">
           · {kids}

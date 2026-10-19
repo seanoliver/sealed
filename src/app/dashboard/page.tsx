@@ -6,6 +6,7 @@ import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
 import { listPendingReplies } from "@/lib/queries/submissions";
 import { toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
+import { readingsForContact } from "@/lib/pinyin";
 import { parseSubmissionForDisplay } from "@/lib/validation/submission";
 import { ContactsTable } from "./contacts-table";
 
@@ -43,8 +44,9 @@ export default async function DashboardPage({
     });
   }
 
-  const rows = contacts.map((contact) =>
-    toSheetRow(
+  const rows = contacts.map((contact) => {
+    const answer = answers.get(contact.id);
+    return toSheetRow(
       contact,
       (date) =>
         date.toLocaleDateString("en-US", {
@@ -52,9 +54,14 @@ export default async function DashboardPage({
           day: "numeric",
           year: "numeric",
         }),
-      { answer: answers.get(contact.id) },
-    ),
-  );
+      {
+        answer,
+        readings: readingsForContact(contact, {
+          extra: [answer?.display.full_name, answer?.display.partner_name],
+        }),
+      },
+    );
+  });
 
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-10">
