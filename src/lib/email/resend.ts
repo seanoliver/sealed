@@ -10,11 +10,10 @@ export interface EmailItem {
   text: string;
 }
 
-/** Positional result: `id` is Resend's email id, or null when the send failed. */
-export interface SendResult {
-  id: string | null;
-  to: string;
-}
+/** Positional. `unknown`: Resend may have accepted the email but never confirmed it. */
+export type SendResult =
+  | { status: "sent"; id: string; to: string }
+  | { status: "failed" | "unknown"; id: null; to: string };
 
 /** Resend's batch endpoint accepts at most 100 emails per call. */
 const BATCH_LIMIT = 100;
@@ -43,11 +42,22 @@ function getClient(): Resend {
   return client;
 }
 
+type BatchError = { name: string; message: string; statusCode: number | null };
+
+// Quota errors are also 429s but will not clear on retry.
+const RETRYABLE = new Set(["rate_limit_exceeded", "concurrent_idempotent_requests"]);
+const isRetryable = (error: BatchError) =>
+  error.statusCode === null || error.statusCode >= 500 || RETRYABLE.has(error.name);
+
+type Outcome = DistributiveOmit<SendResult, "to">;
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Send address-request emails via Resend's batch API, chunked to its
- * 100-email limit. Results map positionally onto `items`; a failed chunk
- * yields `id: null` for each of its items (partial failure tolerated —
- * the caller decides what to do with the unsent tokens).
+ * 100-email limit. Results map positionally onto `items`. Permissive
+ * validation means one rejected address fails only its own email.
  *
  * Logging safety: the html/text bodies contain personal token URLs and are
  * NEVER logged in real mode. The non-production EMAIL_DRY_RUN=1 path logs
@@ -55,6 +65,7 @@ function getClient(): Resend {
  */
 export async function sendAddressRequests(
   items: EmailItem[],
+  { batchKey, retryDelaysMs = [1000, 2000, 4000] }: { batchKey: string; retryDelaysMs?: number[] },
 ): Promise<SendResult[]> {
   if (isEmailDryRun()) {
     return items.map((item) => {
@@ -62,6 +73,7 @@ export async function sendAddressRequests(
       const url = item.text.match(/https?:\/\/\S+/)?.[0] ?? "<no url found>";
       console.info(`[em] [dry-run] address request to ${item.to}: ${url}`);
       return {
+        status: "sent",
         id: `dry_${dryRunCounter++}_${randomBytes(4).toString("hex")}`,
         to: item.to,
       };
@@ -75,39 +87,73 @@ export async function sendAddressRequests(
   const results: SendResult[] = [];
   for (let start = 0; start < items.length; start += BATCH_LIMIT) {
     const chunk = items.slice(start, start + BATCH_LIMIT);
-    let ids: (string | null)[];
-    try {
-      const { data, error } = await resend.batch.send(
-        chunk.map((item) => ({
-          from,
-          to: item.to,
-          subject: item.subject,
-          html: item.html,
-          text: item.text,
-        })),
-      );
-      if (error) {
-        // Resend's own error message — names/codes only, no email bodies.
-        console.error(
-          `[em] [sendAddressRequests] batch failed: ${error.name} ${error.message}`,
-        );
-        ids = chunk.map(() => null);
-      } else {
-        // Map ids positionally; null-fill defensively if counts mismatch.
-        ids = chunk.map((_, i) => data.data[i]?.id ?? null);
+    const payload = chunk.map((item) => ({
+      from,
+      to: item.to,
+      subject: item.subject,
+      html: item.html,
+      text: item.text,
+    }));
+    const idempotencyKey = `${batchKey}/${start / BATCH_LIMIT}`;
+    let outcome: Outcome[] = [];
+    for (let attempt = 0; ; attempt++) {
+      let error: BatchError;
+      try {
+        const response = await resend.batch.send(payload, {
+          batchValidation: "permissive",
+          idempotencyKey,
+        });
+        if (!response.error) {
+          outcome = attributeIds(chunk.length, response.data);
+          break;
+        }
+        error = response.error;
+      } catch (err) {
+        // Log only the error type, never the payload.
+        error = { name: err instanceof Error ? err.name : typeof err, message: "threw", statusCode: null };
       }
-    } catch (err) {
-      // Transport failure. Log only the error type — never the payload.
       console.error(
-        `[em] [sendAddressRequests] batch threw: ${err instanceof Error ? err.name : typeof err}`,
+        `[em] [sendAddressRequests] batch attempt ${attempt + 1} failed: ${error.name} ${error.statusCode ?? "-"} ${error.message}`,
       );
-      ids = chunk.map(() => null);
+      if (!isRetryable(error)) {
+        outcome = chunk.map(() => ({ status: "failed", id: null }));
+        break;
+      }
+      if (attempt >= retryDelaysMs.length) {
+        outcome = chunk.map(() => ({ status: "unknown", id: null }));
+        break;
+      }
+      await sleep(retryDelaysMs[attempt]);
     }
-    for (let i = 0; i < chunk.length; i++) {
-      results.push({ id: ids[i], to: chunk[i].to });
-    }
+    chunk.forEach((item, i) => results.push({ ...outcome[i], to: item.to }));
   }
   return results;
+}
+
+// `errors` names rejected indexes and `data` holds accepted ids in request order.
+function attributeIds(
+  size: number,
+  data: { data: { id: string }[]; errors?: { index: number; message: string }[] },
+): Outcome[] {
+  const rejected = new Set((data.errors ?? []).map((e) => e.index));
+  for (const e of data.errors ?? []) {
+    console.error(`[em] [sendAddressRequests] email ${e.index} rejected: ${e.message}`);
+  }
+  const accepted = Array.from({ length: size }, (_, i) => i).filter((i) => !rejected.has(i));
+  const aligned = accepted.length === data.data.length;
+  if (!aligned) {
+    console.error(
+      `[em] [sendAddressRequests] ${data.data.length} ids for ${accepted.length} accepted emails`,
+    );
+  }
+  const out: Outcome[] = Array.from({ length: size }, () => ({ status: "unknown", id: null }));
+  accepted.forEach((index, n) => {
+    if (aligned) out[index] = { status: "sent", id: data.data[n].id };
+  });
+  rejected.forEach((index) => {
+    if (index >= 0 && index < size) out[index] = { status: "failed", id: null };
+  });
+  return out;
 }
 
 /**
