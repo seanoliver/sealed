@@ -57,6 +57,7 @@ const eslintConfig = defineConfig([
       // themselves run through withRls).
       "src/app/dashboard/review/approve-race.test.ts",
       "src/app/dashboard/review/merge.test.ts",
+      "src/app/dashboard/import/actions.test.ts",
     ],
     rules: {
       "no-restricted-imports": ["error", { patterns: [supabaseAdminImport] }],
