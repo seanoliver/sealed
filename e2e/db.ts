@@ -197,11 +197,14 @@ export async function seedUpdateToken(contactId: string): Promise<string> {
 export async function seedEmailSend(opts: {
   contactId: string;
   bookId: string;
-  resendId: string;
+  resendId: string | null;
+  status?: "sent" | "failed" | "unconfirmed" | "bounced";
+  failureReason?: "rejected" | "quota" | "error";
 }): Promise<void> {
   await db`
-    insert into public.email_sends (contact_id, book_id, resend_id, status)
-    values (${opts.contactId}, ${opts.bookId}, ${opts.resendId}, 'sent')`;
+    insert into public.email_sends (contact_id, book_id, resend_id, status, failure_reason)
+    values (${opts.contactId}, ${opts.bookId}, ${opts.resendId}, ${opts.status ?? "sent"},
+            ${opts.failureReason ?? null})`;
 }
 
 /**

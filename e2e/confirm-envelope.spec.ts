@@ -148,6 +148,7 @@ test("the button waits for the bot check", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Checking you're human…" }),
   ).toBeDisabled();
+  await page.waitForFunction(() => "__ts" in window);
   await page.evaluate(() =>
     (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
   );

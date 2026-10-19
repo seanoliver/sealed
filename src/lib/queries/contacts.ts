@@ -3,6 +3,7 @@ import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
+import type { FailureReason } from "@/lib/email/resend";
 import { type StoredNames } from "@/lib/names";
 
 const SEND_STATUSES = [
@@ -11,6 +12,8 @@ const SEND_STATUSES = [
   "opened",
   "bounced",
   "complained",
+  "failed",
+  "unconfirmed",
 ] as const;
 
 /** Latest email_sends.status for a contact, or "none" when never emailed. */
@@ -26,6 +29,8 @@ export interface ContactListRow extends StoredNames {
   country: string | null;
   /** Factual latest-send status; the UI layers an "updated" chip on top. */
   sendStatus: SendStatus;
+  /** Why the latest send failed; set only when sendStatus is "failed". */
+  sendFailureReason: FailureReason | null;
   /** True if a token-sourced contact_events row is newer than the latest send. */
   updatedAfterSend: boolean;
   updatedAt: Date;
@@ -75,6 +80,7 @@ export async function listContacts(
       .select({
         contactId: emailSends.contactId,
         status: emailSends.status,
+        failureReason: emailSends.failureReason,
         sentAt: emailSends.sentAt,
         rn: sql<number>`row_number() over (
           partition by ${emailSends.contactId}
@@ -106,6 +112,7 @@ export async function listContacts(
         // Wrapped in sql`` because drizzle types flat partial selects from a
         // left-joined subquery as non-nullable; this is string | null.
         sendStatus: sql<string | null>`${latestSend.status}`,
+        sendFailureReason: sql<FailureReason | null>`${latestSend.failureReason}`,
         // NULL sent_at (never emailed) makes the comparison NULL → false.
         updatedAfterSend: sql<boolean>`exists (
           select 1 from ${contactEvents}

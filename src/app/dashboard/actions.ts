@@ -164,7 +164,10 @@ export async function requestAddresses(
   const delivered = paired.flatMap((p) =>
     p.result.status === "sent" ? [{ ...p, resendId: p.result.id }] : [],
   );
-  const rejected = paired.filter((p) => p.result.status === "failed");
+  const rejected = paired.flatMap((p) =>
+    p.result.status === "failed" ? [{ ...p, reason: p.result.reason }] : [],
+  );
+  const unconfirmed = paired.filter((p) => p.result.status === "unknown");
   const failedContactIds = paired
     .filter((p) => p.result.status !== "sent")
     .map((p) => p.target.id);
@@ -191,6 +194,21 @@ export async function requestAddresses(
             lt(updateTokens.createdAt, mintedAt),
           ),
         );
+      }
+      if (rejected.length + unconfirmed.length > 0) {
+        await tx.insert(emailSends).values([
+          ...rejected.map(({ target, reason }) => ({
+            contactId: target.id,
+            bookId: scope.bookId,
+            status: "failed",
+            failureReason: reason,
+          })),
+          ...unconfirmed.map(({ target }) => ({
+            contactId: target.id,
+            bookId: scope.bookId,
+            status: "unconfirmed",
+          })),
+        ]);
       }
       // A rejected email never went out, so its token must not stay live.
       // An unconfirmed one may have, so it keeps both links.

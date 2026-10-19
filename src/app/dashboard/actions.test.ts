@@ -30,9 +30,10 @@ function answer(outcomes: Record<string, "failed" | "unknown"> = {}) {
   send.mockImplementation(async (items) =>
     items.map((item): SendResult => {
       const status = outcomes[item.to];
-      return status
-        ? { status, id: null, to: item.to }
-        : { status: "sent", id: `re_${n++}_${Date.now()}`, to: item.to };
+      if (status === "failed")
+        return { status, id: null, to: item.to, reason: "rejected" };
+      if (status === "unknown") return { status, id: null, to: item.to };
+      return { status: "sent", id: `re_${n++}_${Date.now()}`, to: item.to };
     }),
   );
 }
@@ -190,6 +191,25 @@ describe("requestAddresses", () => {
     expect(send.mock.calls[0][0][0].text).toContain(
       "Ana María Reyes Díaz & Mark Lee",
     );
+  });
+
+  it("records failed and unconfirmed sends so the table can flag them", async () => {
+    answer({ "ana@ra.test": "failed", "cal@ra.test": "unknown" });
+    await requestAddresses({ contactIds: [A, C] });
+    const sends = await dbAdmin
+      .select({
+        contactId: emailSends.contactId,
+        status: emailSends.status,
+        reason: emailSends.failureReason,
+      })
+      .from(emailSends)
+      .where(inArray(emailSends.contactId, [A, C]));
+    expect(
+      sends.sort((x, y) => x.contactId.localeCompare(y.contactId)),
+    ).toEqual([
+      { contactId: A, status: "failed", reason: "rejected" },
+      { contactId: C, status: "unconfirmed", reason: null },
+    ]);
   });
 
   it("never emails another owner's contact", async () => {

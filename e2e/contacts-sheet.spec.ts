@@ -173,8 +173,14 @@ test("a send that fails to reach the server says so", async () => {
   );
   await page.getByRole("button", { name: "Send to all shown" }).click();
   await page.getByRole("button", { name: "Confirm and send" }).click();
-  await expect(page.getByText("Couldn't send.")).toBeVisible();
+  await expect(page.getByText("The send may not have finished")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send to all shown" })).toBeDisabled();
+  await bodyRow("Bea Brown").getByRole("checkbox").check();
+  await expect(page.getByRole("button", { name: "Request addresses (1)" })).toBeDisabled();
   await page.unrouteAll({ behavior: "wait" });
+  await page.getByRole("button", { name: "Reload" }).click();
+  await expect(page.getByText("The send may not have finished")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send to all shown" })).toBeEnabled();
 });
 
 test("Enter edits the row in place and keeps fields the row does not show", async () => {
