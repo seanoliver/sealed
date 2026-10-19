@@ -180,6 +180,62 @@ describe("sendAddressRequests", () => {
     expect(results[100].status).toBe("failed");
   });
 
+  it("ignores a rejected index outside the chunk", async () => {
+    batchSend.mockResolvedValue(ok(["a"], [{ index: 9, message: "x" }]));
+    const results = await sendAddressRequests(items(1), opts);
+    expect(results).toEqual([{ status: "sent", id: "a", to: "r0@example.test" }]);
+  });
+
+  it("times out each call after 20s and gives up within 240s by default", async () => {
+    vi.useFakeTimers();
+    try {
+      batchSend.mockReturnValue(new Promise(() => {}));
+      let settled = false;
+      const done = sendAddressRequests(items(1), { batchKey: "k1" }).then((r) => {
+        settled = true;
+        return r;
+      });
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(batchSend).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1 + 1000);
+      expect(batchSend).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(80_000);
+      expect(settled).toBe(true);
+      expect((await done)[0].status).toBe("unknown");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips the third chunk's fourth call at the 240s default budget (each chunk takes 87s)", async () => {
+    vi.useFakeTimers();
+    try {
+      batchSend.mockReturnValue(new Promise(() => {}));
+      const done = sendAddressRequests(items(300), { batchKey: "k1" });
+      await vi.advanceTimersByTimeAsync(300_000);
+      const results = await done;
+      expect(batchSend).toHaveBeenCalledTimes(11);
+      expect(results.map((r) => r.status)).toEqual(Array(300).fill("unknown"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cuts the last call short at the budget", async () => {
+    vi.useFakeTimers();
+    try {
+      batchSend.mockReturnValue(new Promise(() => {}));
+      let settled = false;
+      void sendAddressRequests(items(1), { ...opts, attemptTimeoutMs: 60_000, budgetMs: 30_000 }).then(
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("treats a thrown client error as retryable", async () => {
     batchSend.mockRejectedValueOnce(new TypeError("fetch failed")).mockResolvedValueOnce(ok(["a"]));
     const results = await sendAddressRequests(items(1), opts);

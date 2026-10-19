@@ -31,6 +31,7 @@ Send to a contact once. Then send again with Resend returning an error for that 
 - Batches use `batchValidation: "permissive"` with a per-chunk `Idempotency-Key` (`<uuid>/<chunk>`). Network errors, 5xx, `rate_limit_exceeded` and `concurrent_idempotent_requests` retry with the same key. Quota errors fail immediately, because they are 429s too but won't clear on a retry.
 - An attempt that ends ambiguously (network error, timeout, 5xx) marks the chunk `unknown` if it later gives up, even on a permanent error.
 - Each call times out after 20s. The whole send has a 240s budget under the dashboard page's `maxDuration = 300`. A chunk not attempted before the budget runs out is `failed`.
+- Because old links no longer die at mint, a mistyped email's link could outlive a failed re-send. The `contacts_revoke_links_on_email_change` trigger deletes a contact's unused links whenever its email changes.
 - The result now includes `failedContactIds`.
 
 ## Verification

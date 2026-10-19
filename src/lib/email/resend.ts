@@ -209,9 +209,7 @@ function attributeIds(
   accepted.forEach((index, n) => {
     if (aligned) out[index] = { status: "sent", id: data.data[n].id };
   });
-  rejected.forEach((index) => {
-    if (index >= 0 && index < size) out[index] = { status: "failed", id: null };
-  });
+  rejected.forEach((index) => (out[index] = { status: "failed", id: null }));
   return out;
 }
 
