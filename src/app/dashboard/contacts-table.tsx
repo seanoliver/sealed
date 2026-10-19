@@ -901,7 +901,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
       ) : null}
 
       <div className="hidden md:block">
-          <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+          <div className="mt-3 scroll-pr-[120px] overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
             <table
               aria-label="Contacts"
               className="table-fixed border-separate border-spacing-0 text-sm"
@@ -1531,7 +1531,7 @@ function EditingRow({
         return (
           <td
             key={cell.id}
-            className={`${cellClasses} px-1 text-right whitespace-nowrap`}
+            className={`${cellClasses} sticky right-0 z-10 px-1 text-right whitespace-nowrap shadow-[-8px_0_8px_-8px_rgb(0_0_0/0.25)]`}
           >
             <span className="inline-flex gap-1">
               <button
