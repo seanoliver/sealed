@@ -54,12 +54,14 @@ import {
   moveCursor,
   namesFromValues,
   parseStoredLayout,
+  sendPlan,
   sheetName,
-  STATUS_RANK,
+  statusRank,
   validateHousehold,
   type AnswerSide,
   type HouseholdDraft,
   type RowKey,
+  type SendPlan,
   type SheetField,
   type SheetRow,
   type SheetValues,
@@ -253,7 +255,7 @@ const columns = helper.columns([
       sortUndefined: "last",
     }),
   ),
-  helper.accessor((row) => STATUS_RANK[row.status], {
+  helper.accessor((row) => statusRank(row), {
     id: "status",
     header: "Status",
     size: 160,
@@ -363,21 +365,7 @@ const SEND_PENDING = "Still sending address requests. Try again when they finish
  * search the table shows a filtered subset, and a server-side fan-out would
  * email (and rotate the live links of) contacts the dialog never mentioned.
  */
-type ConfirmState = {
-  mode: "selected" | "shown" | "attention";
-  ids: string[];
-  sendable: number;
-  emails: number;
-  skipped: number;
-  replacedLinks: number;
-};
-
-const HAS_LINK: ReadonlySet<StatusKey> = new Set([
-  "sent",
-  "delivered",
-  "opened",
-  "unconfirmed",
-]);
+type ConfirmState = SendPlan & { mode: "selected" | "shown" | "attention" };
 
 type EditState = { id: string; error?: string; stalled?: boolean };
 
@@ -406,18 +394,6 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
       ...allRows.filter((row) => row.needsAttention).map((row) => row.id),
       ...(editingIdRef.current ? [editingIdRef.current] : []),
     ]);
-  const countEmails = (ids: string[]) => {
-    const wanted = new Set(ids);
-    return allRows
-      .filter((row) => wanted.has(row.id))
-      .reduce((sum, row) => sum + emailCount(row.values), 0);
-  };
-  const linkedCount = (ids: string[]) => {
-    const wanted = new Set(ids);
-    return allRows.filter(
-      (row) => wanted.has(row.id) && HAS_LINK.has(row.status),
-    ).length;
-  };
   const router = useRouter();
   const layout = useStoredLayout();
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
@@ -706,16 +682,17 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
         <button
           type="button"
           disabled={selectedCount === 0 || isSending || isSaving || sendLost}
-          onClick={() =>
+          onClick={() => {
+            const selected = new Set(selectedIds);
+            // While filtered, a resend goes only to the people who need it.
             setConfirm({
               mode: "selected",
-              ids: selectedIds,
-              sendable: selectedCount,
-              emails: countEmails(selectedIds),
-              skipped: 0,
-              replacedLinks: linkedCount(selectedIds),
-            })
-          }
+              ...sendPlan(
+                rows.filter((row) => selected.has(row.id)),
+                { attentionOnly: attentionIds !== null },
+              ),
+            });
+          }}
           className={selectedCount > 0 ? primaryButtonClasses : buttonClasses}
         >
           Request addresses{selectedCount > 0 ? ` (${selectedCount})` : ""}
@@ -732,14 +709,9 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                 ? rows.filter((row) => row.needsAttention)
                 : rows
             ).slice(0, 1000);
-            const sendable = targets.filter((row) => emailCount(row.values) > 0).length;
             setConfirm({
               mode: attentionIds ? "attention" : "shown",
-              ids: targets.map((row) => row.id),
-              sendable,
-              emails: countEmails(targets.map((row) => row.id)),
-              skipped: targets.length - sendable,
-              replacedLinks: linkedCount(targets.map((row) => row.id)),
+              ...sendPlan(targets, { attentionOnly: attentionIds !== null }),
             });
           }}
           className={buttonClasses}
@@ -880,10 +852,10 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
             to{" "}
             <strong>
               {confirm.mode === "shown"
-                ? `the ${confirm.sendable} ${confirm.sendable === 1 ? "contact" : "contacts"} shown`
+                ? `the ${confirm.contacts} ${confirm.contacts === 1 ? "contact" : "contacts"} shown`
                 : confirm.mode === "attention"
-                  ? `the ${confirm.sendable} shown that still ${confirm.sendable === 1 ? "needs" : "need"} attention`
-                  : `${confirm.sendable} ${confirm.sendable === 1 ? "contact" : "contacts"}`}
+                  ? `the ${confirm.contacts} shown that still ${confirm.contacts === 1 ? "needs" : "need"} attention`
+                  : `${confirm.contacts} ${confirm.contacts === 1 ? "contact" : "contacts"}`}
             </strong>
             {confirm.skipped > 0 ? (
               <> ({confirm.skipped} will be skipped: no email)</>
@@ -903,8 +875,8 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              disabled={confirm.sendable === 0 || isSending || isSaving}
-              onClick={() => fire({ contactIds: confirm.ids })}
+              disabled={confirm.contacts === 0 || isSending || isSaving}
+              onClick={() => fire(confirm.input)}
               className={primaryButtonClasses}
             >
               Confirm and send

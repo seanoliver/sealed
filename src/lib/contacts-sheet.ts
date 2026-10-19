@@ -49,6 +49,8 @@ export interface SheetRow {
   failureReason: FailureReason | null;
   people: PersonSend[];
   needsAttention: boolean;
+  /** The people with an address whose latest send needs a look. */
+  attention: { recipient: Recipient; status: SendStatus }[];
   answers: TwoAnswers | null;
   updatedAtIso: string;
   updatedAtLabel: string;
@@ -100,6 +102,15 @@ export function toSheetRow(
         }))
       : [],
     needsAttention: !row.updatedAfterSend && row.needsAttention,
+    attention: row.updatedAfterSend
+      ? []
+      : (["primary", "partner"] as const)
+          .filter(
+            (recipient) =>
+              (recipient === "primary" ? row.email : row.partnerEmail) !== null &&
+              NEEDS_ATTENTION.has(row.sendStatuses[recipient].status),
+          )
+          .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status })),
     answers: answer ? twoAnswers(row, answer) : null,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
@@ -144,6 +155,62 @@ export function combineSends(
   return {
     ...best,
     needsAttention: sends.some((send) => NEEDS_ATTENTION.has(send.status)),
+  };
+}
+
+/**
+ * The status column's sort rank. A row needing attention ranks by its worst
+ * person, so "Failed / Delivered" sorts with the problems.
+ */
+export function statusRank(row: Pick<SheetRow, "status" | "people" | "needsAttention">): number {
+  const ranks = row.needsAttention
+    ? row.people.filter((person) => person.status !== "none").map((person) => STATUS_RANK[person.status])
+    : [];
+  return Math.min(STATUS_RANK[row.status], ...ranks);
+}
+
+/** Statuses whose recipient holds a live link that a new email replaces. */
+const HAS_LINK: ReadonlySet<StatusKey> = new Set(["sent", "delivered", "opened", "unconfirmed"]);
+
+export type SendPlan = {
+  input: { contactIds: string[] } | { recipients: { contactId: string; recipient: Recipient }[] };
+  /** Contacts that get at least one email. */
+  contacts: number;
+  emails: number;
+  /** Contacts with no email at all. */
+  skipped: number;
+  replacedLinks: number;
+};
+
+/**
+ * What a send to these rows emails. With `attentionOnly`, only the people
+ * whose last email needs a look: the other person keeps their live link.
+ */
+export function sendPlan(
+  rows: SheetRow[],
+  { attentionOnly }: { attentionOnly: boolean },
+): SendPlan {
+  if (attentionOnly) {
+    const targets = rows.flatMap((row) =>
+      row.attention.map((person) => ({ row, ...person })),
+    );
+    return {
+      input: {
+        recipients: targets.map(({ row, recipient }) => ({ contactId: row.id, recipient })),
+      },
+      contacts: rows.filter((row) => row.attention.length > 0).length,
+      emails: targets.length,
+      skipped: 0,
+      replacedLinks: targets.filter((target) => HAS_LINK.has(target.status)).length,
+    };
+  }
+  const emailable = rows.filter((row) => emailCount(row.values) > 0);
+  return {
+    input: { contactIds: rows.map((row) => row.id) },
+    contacts: emailable.length,
+    emails: emailable.reduce((sum, row) => sum + emailCount(row.values), 0),
+    skipped: rows.length - emailable.length,
+    replacedLinks: rows.filter((row) => HAS_LINK.has(row.status)).length,
   };
 }
 

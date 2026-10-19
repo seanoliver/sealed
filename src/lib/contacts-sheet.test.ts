@@ -11,7 +11,9 @@ import {
   moveCursor,
   namesFromValues,
   parseStoredLayout,
+  sendPlan,
   sheetName,
+  statusRank,
   NEEDS_ATTENTION,
   STATUS_RANK,
   toSheetRow,
@@ -343,6 +345,75 @@ describe("STATUS_RANK", () => {
       "opened",
       "updated",
     ]);
+  });
+});
+
+const halfFailed = toSheetRow(
+  {
+    ...listRow,
+    id: "00000000-0000-0000-0000-000000000002",
+    firstName: "Jen",
+    partnerFirstName: "Sam",
+    partnerEmail: "sam@example.test",
+    sendStatus: "delivered",
+    sendStatuses: {
+      primary: { status: "failed", failureReason: "rejected" },
+      partner: { status: "delivered", failureReason: null },
+    },
+    needsAttention: true,
+  },
+  String,
+);
+
+describe("statusRank", () => {
+  it("sorts a couple with one failed send by the failure, not the delivery", () => {
+    expect(halfFailed.status).toBe("delivered");
+    expect(statusRank(halfFailed)).toBe(STATUS_RANK.failed);
+  });
+
+  it("uses the status itself when nothing needs attention", () => {
+    expect(statusRank(toSheetRow(listRow, String))).toBe(STATUS_RANK.delivered);
+  });
+});
+
+describe("sendPlan", () => {
+  const ada = toSheetRow(listRow, String);
+  const noEmail = toSheetRow({ ...listRow, id: "00000000-0000-0000-0000-000000000003", email: null }, String);
+
+  it("emails everyone with an address on each contact", () => {
+    expect(sendPlan([ada, halfFailed, noEmail], { attentionOnly: false })).toEqual({
+      input: { contactIds: [ada.id, halfFailed.id, noEmail.id] },
+      contacts: 2,
+      emails: 3,
+      skipped: 1,
+      replacedLinks: 3,
+    });
+  });
+
+  it("resends only to the people whose last email needs a look", () => {
+    expect(sendPlan([ada, halfFailed], { attentionOnly: true })).toEqual({
+      input: { recipients: [{ contactId: halfFailed.id, recipient: "primary" }] },
+      contacts: 1,
+      emails: 1,
+      skipped: 0,
+      replacedLinks: 0,
+    });
+  });
+
+  it("skips a failed person whose address was removed", () => {
+    const removed = toSheetRow(
+      {
+        ...listRow,
+        email: null,
+        sendStatuses: {
+          primary: { status: "failed", failureReason: "rejected" },
+          partner: { status: "none", failureReason: null },
+        },
+        needsAttention: true,
+      },
+      String,
+    );
+    expect(removed.attention).toEqual([]);
   });
 });
 
