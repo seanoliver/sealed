@@ -13,7 +13,7 @@ Give an agent such as Claude Code read access to an address book through the rem
 
 - The owner's account email.
 - A shell in the repository with `pnpm install` done.
-- An env file whose `DATABASE_URL` points at the target database. `.env.local` targets the local Supabase database; minting for production needs the production `DATABASE_URL`.
+- `DATABASE_URL` for the target database. `pnpm agent:token` loads `.env.local`, which targets the local Supabase database. Node's `--env-file` never overrides a variable already set, so prefix the command with `DATABASE_URL=...` to mint for production.
 - Migration `20261021120000_agent_tokens.sql` applied to that database.
 
 ## Procedure
@@ -21,10 +21,11 @@ Give an agent such as Claude Code read access to an address book through the rem
 1. Mint a token. Settings will do this later; until then use the script, which calls the same `mintAgentToken` as the server action:
 
    ```bash
-   pnpm exec tsx --conditions=react-server --env-file=.env.local \
-     scripts/create-agent-token.ts --email you@example.com --name "Claude Code" \
+   pnpm agent:token --email you@example.com --name "Claude Code" \
      --scopes read --expires-days 90
    ```
+
+   The `agent:token` script runs `scripts/create-agent-token.ts` with the pinned `tsx` devDependency.
 
    `--scopes` takes a comma-separated subset of `read,write,send` (only `read` tools exist today). Omit `--expires-days` for a token that never expires. The token (`sealed_pat_…`) prints once; only its sha256 is stored.
 
@@ -52,7 +53,8 @@ Give an agent such as Claude Code read access to an address book through the rem
 
 ## Failure recovery
 
-- **401 with a token:** the token is malformed, revoked, expired, or minted against a different database. Mint a new one.
+- **401 with a token:** the token is malformed, unknown, revoked or expired, or was minted against a different database. Mint a new one.
+- **503 with `Retry-After`:** the database could not be reached while checking the token. The token is probably fine; retry later and check the logs for `[mc] [auth] token verification failed`. Do not mint a new token.
 - **403 `insufficient_scope`:** the token lacks the tool's scope. Mint a token with the scope; scopes cannot be edited.
 - **Leaked token:** revoke it. Until Settings has a button, run against the same database:
 
