@@ -1,6 +1,5 @@
 import { type Metadata } from "next";
 import { sql } from "drizzle-orm";
-import { z } from "zod";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs):
 // private.get_contact_for_token is a SECURITY DEFINER function with zero
 // grants for client roles — the admin connection is the only path to it.
@@ -11,6 +10,7 @@ import { logDbError } from "@/lib/log";
 import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { householdPrefill } from "@/lib/names";
+import { storedNames, tokenDataSchema } from "./token-data";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { RecipientForm } from "@/components/recipient-form";
 import { InvalidLinkNotice, Notice } from "../notice";
@@ -24,41 +24,6 @@ export const metadata: Metadata = {
   title: "Update your address",
   robots: { index: false, follow: false },
 };
-
-/**
- * Defensive re-validation of get_contact_for_token's jsonb. The function is
- * ours, but this page is the app's most exposed surface — a schema drift
- * should fail closed to the generic invalid page, never render `undefined`s
- * or leak unexpected keys into the DOM.
- */
-const tokenDataSchema = z.object({
-  contact: z.object({
-    full_name: z.string().nullable(),
-    partner_name: z.string().nullable(),
-    kids_names: z.string().nullable(),
-    first_name: z.string().nullable(),
-    last_name: z.string().nullable(),
-    partner_first_name: z.string().nullable(),
-    partner_last_name: z.string().nullable(),
-    kids: z
-      .array(z.object({ first: z.string(), last: z.string().optional() }))
-      .nullable(),
-    email: z.string().nullable(),
-    birthday: z.string().nullable(),
-    address_line1: z.string().nullable(),
-    address_line2: z.string().nullable(),
-    city: z.string().nullable(),
-    state_region: z.string().nullable(),
-    postal_code: z.string().nullable(),
-    country: z.string().nullable(),
-  }),
-  enabled_fields: z.object({
-    partner_name: z.boolean(),
-    kids_names: z.boolean(),
-    birthday: z.boolean(),
-  }),
-  owner_name: z.string(),
-});
 
 /**
  * Recipient update page. Unauthenticated and token-gated: no session, no
@@ -119,19 +84,10 @@ export default async function TokenUpdatePage({
   // form props are embedded in the RSC payload, so passing it would leak it
   // into the page source even though no input renders it. Blank, not just
   // hidden. Pass the enabled flags to householdPrefill for the same reason.
-  const household = householdPrefill(
-    {
-      fullName: contact.full_name ?? "",
-      partnerName: contact.partner_name,
-      kidsNames: contact.kids_names,
-      firstName: contact.first_name,
-      lastName: contact.last_name,
-      partnerFirstName: contact.partner_first_name,
-      partnerLastName: contact.partner_last_name,
-      kids: contact.kids,
-    },
-    { partner: enabled_fields.partner_name, kids: enabled_fields.kids_names },
-  );
+  const household = householdPrefill(storedNames(contact), {
+    partner: enabled_fields.partner_name,
+    kids: enabled_fields.kids_names,
+  });
   const defaults: TokenUpdateValues = {
     full_name: "",
     partner_name: "",

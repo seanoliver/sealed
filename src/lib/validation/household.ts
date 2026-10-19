@@ -114,6 +114,18 @@ export function readHouseholdValues(
   };
 }
 
+/** True when a prefill could never pass validation as shown: legacy data past the caps. */
+export function exceedsCaps(values: HouseholdValues): boolean {
+  const names = [
+    values.first_name,
+    values.last_name,
+    values.partner?.first ?? "",
+    values.partner?.last ?? "",
+    ...values.kids.flatMap((kid) => [kid.first, kid.last]),
+  ];
+  return values.kids.length > KIDS_MAX || names.some((name) => name.trim().length > NAME_MAX);
+}
+
 export function parseHouseholdForm(
   formData: FormData,
   voice: HouseholdVoice = {},

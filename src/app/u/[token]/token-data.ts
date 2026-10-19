@@ -1,0 +1,46 @@
+import { z } from "zod";
+import { type StoredNames } from "@/lib/names";
+
+/** Fails closed: drift in get_contact_for_token's jsonb must never reach the recipient's DOM. */
+export const tokenDataSchema = z.object({
+  contact: z.object({
+    full_name: z.string().nullable(),
+    partner_name: z.string().nullable(),
+    kids_names: z.string().nullable(),
+    first_name: z.string().nullable(),
+    last_name: z.string().nullable(),
+    partner_first_name: z.string().nullable(),
+    partner_last_name: z.string().nullable(),
+    kids: z
+      .array(z.object({ first: z.string(), last: z.string().optional() }))
+      .nullable(),
+    email: z.string().nullable(),
+    birthday: z.string().nullable(),
+    address_line1: z.string().nullable(),
+    address_line2: z.string().nullable(),
+    city: z.string().nullable(),
+    state_region: z.string().nullable(),
+    postal_code: z.string().nullable(),
+    country: z.string().nullable(),
+  }),
+  enabled_fields: z.object({
+    partner_name: z.boolean(),
+    kids_names: z.boolean(),
+    birthday: z.boolean(),
+  }),
+  owner_name: z.string(),
+});
+
+export type TokenData = z.infer<typeof tokenDataSchema>;
+type TokenContact = TokenData["contact"];
+
+export const storedNames = (contact: TokenContact): StoredNames => ({
+  fullName: contact.full_name ?? "",
+  partnerName: contact.partner_name,
+  kidsNames: contact.kids_names,
+  firstName: contact.first_name,
+  lastName: contact.last_name,
+  partnerFirstName: contact.partner_first_name,
+  partnerLastName: contact.partner_last_name,
+  kids: contact.kids,
+});
