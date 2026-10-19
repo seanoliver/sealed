@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-locale";
 
 // Caps must match the CHECK constraints in migration 0004.
 export const NAME_MAX = 80;

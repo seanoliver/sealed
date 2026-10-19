@@ -22,6 +22,7 @@ const A = "20000000-0000-4000-8000-0000000ae001";
 const C = "20000000-0000-4000-8000-0000000ae002";
 const NO_EMAIL = "20000000-0000-4000-8000-0000000ae003";
 const FOREIGN = "20000000-0000-4000-8000-0000000ae004";
+const COUPLE = "20000000-0000-4000-8000-0000000ae005";
 
 const send = vi.mocked(sendAddressRequests);
 
@@ -76,10 +77,24 @@ async function reset() {
       (${C}, ${B}, 'Cal Ortiz', 'cal@ra.test'),
       (${NO_EMAIL}, ${B}, 'Satya''s Family', null),
       (${FOREIGN}, ${B_OTHER}, 'Not Yours', 'foreign@ra.test')`);
+  await dbAdmin.execute(sql`
+    insert into public.contacts (id, book_id, full_name, first_name, last_name,
+      partner_first_name, partner_last_name, email, partner_email, address_line1, city)
+    values (${COUPLE}, ${B}, 'Pia Reyes', 'Pia', 'Reyes', 'Quinn', 'Lee',
+      'pia@ra.test', 'quinn@ra.test', '1428 Alder St', 'Portland')`);
 }
+
+const recipientOf = async (token: string) =>
+  (
+    await dbAdmin
+      .select({ recipient: updateTokens.recipient })
+      .from(updateTokens)
+      .where(eq(updateTokens.tokenHash, hashToken(token)))
+  )[0]?.recipient;
 
 describe("requestAddresses", () => {
   beforeEach(async () => {
+    vi.restoreAllMocks();
     vi.stubEnv("APP_URL", "https://app.example");
     vi.mocked(requireUser).mockResolvedValue({ sub: U });
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -355,6 +370,83 @@ describe("requestAddresses", () => {
       },
     );
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("emails each person in a couple their own link", async () => {
+    answer();
+    await expect(requestAddresses({ contactIds: [COUPLE] })).resolves.toEqual({
+      sent: 2,
+      skippedNoEmail: 0,
+      failed: 0,
+      failedContactIds: [],
+    });
+    const links = sentLinks();
+    expect(Object.keys(links).sort()).toEqual(["pia@ra.test", "quinn@ra.test"]);
+    expect(await recipientOf(links["pia@ra.test"])).toBe("primary");
+    expect(await recipientOf(links["quinn@ra.test"])).toBe("partner");
+    const sends = await dbAdmin
+      .select({ recipient: emailSends.recipient, status: emailSends.status })
+      .from(emailSends)
+      .where(eq(emailSends.contactId, COUPLE));
+    expect(sends.map((s) => s.recipient).sort()).toEqual(["partner", "primary"]);
+  });
+
+  it("greets each person by name and shows both the same envelope", async () => {
+    answer();
+    await requestAddresses({ contactIds: [COUPLE] });
+    const [items] = send.mock.calls[0];
+    const pia = items.find((item) => item.to === "pia@ra.test")!;
+    const quinn = items.find((item) => item.to === "quinn@ra.test")!;
+    expect(pia.text).toMatch(/^Hi Pia, /);
+    expect(quinn.text).toMatch(/^Hi Quinn, /);
+    const envelope = (text: string) => text.split("\n\n")[1];
+    expect(envelope(pia.text)).toContain("1428 Alder St");
+    expect(envelope(quinn.text)).toBe(envelope(pia.text));
+    expect(pia.subject).toBe(quinn.subject);
+  });
+
+  it("retires only the old link of the person whose new email went out", async () => {
+    answer();
+    await requestAddresses({ contactIds: [COUPLE] });
+    const first = sentLinks();
+
+    send.mockReset();
+    answer({ "quinn@ra.test": "failed" });
+    await expect(requestAddresses({ contactIds: [COUPLE] })).resolves.toMatchObject({
+      sent: 1,
+      failed: 1,
+      failedContactIds: [COUPLE],
+    });
+    expect(await isLive(COUPLE, first["pia@ra.test"])).toBe(false);
+    expect(await isLive(COUPLE, first["quinn@ra.test"])).toBe(true);
+    expect(await isLive(COUPLE, sentLinks()["pia@ra.test"])).toBe(true);
+    expect(await liveTokens(COUPLE)).toHaveLength(2);
+  });
+
+  it("lists a contact once in failedContactIds when both emails fail", async () => {
+    answer({ "pia@ra.test": "failed", "quinn@ra.test": "unknown" });
+    await expect(requestAddresses({ contactIds: [COUPLE] })).resolves.toMatchObject({
+      sent: 0,
+      failed: 2,
+      failedContactIds: [COUPLE],
+    });
+  });
+
+  it("caps a request at 1000 emails, counting couples twice", async () => {
+    const rows = await dbAdmin.execute(sql`
+      insert into public.contacts (book_id, full_name, email, partner_email)
+      select ${B}, 'Couple ' || n, 'a' || n || '@cap.test', 'b' || n || '@cap.test'
+      from generate_series(1, 501) n
+      returning id`);
+    const ids = rows.map((row) => String(row.id));
+    await expect(requestAddresses({ contactIds: ids })).resolves.toEqual({
+      error: "That's more than 1000 emails. Select fewer contacts.",
+    });
+    expect(send).not.toHaveBeenCalled();
+    const [{ count }] = await dbAdmin.execute(sql`
+      select count(*)::int as count from public.update_tokens t
+      join public.contacts c on c.id = t.contact_id where c.book_id = ${B}`);
+    expect(count).toBe(0);
   });
 
   it("rejects malformed ids", async () => {

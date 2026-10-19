@@ -78,6 +78,7 @@ export default async function TokenUpdatePage({
           submitLabel="Update my details"
           pendingLabel="Saving…"
           household={household}
+          seenAt={loaded.data.updated_at}
         />
       </div>
       <div className="mt-4">

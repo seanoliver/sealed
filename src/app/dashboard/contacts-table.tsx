@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -39,24 +40,31 @@ import {
 } from "@/app/dashboard/actions";
 import { patchContact } from "@/app/dashboard/contacts/actions";
 import {
+  approveMerge,
+  reject,
+  type ReviewActionState,
+} from "@/app/dashboard/review/actions";
+import {
   changedValues,
   draftFromNames,
   draftToValues,
+  emailCount,
   householdEdited,
   householdPatchInput,
   moveCursor,
   namesFromValues,
   parseStoredLayout,
   sheetName,
-  NEEDS_ATTENTION,
   STATUS_RANK,
   validateHousehold,
+  type AnswerSide,
   type HouseholdDraft,
   type RowKey,
   type SheetField,
   type SheetRow,
   type SheetValues,
   type StatusKey,
+  type TwoAnswers,
 } from "@/lib/contacts-sheet";
 import type { FailureReason } from "@/lib/email/resend";
 import { compareLastName, lastNameKey, type StoredNames } from "@/lib/names";
@@ -116,21 +124,46 @@ const failureTitles: Record<FailureReason, string> = {
 function StatusChip({
   status,
   failureReason,
+  person,
 }: {
   status: StatusKey;
   failureReason: FailureReason | null;
+  person?: string;
 }) {
+  const label =
+    status === "failed" && failureReason
+      ? failureLabels[failureReason]
+      : chipLabels[status];
   return (
     <span
       className={`${chipBase} ${chipStyles[status]}`}
       title={status === "failed" && failureReason ? failureTitles[failureReason] : undefined}
     >
-      {status === "failed" && failureReason
-        ? failureLabels[failureReason]
-        : chipLabels[status]}
+      {person ? `${person} · ${label}` : label}
     </span>
   );
 }
+
+function StatusChips({ row }: { row: SheetRow }) {
+  if (row.status === "updated" || row.people.length === 0) {
+    return <StatusChip status={row.status} failureReason={row.failureReason} />;
+  }
+  return (
+    <>
+      {row.people.map((person) => (
+        <StatusChip
+          key={person.name}
+          status={person.status}
+          failureReason={person.failureReason}
+          person={person.name}
+        />
+      ))}
+    </>
+  );
+}
+
+const answersChipClasses =
+  "border-amber-200 bg-amber-50 font-semibold text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200";
 
 type FieldColumn = {
   field: SheetField;
@@ -140,7 +173,7 @@ type FieldColumn = {
 };
 
 const FIELD_COLUMNS: FieldColumn[] = [
-  { field: "email", label: "Email", size: 200, maxLength: 320 },
+  { field: "email", label: "Emails", size: 210, maxLength: 320 },
   { field: "address_line1", label: "Street", size: 160, maxLength: 200 },
   { field: "city", label: "City", size: 110, maxLength: 120 },
   { field: "state_region", label: "Region", size: 110, maxLength: 120 },
@@ -205,7 +238,7 @@ const columns = helper.columns([
   helper.accessor((row) => sheetName(row.names).line, {
     id: NAME_COLUMN,
     header: "Name",
-    size: 260,
+    size: 230,
     minSize: 100,
     sortFn: "text",
     enableHiding: false,
@@ -223,7 +256,7 @@ const columns = helper.columns([
   helper.accessor((row) => STATUS_RANK[row.status], {
     id: "status",
     header: "Status",
-    size: 100,
+    size: 160,
     minSize: 80,
     sortFn: "basic",
     sortDescFirst: false,
@@ -245,7 +278,7 @@ const columns = helper.columns([
   }),
   helper.display({
     id: "actions",
-    size: 130,
+    size: 120,
     enableSorting: false,
     enableResizing: false,
     enableHiding: false,
@@ -334,6 +367,7 @@ type ConfirmState = {
   mode: "selected" | "shown" | "attention";
   ids: string[];
   sendable: number;
+  emails: number;
   skipped: number;
   replacedLinks: number;
 };
@@ -359,7 +393,7 @@ type SortChoice = "default" | "last_name";
 export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
   const [attentionIds, setAttentionIds] = useState<ReadonlySet<string> | null>(null);
   const attentionCount = useMemo(
-    () => allRows.filter((row) => NEEDS_ATTENTION.has(row.status)).length,
+    () => allRows.filter((row) => row.needsAttention).length,
     [allRows],
   );
   const rows = useMemo(
@@ -369,9 +403,15 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
   const [sendLost, setSendLost] = useState(false);
   const attentionSnapshot = () =>
     new Set([
-      ...allRows.filter((row) => NEEDS_ATTENTION.has(row.status)).map((row) => row.id),
+      ...allRows.filter((row) => row.needsAttention).map((row) => row.id),
       ...(editingIdRef.current ? [editingIdRef.current] : []),
     ]);
+  const countEmails = (ids: string[]) => {
+    const wanted = new Set(ids);
+    return allRows
+      .filter((row) => wanted.has(row.id))
+      .reduce((sum, row) => sum + emailCount(row.values), 0);
+  };
   const linkedCount = (ids: string[]) => {
     const wanted = new Set(ids);
     return allRows.filter(
@@ -397,6 +437,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
     editingIdRef.current = editState?.id ?? null;
   }, [editState]);
   const [refocusId, setRefocusId] = useState<string | null>(null);
+  const [answersId, setAnswersId] = useState<string | null>(null);
   // The action resolves before its refreshed rows commit; until they do, show
   // the saved values so the row does not flash back to the old ones.
   const [saved, setSaved] = useState<SavedOverlay | null>(null);
@@ -408,7 +449,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
       columns,
       data: rows,
       getRowId: (row) => row.id,
-      enableRowSelection: (row) => row.original.values.email !== "",
+      enableRowSelection: (row) => emailCount(row.original.values) > 0,
       columnResizeMode: "onEnd",
       state: {
         columnVisibility: {
@@ -435,7 +476,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
     .rows.filter((row) => row.getCanSelect())
     .map((row) => row.id);
   const emailableCount = useMemo(
-    () => rows.filter((row) => row.values.email !== "").length,
+    () => rows.filter((row) => emailCount(row.values) > 0).length,
     [rows],
   );
   const activeRowId =
@@ -670,6 +711,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
               mode: "selected",
               ids: selectedIds,
               sendable: selectedCount,
+              emails: countEmails(selectedIds),
               skipped: 0,
               replacedLinks: linkedCount(selectedIds),
             })
@@ -687,14 +729,15 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
             // slice: the action caps at 1000 ids per request.
             const targets = (
               attentionIds
-                ? rows.filter((row) => NEEDS_ATTENTION.has(row.status))
+                ? rows.filter((row) => row.needsAttention)
                 : rows
             ).slice(0, 1000);
-            const sendable = targets.filter((row) => row.values.email !== "").length;
+            const sendable = targets.filter((row) => emailCount(row.values) > 0).length;
             setConfirm({
               mode: attentionIds ? "attention" : "shown",
               ids: targets.map((row) => row.id),
               sendable,
+              emails: countEmails(targets.map((row) => row.id)),
               skipped: targets.length - sendable,
               replacedLinks: linkedCount(targets.map((row) => row.id)),
             });
@@ -830,7 +873,11 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
           className="mt-3 rounded-xl border border-input bg-card p-4 shadow-sm"
         >
           <p className="text-sm text-foreground/80">
-            Send address requests to{" "}
+            Send{" "}
+            <strong>
+              {confirm.emails} {confirm.emails === 1 ? "email" : "emails"}
+            </strong>{" "}
+            to{" "}
             <strong>
               {confirm.mode === "shown"
                 ? `the ${confirm.sendable} ${confirm.sendable === 1 ? "contact" : "contacts"} shown`
@@ -841,7 +888,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
             {confirm.skipped > 0 ? (
               <> ({confirm.skipped} will be skipped: no email)</>
             ) : null}
-            ? Each gets a personal update link that expires in 30 days.
+            ? Each person gets their own update link that expires in 30 days.
             {confirm.replacedLinks > 0 ? (
               <>
                 {" "}
@@ -907,6 +954,8 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
               </thead>
               <tbody>
                 {sortedRows.map((row, index) => {
+                  const answers = row.original.answers;
+                  const answersOpen = answers !== null && answersId === row.id;
                   const shared = {
                     row,
                     cells: row.getVisibleCells(),
@@ -915,8 +964,11 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                       if (el) rowRefs.current.set(row.id, el);
                       else rowRefs.current.delete(row.id);
                     },
+                    answersOpen,
+                    onToggleAnswers: () =>
+                      setAnswersId(answersOpen ? null : row.id),
                   };
-                  return editing?.id === row.id ? (
+                  const view = editing?.id === row.id ? (
                     <EditingRow
                       key={row.id}
                       {...shared}
@@ -946,6 +998,22 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                       onEdit={() => startEdit(row)}
                       onKeyDown={(event) => onRowKeyDown(event, row, index)}
                     />
+                  );
+                  return (
+                    <Fragment key={row.id}>
+                      {view}
+                      {answersOpen ? (
+                        <AnswersRow
+                          answers={answers}
+                          name={row.original.names.fullName}
+                          colSpan={shared.cells.length}
+                          onClose={() => {
+                            setAnswersId(null);
+                            focusRow(row.id);
+                          }}
+                        />
+                      ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -982,37 +1050,55 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
             const place = [values.address_line1, values.city]
               .filter(Boolean)
               .join(", ");
+            const emails = [values.email, values.partner_email]
+              .filter(Boolean)
+              .join(" · ");
+            const answers = row.original.answers;
             return (
               <li
                 key={row.id}
-                className="flex min-h-14 items-center gap-3 px-4 py-2"
+                className={`px-4 py-2 ${answers ? "bg-secondary/40" : ""}`}
               >
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${names.fullName}`}
-                  checked={row.getIsSelected()}
-                  disabled={!row.getCanSelect()}
-                  onChange={() => row.toggleSelected()}
-                  className="size-5 shrink-0 accent-primary disabled:opacity-40"
-                />
-                <Link
-                  href={`/dashboard/contacts/${row.id}`}
-                  className="min-w-0 flex-1"
-                >
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    {name.split ? null : <UnsplitDot />}
-                    <span className="flex min-w-0 items-baseline">
-                      <HouseholdLabel line={name.line} kids={name.kids} />
+                <div className="flex min-h-14 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${names.fullName}`}
+                    checked={row.getIsSelected()}
+                    disabled={!row.getCanSelect()}
+                    onChange={() => row.toggleSelected()}
+                    className="size-5 shrink-0 accent-primary disabled:opacity-40"
+                  />
+                  <Link
+                    href={`/dashboard/contacts/${row.id}`}
+                    className="min-w-0 flex-1"
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
+                        {name.split ? null : <UnsplitDot />}
+                        <span className="flex min-w-0 items-baseline">
+                          <HouseholdLabel line={name.line} kids={name.kids} />
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        {answers ? (
+                          <span className={`${chipBase} ${answersChipClasses}`}>
+                            Two answers
+                          </span>
+                        ) : null}
+                        <StatusChips row={row.original} />
+                      </span>
                     </span>
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {place || "No address yet"}
-                  </span>
-                </Link>
-                <StatusChip
-                  status={row.original.status}
-                  failureReason={row.original.failureReason}
-                />
+                    {emails ? (
+                      <span className="mt-0.5 block text-xs break-all text-foreground/70">
+                        {emails}
+                      </span>
+                    ) : null}
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {place || "No address yet"}
+                    </span>
+                  </Link>
+                </div>
+                {answers ? <PhoneAnswers answers={answers} /> : null}
               </li>
             );
           })}
@@ -1110,6 +1196,8 @@ type RowProps = {
   cells: Cell<typeof features, SheetRow, unknown>[];
   isSelected: boolean;
   setRef: (el: HTMLTableRowElement | null) => void;
+  answersOpen: boolean;
+  onToggleAnswers: () => void;
 };
 
 function SelectCell({ row, isSelected }: Pick<RowProps, "row" | "isSelected">) {
@@ -1137,16 +1225,36 @@ function SelectCell({ row, isSelected }: Pick<RowProps, "row" | "isSelected">) {
 function StaticCell({
   row,
   columnId,
-}: {
-  row: SheetTableRow;
+  answersOpen,
+  onToggleAnswers,
+}: Pick<RowProps, "row" | "answersOpen" | "onToggleAnswers"> & {
   columnId: "status" | "updated";
 }) {
   return columnId === "status" ? (
-    <td className={cellClasses}>
-      <StatusChip
-                  status={row.original.status}
-                  failureReason={row.original.failureReason}
-                />
+    <td className={`${cellClasses} py-1`}>
+      <span className="flex flex-col items-start gap-1">
+        {row.original.answers ? (
+          <button
+            type="button"
+            aria-expanded={answersOpen}
+            onClick={onToggleAnswers}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && answersOpen) {
+                event.preventDefault();
+                // Else the row's Escape handler also cancels an open edit.
+                event.stopPropagation();
+                onToggleAnswers();
+              }
+            }}
+            className={`${chipBase} ${answersChipClasses} cursor-pointer gap-1`}
+          >
+            Two answers
+            <span aria-hidden="true">{answersOpen ? "▴" : "▾"}</span>
+          </button>
+        ) : null}
+        <StatusChips row={row.original} />
+      </span>
     </td>
   ) : (
     <td
@@ -1162,6 +1270,8 @@ function ViewRow({
   cells,
   isSelected,
   setRef,
+  answersOpen,
+  onToggleAnswers,
   values,
   names,
   isActive,
@@ -1210,7 +1320,15 @@ function ViewRow({
           return <SelectCell key={cell.id} row={row} isSelected={isSelected} />;
         }
         if (id === "status" || id === "updated") {
-          return <StaticCell key={cell.id} row={row} columnId={id} />;
+          return (
+            <StaticCell
+              key={cell.id}
+              row={row}
+              columnId={id}
+              answersOpen={answersOpen}
+              onToggleAnswers={onToggleAnswers}
+            />
+          );
         }
         if (id === NAME_COLUMN) {
           const name = sheetName(names);
@@ -1231,6 +1349,20 @@ function ViewRow({
                   </span>
                 ) : null}
               </span>
+            </td>
+          );
+        }
+        if (field?.field === "email") {
+          return (
+            <td key={cell.id} className={`${cellClasses} py-1 text-foreground/80`}>
+              <span className="block truncate">
+                {values.email || <span className="text-muted-foreground/50">—</span>}
+              </span>
+              {values.partner_email ? (
+                <span className="block truncate text-muted-foreground">
+                  {values.partner_email}
+                </span>
+              ) : null}
             </td>
           );
         }
@@ -1268,6 +1400,8 @@ function EditingRow({
   cells,
   isSelected,
   setRef,
+  answersOpen,
+  onToggleAnswers,
   isSaving,
   canCancel,
   onSave,
@@ -1336,7 +1470,15 @@ function EditingRow({
           return <SelectCell key={cell.id} row={row} isSelected={isSelected} />;
         }
         if (id === "status" || id === "updated") {
-          return <StaticCell key={cell.id} row={row} columnId={id} />;
+          return (
+            <StaticCell
+              key={cell.id}
+              row={row}
+              columnId={id}
+              answersOpen={answersOpen}
+              onToggleAnswers={onToggleAnswers}
+            />
+          );
         }
         if (id === NAME_COLUMN) {
           return (
@@ -1363,6 +1505,36 @@ function EditingRow({
                 onSave={save}
                 autoFocus={id === firstCellId}
               />
+            </td>
+          );
+        }
+        if (field?.field === "email") {
+          return (
+            <td key={cell.id} className={`${cellClasses} px-1 py-1`}>
+              <span className="flex flex-col gap-1">
+                {(
+                  [
+                    ["email", "Email"],
+                    ["partner_email", "Partner email"],
+                  ] as const
+                ).map(([name, label]) => (
+                  <input
+                    key={name}
+                    data-cell-input={name === "email" ? true : undefined}
+                    aria-label={label}
+                    placeholder={label}
+                    maxLength={field.maxLength}
+                    autoFocus={name === "email" && id === firstCellId}
+                    readOnly={isSaving}
+                    value={draft[name] ?? values[name]}
+                    onChange={(event) =>
+                      setDraft({ ...draft, [name]: event.target.value })
+                    }
+                    onKeyDown={onInputKeyDown}
+                    className={`${cellInputClasses} placeholder:text-muted-foreground/60`}
+                  />
+                ))}
+              </span>
             </td>
           );
         }
@@ -1412,5 +1584,194 @@ function EditingRow({
         );
       })}
     </tr>
+  );
+}
+
+function useResolveAnswer(submissionId: string, onResolved: () => void) {
+  const [isResolving, startResolve] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  function choose(choice: "keep" | "use") {
+    setError(null);
+    startResolve(async () => {
+      const formData = new FormData();
+      formData.set("id", submissionId);
+      let result: ReviewActionState;
+      try {
+        result = await (choice === "use" ? approveMerge : reject)({}, formData);
+      } catch {
+        result = { error: SAVE_FAILED };
+      }
+      if (result.error) setError(result.error);
+      else onResolved();
+    });
+  }
+  return { isResolving, error, choose };
+}
+
+function answerLabels(answers: TwoAnswers) {
+  const saved = answers.saved.name;
+  const incoming = answers.incoming.name;
+  return {
+    savedHeading: saved ? `${saved} · saved now` : "Saved now",
+    keep: saved ? `Keep ${saved}'s` : "Keep saved",
+    incomingHeading: incoming ?? "New answer",
+    use: incoming ? `Use ${incoming}'s` : "Use new answer",
+  };
+}
+
+function AnswerLines({ side }: { side: AnswerSide }) {
+  return (
+    <>
+      {side.lines.map((line, i) => (
+        <span key={i} className={i === 0 ? undefined : "block"}>
+          {line.label ? (
+            <span className="text-muted-foreground">{line.label}: </span>
+          ) : null}
+          {line.parts.length === 0 ? (
+            <span className="text-muted-foreground">No address</span>
+          ) : (
+            line.parts.map((part, j) => (
+              <Fragment key={j}>
+                {part.changed ? (
+                  <mark className="rounded bg-amber-100 px-0.5 text-foreground dark:bg-amber-900/60">
+                    {part.text}
+                  </mark>
+                ) : (
+                  part.text
+                )}
+              </Fragment>
+            ))
+          )}
+        </span>
+      ))}
+    </>
+  );
+}
+
+const resolveErrorClasses = "text-sm text-red-700 dark:text-red-300";
+
+function AnswersRow({
+  answers,
+  name,
+  colSpan,
+  onClose,
+}: {
+  answers: TwoAnswers;
+  name: string;
+  colSpan: number;
+  onClose: () => void;
+}) {
+  const { isResolving, error, choose } = useResolveAnswer(
+    answers.submissionId,
+    onClose,
+  );
+  const labels = answerLabels(answers);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+  return (
+    <tr className="[&>td]:bg-secondary/40">
+      <td colSpan={colSpan} className="border-b border-border/60 px-12 pt-1 pb-4">
+        <div
+          ref={panelRef}
+          role="region"
+          aria-label={`Two answers for ${name}`}
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !isResolving) {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          className="flex max-w-3xl flex-col gap-2 outline-none"
+        >
+          <div className="grid grid-cols-2 gap-3.5">
+            <div className="flex flex-col gap-2 rounded-xl border-2 border-primary bg-card p-3.5">
+              <span className="text-xs font-semibold tracking-wide text-primary uppercase">
+                {labels.savedHeading}
+              </span>
+              <span className="font-serif text-[15px] leading-snug text-foreground">
+                <AnswerLines side={answers.saved} />
+              </span>
+              <button
+                type="button"
+                disabled={isResolving}
+                onClick={() => choose("keep")}
+                className={`${buttonClasses} mt-auto h-9 self-start`}
+              >
+                {labels.keep}
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5">
+              <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                {labels.incomingHeading}
+              </span>
+              <span className="font-serif text-[15px] leading-snug text-foreground">
+                <AnswerLines side={answers.incoming} />
+              </span>
+              <button
+                type="button"
+                disabled={isResolving}
+                onClick={() => choose("use")}
+                className={`${primaryButtonClasses} mt-auto h-9 self-start`}
+              >
+                {labels.use}
+              </button>
+            </div>
+          </div>
+          {error ? (
+            <p role="alert" className={resolveErrorClasses}>
+              {error}
+            </p>
+          ) : null}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function PhoneAnswers({ answers }: { answers: TwoAnswers }) {
+  const { isResolving, error, choose } = useResolveAnswer(
+    answers.submissionId,
+    () => {},
+  );
+  const labels = answerLabels(answers);
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {(
+        [
+          ["keep", answers.saved, labels.keep, buttonClasses],
+          ["use", answers.incoming, labels.use, primaryButtonClasses],
+        ] as const
+      ).map(([choice, side, label, classes]) => (
+        <div
+          key={choice}
+          className="flex flex-col gap-1.5 rounded-lg bg-card p-2.5 text-sm text-foreground"
+        >
+          <span>
+            <strong className="font-semibold">
+              {choice === "keep"
+                ? `${answers.saved.name ?? "Saved"} (saved):`
+                : `${answers.incoming.name ?? "New answer"}:`}
+            </strong>{" "}
+            <AnswerLines side={side} />
+          </span>
+          <button
+            type="button"
+            disabled={isResolving}
+            onClick={() => choose(choice)}
+            className={`${classes} h-11 justify-center text-sm`}
+          >
+            {label}
+          </button>
+        </div>
+      ))}
+      {error ? (
+        <p role="alert" className={resolveErrorClasses}>
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }

@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
-import { toSheetRow } from "@/lib/contacts-sheet";
+import { listPendingReplies } from "@/lib/queries/submissions";
+import { toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
+import { parseSubmissionForDisplay } from "@/lib/validation/submission";
 import { ContactsTable } from "./contacts-table";
 
 // Covers requestAddresses: its Resend time budget plus bookkeeping.
@@ -24,15 +26,32 @@ export default async function DashboardPage({
   // A crafted URL can repeat ?q=; take the first value rather than crashing.
   const { q } = await searchParams;
   const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
-  const contacts = await listContacts(claims, query || undefined);
+  const [contacts, replies] = await Promise.all([
+    listContacts(claims, query || undefined),
+    listPendingReplies(claims),
+  ]);
+
+  const answers = new Map<string, PendingAnswer>();
+  for (const reply of replies) {
+    const display = parseSubmissionForDisplay(reply.payload, book.enabledFields);
+    if (display === null) continue;
+    answers.set(reply.contactId, {
+      submissionId: reply.id,
+      display,
+      savedBy: reply.savedBy,
+    });
+  }
 
   const rows = contacts.map((contact) =>
-    toSheetRow(contact, (date) =>
-      date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
+    toSheetRow(
+      contact,
+      (date) =>
+        date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+      { answer: answers.get(contact.id) },
     ),
   );
 

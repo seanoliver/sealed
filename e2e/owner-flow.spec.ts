@@ -71,7 +71,7 @@ test("configures a faithful preview and preserves it when going back", async () 
   await expect(preview.locator("#last_name")).toBeDisabled();
   await expect(preview.locator("#email")).toBeDisabled();
   await expect(preview.locator("#address_line1")).toBeDisabled();
-  await expect(preview.getByRole("button", { name: "Add partner" })).toHaveCount(0);
+  await expect(preview.getByRole("button", { name: "Add a second person" })).toHaveCount(0);
   await expect(preview.getByRole("button", { name: "Add a child" })).toHaveCount(0);
   await expect(preview.locator("#birthday")).toHaveCount(0);
   await expect(preview.getByRole("button", { name: "Add my details" })).toBeDisabled();
@@ -79,7 +79,7 @@ test("configures a faithful preview and preserves it when going back", async () 
   await page.getByRole("switch", { name: "Partner name" }).check();
   await page.getByRole("switch", { name: "Kids' names" }).check();
   await page.getByRole("switch", { name: "Birthday" }).check();
-  await expect(preview.getByRole("button", { name: "Add partner" })).toBeDisabled();
+  await expect(preview.getByRole("button", { name: "Add a second person" })).toBeDisabled();
   await expect(preview.getByRole("button", { name: "Add a child" })).toBeDisabled();
   await expect(preview.locator("#birthday")).toBeDisabled();
   await page.getByRole("switch", { name: "Birthday" }).uncheck();
@@ -104,7 +104,7 @@ test("publishes the optional fields selected in the preview", async () => {
   await expect(page.getByText("No contacts yet")).toBeVisible();
 
   await page.goto(`/b/${slug}`);
-  await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a second person" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add a child" })).toBeVisible();
   await expect(page.locator("#birthday")).toHaveCount(0);
 
@@ -271,7 +271,7 @@ test("exports contacts as CSV with the canonical header", async () => {
   const lines = csv.replace(/^﻿/, "").split("\r\n");
   expect(lines[0]).toBe(
     "full_name,partner_name,kids_names,first_name,last_name," +
-      "partner_first_name,partner_last_name,email,birthday,address_line1," +
+      "partner_first_name,partner_last_name,email,partner_email,birthday,address_line1," +
       "address_line2,city,state_region,postal_code,country,notes",
   );
   expect(lines[1]).toContain(

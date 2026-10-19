@@ -364,4 +364,77 @@ describe("submitTokenUpdate", () => {
     });
     expect((await stored()).city).toBe("Paris");
   });
+
+  describe("couples", () => {
+    async function partnerToken() {
+      await dbAdmin.execute(
+        sql`update public.contacts set partner_email = 'partner@tu.test' where id = ${C}`,
+      );
+      const { token, hash } = generateToken();
+      await dbAdmin.execute(sql`
+        insert into public.update_tokens (contact_id, token_hash, expires_at, recipient)
+        values (${C}, ${hash}, now() + interval '1 day', 'partner')`);
+      return token;
+    }
+
+    async function seenAt(token: string): Promise<string> {
+      const rows = await dbAdmin.execute(
+        sql`select private.get_contact_for_token(${token}) ->> 'updated_at' as seen`,
+      );
+      return String(rows[0].seen);
+    }
+
+    it("edits the partner's own email through the partner's link", async () => {
+      const contact = { fullName: "Ana Reyes" };
+      await seed(contact);
+      const token = await partnerToken();
+      const form = prefilledForm(contact, { email: "new-partner@tu.test" });
+      await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+      expect(await stored()).toMatchObject({
+        email: "old@tu.test",
+        partnerEmail: "new-partner@tu.test",
+        city: "Oslo",
+      });
+    });
+
+    it("queues a reply that conflicts with the other person's and tells the owner", async () => {
+      const contact = { fullName: "Ana Reyes" };
+      const primary = await seed(contact);
+      const partner = await partnerToken();
+      const form = prefilledForm(contact, { email: "partner@tu.test", city: "Lima" });
+      form.set("seen_at", await seenAt(partner));
+
+      await dbAdmin.execute(
+        sql`select private.apply_token_update(${primary}, '{"city": "Oslo"}'::jsonb)`,
+      );
+      await expect(submitTokenUpdate(partner, {}, form)).rejects.toThrow("REDIRECT");
+
+      expect((await stored()).city).toBe("Oslo");
+      const queued = await dbAdmin.execute(sql`
+        select payload ->> 'city' as city from public.submissions
+        where matched_contact_id = ${C} and status = 'pending'`);
+      expect(queued.map((row) => row.city)).toEqual(["Lima"]);
+      await flushAfter();
+      expect(sendNotification).toHaveBeenCalledTimes(1);
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: "A contact's reply needs review · Sealed",
+          text: expect.stringContaining("https://app.example/dashboard/review"),
+        }),
+      );
+    });
+
+    it("applies a reply when the page loaded after the other person's change", async () => {
+      const contact = { fullName: "Ana Reyes" };
+      const primary = await seed(contact);
+      const partner = await partnerToken();
+      await dbAdmin.execute(
+        sql`select private.apply_token_update(${primary}, '{"city": "Oslo"}'::jsonb)`,
+      );
+      const form = prefilledForm(contact, { email: "partner@tu.test", city: "Lima" });
+      form.set("seen_at", await seenAt(partner));
+      await expect(submitTokenUpdate(partner, {}, form)).rejects.toThrow("REDIRECT");
+      expect((await stored()).city).toBe("Lima");
+    });
+  });
 });

@@ -31,7 +31,7 @@ import {
 import { type RecipientFormState } from "@/components/recipient-form";
 import { INVALID_LINK_MESSAGE } from "../notice";
 import { notifyOwner, ownerForToken } from "./owner";
-import { storedNames, type TokenData, tokenDataSchema } from "./token-data";
+import { readSeenAt, storedNames, type TokenData, tokenDataSchema } from "./token-data";
 
 export type TokenUpdateState = RecipientFormState;
 
@@ -149,23 +149,25 @@ export async function submitTokenUpdate(
   // Look up before applying: an email change deletes the token with the update.
   const owner = await ownerForToken(token);
 
-  // 6. Single-use apply. `false` covers unknown/expired/used token AND
-  //    non-object/oversized payload — all get the identical generic copy.
-  let applied = false;
+  // 6. Single-use apply. NULL (unknown/expired/used token, bad payload) gets the
+  //    generic copy. 'queued' still thanks the recipient: anything else would
+  //    leak the other person's answer.
+  let outcome: unknown = null;
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.apply_token_update(${token}, ${JSON.stringify(payload)}::jsonb) as ok`,
+      sql`select private.apply_token_update(${token}, ${JSON.stringify(payload)}::jsonb,
+            ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
-    applied = rows[0]?.ok === true;
+    outcome = rows[0]?.outcome ?? null;
   } catch (err) {
     // logDbError reports code/constraint only — the token never reaches logs.
     logDbError("[tu] [submitTokenUpdate] apply_token_update failed", err);
     return { error: GENERIC_ERROR, ...echo };
   }
-  if (!applied) {
+  if (outcome !== "applied" && outcome !== "queued") {
     return { error: INVALID_LINK_MESSAGE, ...echo };
   }
 
-  if (owner) after(() => notifyOwner(owner));
+  if (owner) after(() => notifyOwner({ ...owner, queued: outcome === "queued" }));
   redirect("/u/thanks");
 }

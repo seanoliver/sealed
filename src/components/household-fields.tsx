@@ -170,13 +170,15 @@ export function HouseholdFields({
   const partnerLastRef = useRef<HTMLInputElement>(null);
 
   const blankRow: Row = { first: "", last: "", lastEdited: false };
+  // Either person in a couple can open a recipient link, so its labels never
+  // say "you" or "your partner".
+  const owner = audience === "owner";
+  const second = owner ? "Partner" : "Second person";
 
-  return (
+  const fields = (
     <>
       <div className="flex flex-col gap-1.5">
-        <span className={labelClasses}>
-          {audience === "owner" ? "Name" : "Your name"}
-        </span>
+        <span className={labelClasses}>{owner ? "Name" : "First person"}</span>
         <div className="grid grid-cols-2 gap-2">
           <NameInput
             id="first_name"
@@ -209,14 +211,14 @@ export function HouseholdFields({
       {enabled.partner_name && partner ? (
         <PersonRow
           idPrefix="partner"
-          label="Partner"
+          label={second}
           firstName="partner_first_name"
           lastName="partner_last_name"
           row={partner}
           familyLast={lastName}
           onChange={setPartner}
           onRemove={() => setPartner(null)}
-          removeLabel="Remove partner"
+          removeLabel={`Remove ${second.toLowerCase()}`}
           errors={{
             first: errors.partner_first_name,
             last: errors.partner_last_name,
@@ -225,7 +227,7 @@ export function HouseholdFields({
           hint={
             !partner.lastEdited && lastName !== "" ? (
               <p className="text-xs text-muted-foreground">
-                {audience === "owner" ? "Same last name" : "Same last name as you"} ·{" "}
+                Same last name ·{" "}
                 <button
                   type="button"
                   onClick={() => {
@@ -278,7 +280,7 @@ export function HouseholdFields({
               className={addButtonClasses}
             >
               <Plus className="size-4" aria-hidden="true" />
-              Add partner
+              {owner ? "Add partner" : "Add a second person"}
             </button>
           ) : null}
           {enabled.kids_names && kids.length < KIDS_MAX ? (
@@ -298,5 +300,20 @@ export function HouseholdFields({
       ) : null}
       <FieldError id="kids" message={errors.kids} />
     </>
+  );
+
+  return owner ? (
+    fields
+  ) : (
+    <div
+      role="group"
+      aria-labelledby="household-heading"
+      className="flex flex-col gap-5"
+    >
+      <p id="household-heading" className="font-serif text-lg text-foreground">
+        Names on the envelope
+      </p>
+      {fields}
+    </div>
   );
 }

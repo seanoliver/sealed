@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-locale";
 
 /**
  * Optional free-text field: trimmed, capped at `max` (mirrors the SQL CHECK
@@ -18,11 +19,14 @@ const isRealDate = (s: string) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 };
 
+const optEmail = z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional();
+
 export const contactSchema = z.object({
   full_name: z.string().trim().min(1, "Name is required").max(200),
   partner_name: opt(200),
   kids_names: opt(2000),
-  email: z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional(),
+  email: optEmail,
+  partner_email: optEmail,
   // refine: shape-valid but calendar-invalid dates ("2025-99-99") must never
   // reach the Postgres date cast — class-22 errors embed the value in logs
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealDate, "Invalid date").or(z.literal("")).transform((s) => s === "" ? undefined : s).optional(),
@@ -32,6 +36,21 @@ export const contactSchema = z.object({
   notes: opt(2000),
 });
 export type ContactInput = z.infer<typeof contactSchema>;
+
+export const SAME_PARTNER_EMAIL = "The partner's email must differ from the email";
+
+/** Mirrors contacts_partner_email_differs, which compares ignoring case. */
+export function samePartnerEmail(d: { email?: string; partner_email?: string }): boolean {
+  return (
+    d.email !== undefined &&
+    d.partner_email !== undefined &&
+    d.email.toLowerCase() === d.partner_email.toLowerCase()
+  );
+}
+
+export function withoutSamePartnerEmail(d: ContactInput): ContactInput {
+  return samePartnerEmail(d) ? { ...d, partner_email: undefined } : d;
+}
 
 export const contactDetailsSchema = contactSchema.omit({
   full_name: true,
@@ -46,6 +65,7 @@ export const CONTACT_FIELDS = [
   "partner_name",
   "kids_names",
   "email",
+  "partner_email",
   "birthday",
   "address_line1",
   "address_line2",
@@ -81,8 +101,9 @@ export const TOKEN_UPDATE_FIELDS = [
 
 export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];
 
-/** contactSchema minus notes; unknown keys (incl. a smuggled `notes`) are stripped. */
-export const tokenUpdateSchema = contactSchema.omit({ notes: true });
+/** Unknown keys (incl. a smuggled `notes`) are stripped. No `partner_email`:
+ *  each recipient edits only their own address, through `email`. */
+export const tokenUpdateSchema = contactSchema.omit({ notes: true, partner_email: true });
 
 export const TOKEN_DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
   (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",

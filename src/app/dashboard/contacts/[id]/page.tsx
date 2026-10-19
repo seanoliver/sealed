@@ -67,6 +67,7 @@ export default async function ContactDetailPage({
             partner_name: contact.partnerName ?? "",
             kids_names: contact.kidsNames ?? "",
             email: contact.email ?? "",
+            partner_email: contact.partnerEmail ?? "",
             birthday: contact.birthday ?? "",
             address_line1: contact.addressLine1 ?? "",
             address_line2: contact.addressLine2 ?? "",

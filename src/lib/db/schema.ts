@@ -2,6 +2,7 @@ import {
   pgTable, uuid, text, jsonb, timestamp, date, customType,
 } from "drizzle-orm/pg-core";
 import type { Kid } from "../names";
+import type { Recipient } from "../recipients";
 
 const citext = customType<{ data: string }>({ dataType: () => "citext" });
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -34,6 +35,7 @@ export const contacts = pgTable("contacts", {
   partnerLastName: text("partner_last_name"),
   kids: jsonb("kids").$type<Kid[]>(),
   email: citext("email"),
+  partnerEmail: citext("partner_email"),
   birthday: date("birthday"),
   addressLine1: text("address_line1"),
   addressLine2: text("address_line2"),
@@ -62,6 +64,7 @@ export const updateTokens = pgTable("update_tokens", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  recipient: text("recipient").$type<Recipient>().notNull().default("primary"),
 });
 
 export const emailSends = pgTable("email_sends", {
@@ -73,6 +76,7 @@ export const emailSends = pgTable("email_sends", {
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   lastEventAt: timestamp("last_event_at", { withTimezone: true }),
   failureReason: text("failure_reason").$type<"rejected" | "quota" | "error">(),
+  recipient: text("recipient").$type<Recipient>().notNull().default("primary"),
 });
 
 export const contactEvents = pgTable("contact_events", {
@@ -80,5 +84,6 @@ export const contactEvents = pgTable("contact_events", {
   contactId: uuid("contact_id").notNull(),
   source: text("source").notNull(),
   diff: jsonb("diff").notNull(),
+  recipient: text("recipient").$type<Recipient>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

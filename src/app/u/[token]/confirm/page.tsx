@@ -60,6 +60,7 @@ export default async function ConfirmAddressPage({
         ownerName={ownerName}
         lines={[household, ...address]}
         updateHref={`/u/${token}`}
+        seenAt={loaded.data.updated_at}
       />
       <div className="mt-4">
         <WhyExplainer ownerName={ownerName} />

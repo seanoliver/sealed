@@ -32,6 +32,7 @@ export default async function NewContactPage() {
             partner_name: "",
             kids_names: "",
             email: "",
+            partner_email: "",
             birthday: "",
             address_line1: "",
             address_line2: "",

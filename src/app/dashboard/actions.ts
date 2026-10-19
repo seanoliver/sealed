@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
@@ -18,6 +18,7 @@ import { addressRequestEmail } from "@/lib/email/templates";
 import { addressLines } from "@/lib/address";
 import { envelopeLine, pickStoredNames } from "@/lib/names";
 import { logDbError } from "@/lib/log";
+import { addressRecipients } from "@/lib/recipients";
 import { generateToken, TOKEN_TTL_DAYS } from "@/lib/tokens";
 
 // Explicit ids only — no "send to everything" mode. The client sends the ids
@@ -28,17 +29,16 @@ const requestSchema = z.object({
   contactIds: z.array(z.uuid()).min(1).max(1000),
 });
 
+const MAX_EMAILS = 1000;
+
 export type RequestAddressesInput = z.input<typeof requestSchema>;
 
+/** `sent` and `failed` count emails; `skippedNoEmail` and `failedContactIds` count contacts. */
 export type RequestAddressesResult =
   | { sent: number; skippedNoEmail: number; failed: number; failedContactIds: string[] }
   | { error: string };
 
 /**
- * Mint update tokens for the targeted contacts and email each a personal
- * `/u/<token>` link. Single-active-token semantics: once a contact's new
- * email is confirmed sent, their older unused links stop working.
- *
  * Invariant: the raw token exists only transiently to build the email URL.
  * Only its sha256 is persisted, and it is never logged here (the dev-only
  * EMAIL_DRY_RUN path inside the email layer is the sole exception).
@@ -109,11 +109,16 @@ export async function requestAddresses(
   if (!scope) return { error: "Set up your address book first." };
 
   const targets = scope.rows.flatMap((row) =>
-    row.email === null ? [] : [{ ...row, email: row.email }],
+    addressRecipients(row).map((recipient) => ({ ...recipient, row })),
   );
-  const skippedNoEmail = scope.rows.length - targets.length;
+  const skippedNoEmail = scope.rows.filter(
+    (row) => addressRecipients(row).length === 0,
+  ).length;
   if (targets.length === 0) {
     return { sent: 0, skippedNoEmail, failed: 0, failedContactIds: [] };
+  }
+  if (targets.length > MAX_EMAILS) {
+    return { error: `That's more than ${MAX_EMAILS} emails. Select fewer contacts.` };
   }
 
   // Hashes are persisted BEFORE the emails go out so a recipient clicking
@@ -131,7 +136,8 @@ export async function requestAddresses(
       .insert(updateTokens)
       .values(
         minted.map(({ target, hash }) => ({
-          contactId: target.id,
+          contactId: target.row.id,
+          recipient: target.recipient,
           tokenHash: hash,
           expiresAt,
         })),
@@ -148,11 +154,12 @@ export async function requestAddresses(
       to: target.email,
       ...addressRequestEmail({
         ownerName: scope.ownerName,
+        recipientName: target.firstName,
         updateUrl: `${appUrl}/u/${token}`,
         confirmUrl: `${appUrl}/u/${token}/confirm`,
         envelope: {
-          household: envelopeLine(pickStoredNames(target), { partner: scope.showPartner }),
-          address: addressLines(target),
+          household: envelopeLine(pickStoredNames(target.row), { partner: scope.showPartner }),
+          address: addressLines(target.row),
         },
       }),
     })),
@@ -168,27 +175,32 @@ export async function requestAddresses(
     p.result.status === "failed" ? [{ ...p, reason: p.result.reason }] : [],
   );
   const unconfirmed = paired.filter((p) => p.result.status === "unknown");
-  const failedContactIds = paired
-    .filter((p) => p.result.status !== "sent")
-    .map((p) => p.target.id);
+  const failed = paired.filter((p) => p.result.status !== "sent");
+  const failedContactIds = [...new Set(failed.map((p) => p.target.row.id))];
 
   try {
     await dbAdmin.transaction(async (tx) => {
       if (delivered.length > 0) {
         await tx.insert(emailSends).values(
           delivered.map(({ target, resendId }) => ({
-            contactId: target.id,
+            contactId: target.row.id,
             bookId: scope.bookId,
+            recipient: target.recipient,
             resendId,
             status: "sent",
           })),
         );
-        // createdAt < mintedAt: a newer concurrent send's link must survive.
+        // Per person: the partner's new email must not retire the primary's
+        // link. createdAt < mintedAt: a newer concurrent send's link survives.
         await tx.delete(updateTokens).where(
           and(
-            inArray(
-              updateTokens.contactId,
-              delivered.map(({ target }) => target.id),
+            or(
+              ...delivered.map(({ target }) =>
+                and(
+                  eq(updateTokens.contactId, target.row.id),
+                  eq(updateTokens.recipient, target.recipient),
+                ),
+              ),
             ),
             isNull(updateTokens.usedAt),
             lt(updateTokens.createdAt, mintedAt),
@@ -198,14 +210,16 @@ export async function requestAddresses(
       if (rejected.length + unconfirmed.length > 0) {
         await tx.insert(emailSends).values([
           ...rejected.map(({ target, reason }) => ({
-            contactId: target.id,
+            contactId: target.row.id,
             bookId: scope.bookId,
+            recipient: target.recipient,
             status: "failed",
             failureReason: reason,
           })),
           ...unconfirmed.map(({ target }) => ({
-            contactId: target.id,
+            contactId: target.row.id,
             bookId: scope.bookId,
+            recipient: target.recipient,
             status: "unconfirmed",
           })),
         ]);
@@ -230,7 +244,7 @@ export async function requestAddresses(
   return {
     sent: delivered.length,
     skippedNoEmail,
-    failed: failedContactIds.length,
+    failed: failed.length,
     failedContactIds,
   };
 }

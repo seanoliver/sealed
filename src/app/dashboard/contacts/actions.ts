@@ -18,6 +18,8 @@ import {
   contactDetailsSchema,
   type ContactDetailsInput,
   type ContactFormValues,
+  SAME_PARTNER_EMAIL,
+  samePartnerEmail,
 } from "@/lib/validation/contact";
 import {
   householdSchema,
@@ -73,6 +75,7 @@ function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
     partner_name: row.partnerName,
     kids_names: row.kidsNames,
     email: row.email,
+    partner_email: row.partnerEmail,
     birthday: row.birthday,
     address_line1: row.addressLine1,
     address_line2: row.addressLine2,
@@ -123,10 +126,36 @@ type ParsedContactForm =
   | { ok: true; details: ContactDetailsInput; household: HouseholdInput }
   | { ok: false; state: ContactFormState };
 
-function parseContactForm(formData: FormData): ParsedContactForm {
-  const values = readContactForm(formData);
-  const household = parseHouseholdForm(formData);
+type ParsedDetails =
+  | { success: true; data: ContactDetailsInput }
+  | { success: false; error: string };
+
+function parseDetails(values: Partial<ContactFormValues>): ParsedDetails {
   const details = contactDetailsSchema.safeParse(values);
+  if (!details.success) {
+    return { success: false, error: details.error.issues[0]?.message ?? "Invalid input" };
+  }
+  return samePartnerEmail(details.data)
+    ? { success: false, error: SAME_PARTNER_EMAIL }
+    : details;
+}
+
+function withStoredPartnerEmail(
+  formData: FormData,
+  values: ContactFormValues,
+  existing: ContactRow,
+): ContactFormValues {
+  return formData.has("partner_email")
+    ? values
+    : { ...values, partner_email: existing.partnerEmail ?? "" };
+}
+
+function parseContactForm(
+  formData: FormData,
+  { values = readContactForm(formData) }: { values?: ContactFormValues } = {},
+): ParsedContactForm {
+  const household = parseHouseholdForm(formData);
+  const details = parseDetails(values);
   if (household.ok && details.success) {
     return { ok: true, details: details.data, household: household.data };
   }
@@ -137,7 +166,7 @@ function parseContactForm(formData: FormData): ParsedContactForm {
         ? household.ok
           ? undefined
           : household.error
-        : (details.error.issues[0]?.message ?? "Invalid input"),
+        : details.error,
       fieldErrors: household.ok ? undefined : household.fieldErrors,
       values,
       household: household.values,
@@ -254,19 +283,20 @@ export async function updateContact(
         .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
         .limit(1);
       if (!existing) return undefined;
+      const values = withStoredPartnerEmail(formData, echo.values, existing);
       const keepNames = isUntouchedPrefill(
         storedNames(existing),
         readHouseholdValues(formData, { kidsLimit: Infinity }),
       );
       if (keepNames) {
-        const details = contactDetailsSchema.safeParse(echo.values);
+        const details = parseDetails(values);
         if (!details.success) {
-          invalid = { error: details.error.issues[0]?.message ?? "Invalid input", ...echo };
+          invalid = { error: details.error, ...echo };
           return existing;
         }
         row = contactDetailsToRow(details.data);
       } else {
-        const parsed = parseContactForm(formData);
+        const parsed = parseContactForm(formData, { values });
         if (!parsed.ok) {
           invalid = parsed.state;
           return existing;
@@ -387,16 +417,11 @@ export async function patchContact(
       if (names && !sameJsonb(storedNames(existing), fields.data.namesBase)) {
         return { kind: "invalid", error: NAMES_CHANGED };
       }
-      const parsed = contactDetailsSchema.safeParse({
+      const parsed = parseDetails({
         ...rowToDetailValues(existing),
         ...fields.data.values,
       });
-      if (!parsed.success) {
-        return {
-          kind: "invalid",
-          error: parsed.error.issues[0]?.message ?? "Invalid input",
-        };
-      }
+      if (!parsed.success) return { kind: "invalid", error: parsed.error };
       const row = {
         ...contactDetailsToRow(parsed.data),
         ...(names ? householdToRow(names) : {}),

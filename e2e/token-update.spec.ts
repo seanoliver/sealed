@@ -308,7 +308,7 @@ test.describe("with partner and kids enabled", () => {
     await page.goto(`/u/${kidsTokens[1]}`);
 
     await expect(page.locator("#kid_1_first")).toHaveValue("Ivy");
-    await page.getByRole("button", { name: "Remove partner" }).click();
+    await page.getByRole("button", { name: "Remove second person" }).click();
     await page.getByRole("button", { name: "Remove child 2" }).click();
     await page.getByRole("button", { name: "Remove child 1" }).click();
     await waitForTurnstile(page);

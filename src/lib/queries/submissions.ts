@@ -1,8 +1,9 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
-import { books, contacts, submissions } from "@/lib/db/schema";
+import { books, contactEvents, contacts, submissions } from "@/lib/db/schema";
+import { type Recipient } from "@/lib/recipients";
 
 export type PendingSubmission = {
   submission: typeof submissions.$inferSelect;
@@ -46,5 +47,53 @@ export async function listPendingSubmissions(
       )
       .orderBy(desc(submissions.createdAt), desc(submissions.id))
       .limit(200);
+  });
+}
+
+export type PendingReply = {
+  id: string;
+  contactId: string;
+  /** ATTACKER-CONTROLLED jsonb: parse it before display, never cast it. */
+  payload: unknown;
+  savedBy: Recipient | null;
+};
+
+export async function listPendingReplies(
+  claims: SessionClaims,
+): Promise<PendingReply[]> {
+  return withRls(claims, async (tx) => {
+    const [book] = await tx
+      .select({ id: books.id })
+      .from(books)
+      .where(eq(books.ownerId, claims.sub))
+      .limit(1);
+    if (!book) return [];
+
+    const rows = await tx
+      .selectDistinctOn([submissions.matchedContactId], {
+        id: submissions.id,
+        contactId: sql<string>`${submissions.matchedContactId}`,
+        payload: submissions.payload,
+        savedBy: sql<Recipient | null>`(
+          select ${contactEvents.recipient} from ${contactEvents}
+          where ${contactEvents.contactId} = ${submissions.matchedContactId}
+            and ${contactEvents.source} = 'token'
+          order by ${contactEvents.createdAt} desc, ${contactEvents.id} desc
+          limit 1)`,
+      })
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.bookId, book.id),
+          eq(submissions.status, "pending"),
+          isNotNull(submissions.matchedContactId),
+        ),
+      )
+      .orderBy(
+        submissions.matchedContactId,
+        asc(submissions.createdAt),
+        asc(submissions.id),
+      );
+    return rows;
   });
 }

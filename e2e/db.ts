@@ -88,6 +88,7 @@ export async function seedContact(opts: {
   bookId: string;
   fullName: string;
   email?: string;
+  partnerEmail?: string;
   partnerName?: string;
   kidsNames?: string;
   addressLine1?: string;
@@ -106,12 +107,12 @@ export async function seedContact(opts: {
   const h = opts.household;
   const rows = await db`
     insert into public.contacts
-      (book_id, full_name, email, partner_name, kids_names, address_line1,
+      (book_id, full_name, email, partner_email, partner_name, kids_names, address_line1,
        city, state_region, postal_code, country, first_name, last_name,
        partner_first_name, partner_last_name, kids)
     values
       (${opts.bookId}, ${opts.fullName}, ${opts.email ?? null},
-       ${opts.partnerName ?? null}, ${opts.kidsNames ?? null},
+       ${opts.partnerEmail ?? null}, ${opts.partnerName ?? null}, ${opts.kidsNames ?? null},
        ${opts.addressLine1 ?? null}, ${opts.city ?? null},
        ${opts.stateRegion ?? null}, ${opts.postalCode ?? null},
        ${opts.country ?? null}, ${h?.firstName ?? null}, ${h?.lastName ?? null},
@@ -185,11 +186,14 @@ export async function setContactCity(
 }
 
 /** Mint a live update token for a contact and return the RAW token (URL part). */
-export async function seedUpdateToken(contactId: string): Promise<string> {
+export async function seedUpdateToken(
+  contactId: string,
+  { recipient = "primary" }: { recipient?: "primary" | "partner" } = {},
+): Promise<string> {
   const { token, hash } = generateToken();
   await db`
-    insert into public.update_tokens (contact_id, token_hash, expires_at)
-    values (${contactId}, ${hash}, now() + interval '30 days')`;
+    insert into public.update_tokens (contact_id, recipient, token_hash, expires_at)
+    values (${contactId}, ${recipient}, ${hash}, now() + interval '30 days')`;
   return token;
 }
 
@@ -198,13 +202,50 @@ export async function seedEmailSend(opts: {
   contactId: string;
   bookId: string;
   resendId: string | null;
-  status?: "sent" | "failed" | "unconfirmed" | "bounced";
+  status?: "sent" | "delivered" | "failed" | "unconfirmed" | "bounced";
   failureReason?: "rejected" | "quota" | "error";
+  recipient?: "primary" | "partner";
 }): Promise<void> {
   await db`
-    insert into public.email_sends (contact_id, book_id, resend_id, status, failure_reason)
+    insert into public.email_sends
+      (contact_id, book_id, resend_id, status, failure_reason, recipient)
     values (${opts.contactId}, ${opts.bookId}, ${opts.resendId}, ${opts.status ?? "sent"},
-            ${opts.failureReason ?? null})`;
+            ${opts.failureReason ?? null}, ${opts.recipient ?? "primary"})`;
+}
+
+export async function seedPendingReply(opts: {
+  bookId: string;
+  contactId: string;
+  payload: Record<string, unknown>;
+  savedBy?: "primary" | "partner";
+}): Promise<string> {
+  if (opts.savedBy) {
+    await db`
+      insert into public.contact_events (contact_id, source, recipient, diff)
+      values (${opts.contactId}, 'token', ${opts.savedBy}, '{}')`;
+  }
+  const rows = await db`
+    insert into public.submissions (book_id, payload, matched_contact_id)
+    values (${opts.bookId}, ${db.json(opts.payload as never)}, ${opts.contactId})
+    returning id`;
+  return rows[0].id as string;
+}
+
+export async function getSubmissionStatus(id: string): Promise<string> {
+  const rows = await db`select status from public.submissions where id = ${id}`;
+  return rows[0].status as string;
+}
+
+export async function getContactEmails(
+  contactId: string,
+): Promise<{ email: string | null; partnerEmail: string | null; addressLine2: string | null }> {
+  const rows = await db`
+    select email, partner_email, address_line2 from public.contacts where id = ${contactId}`;
+  return {
+    email: rows[0].email,
+    partnerEmail: rows[0].partner_email,
+    addressLine2: rows[0].address_line2,
+  };
 }
 
 /**

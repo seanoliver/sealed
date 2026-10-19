@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { formatKids, formatPerson, type Kid } from "@/lib/names";
-import { tokenUpdateSchema, type TokenUpdateField } from "./contact";
+import { contactSchema, tokenUpdateSchema, type TokenUpdateField } from "./contact";
 import { householdShape, requirePartnerFirstName } from "./household";
 
 /**
@@ -48,6 +48,17 @@ export function parseSubmissionPayload(
     : { success: false };
 }
 
+const partnerEmailSchema = z.object({ partner_email: contactSchema.shape.partner_email });
+
+export function parsePartnerEmail(
+  payload: unknown,
+): { success: true; data: string | undefined } | { success: false } {
+  const parsed = partnerEmailSchema.safeParse(payload);
+  return parsed.success
+    ? { success: true, data: parsed.data.partner_email }
+    : { success: false };
+}
+
 export function isHouseholdPayload(
   payload: SubmissionPayload,
 ): payload is HouseholdPayload {
@@ -87,6 +98,7 @@ export const submissionDisplaySchema = z.object({
   partner_name: displayValue,
   kids_names: displayValue,
   email: displayValue,
+  partner_email: displayValue,
   birthday: displayValue,
   address_line1: displayValue,
   address_line2: displayValue,
@@ -101,7 +113,9 @@ export const submissionDisplaySchema = z.object({
   kids: z.array(z.unknown()).optional().catch(undefined),
 });
 
-export type SubmissionDisplayFields = Partial<Record<TokenUpdateField, string>>;
+export type SubmissionDisplayFields = Partial<
+  Record<TokenUpdateField | "partner_email", string>
+>;
 
 function capDisplay(value: string | null): string | undefined {
   if (value === null) return undefined;

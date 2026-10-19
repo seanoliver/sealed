@@ -8,9 +8,12 @@ import {
   isSplit,
   type StoredNames,
 } from "@/lib/names";
+import { addressLines } from "@/lib/address";
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
+import type { Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
+import type { SubmissionDisplayFields } from "@/lib/validation/submission";
 import {
   householdSchema,
   type HouseholdFieldErrors,
@@ -23,6 +26,7 @@ export type StatusKey = SendStatus | "updated";
 export type SheetField = Extract<
   keyof ContactFormValues,
   | "email"
+  | "partner_email"
   | "address_line1"
   | "city"
   | "state_region"
@@ -32,20 +36,43 @@ export type SheetField = Extract<
 
 export type SheetValues = Record<SheetField, string>;
 
+export type PersonSend = RecipientSend & { name: string };
+
 export interface SheetRow {
   id: string;
   names: StoredNames;
   values: SheetValues;
   status: StatusKey;
   failureReason: FailureReason | null;
+  people: PersonSend[];
+  needsAttention: boolean;
+  answers: TwoAnswers | null;
   updatedAtIso: string;
   updatedAtLabel: string;
 }
 
+export type PendingAnswer = {
+  submissionId: string;
+  display: SubmissionDisplayFields;
+  savedBy: Recipient | null;
+};
+
 export function toSheetRow(
   row: ContactListRow,
   formatDate: (date: Date) => string,
+  { answer }: { answer?: PendingAnswer } = {},
 ): SheetRow {
+  const values: SheetValues = {
+    email: row.email ?? "",
+    partner_email: row.partnerEmail ?? "",
+    address_line1: row.addressLine1 ?? "",
+    city: row.city ?? "",
+    state_region: row.stateRegion ?? "",
+    postal_code: row.postalCode ?? "",
+    country: row.country ?? "",
+  };
+  const twoPeople =
+    row.partnerEmail !== null || row.sendStatuses.partner.status !== "none";
   return {
     id: row.id,
     names: {
@@ -58,16 +85,17 @@ export function toSheetRow(
       partnerLastName: row.partnerLastName,
       kids: row.kids,
     },
-    values: {
-      email: row.email ?? "",
-      address_line1: row.addressLine1 ?? "",
-      city: row.city ?? "",
-      state_region: row.stateRegion ?? "",
-      postal_code: row.postalCode ?? "",
-      country: row.country ?? "",
-    },
+    values,
     status: row.updatedAfterSend ? "updated" : row.sendStatus,
     failureReason: row.sendFailureReason,
+    people: twoPeople
+      ? (["primary", "partner"] as const).map((recipient) => ({
+          name: personName(row, recipient) ?? (recipient === "primary" ? "First" : "Partner"),
+          ...row.sendStatuses[recipient],
+        }))
+      : [],
+    needsAttention: !row.updatedAfterSend && row.needsAttention,
+    answers: answer ? twoAnswers(row, answer) : null,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
   };
@@ -93,6 +121,152 @@ export const NEEDS_ATTENTION: ReadonlySet<StatusKey> = new Set([
   "complained",
   "unconfirmed",
 ]);
+
+export type RecipientSend = {
+  status: SendStatus;
+  failureReason: FailureReason | null;
+};
+
+export function combineSends(
+  primary: RecipientSend,
+  partner: RecipientSend,
+): RecipientSend & { needsAttention: boolean } {
+  const sends = [primary, partner].filter((send) => send.status !== "none");
+  const best =
+    sends.length === 0
+      ? primary
+      : sends.reduce((a, b) => (STATUS_RANK[b.status] > STATUS_RANK[a.status] ? b : a));
+  return {
+    ...best,
+    needsAttention: sends.some((send) => NEEDS_ATTENTION.has(send.status)),
+  };
+}
+
+export function emailCount(values: Pick<SheetValues, "email" | "partner_email">): number {
+  return (values.email === "" ? 0 : 1) + (values.partner_email === "" ? 0 : 1);
+}
+
+function personName(names: StoredNames, recipient: Recipient): string | null {
+  const first = recipient === "primary" ? names.firstName : names.partnerFirstName;
+  const full = recipient === "primary" ? names.fullName : names.partnerName;
+  return first ?? full?.trim().split(/\s+/)[0] ?? null;
+}
+
+export type AnswerPart = { text: string; changed: boolean };
+export type AnswerLine = { label: string | null; parts: AnswerPart[] };
+export type AnswerSide = { name: string | null; lines: AnswerLine[] };
+export type TwoAnswers = {
+  submissionId: string;
+  saved: AnswerSide;
+  incoming: AnswerSide;
+};
+
+const ADDRESS_FIELDS = [
+  "address_line1",
+  "address_line2",
+  "city",
+  "state_region",
+  "postal_code",
+  "country",
+] as const;
+
+const MARK_START = "\u0001";
+const MARK_END = "\u0002";
+// split() with a capture group alternates plain and marked text.
+const MARKED = /\u0001(.*?)\u0002/;
+
+const OTHER_FIELDS = [
+  ["full_name", "Name"],
+  ["partner_name", "Partner"],
+  ["kids_names", "Kids"],
+  ["birthday", "Birthday"],
+  ["email", "Email"],
+  ["partner_email", "Partner email"],
+] as const;
+
+type AnswerField =
+  | (typeof ADDRESS_FIELDS)[number]
+  | (typeof OTHER_FIELDS)[number][0];
+
+export function twoAnswers(
+  row: ContactListRow,
+  { submissionId, display, savedBy }: PendingAnswer,
+): TwoAnswers {
+  const saved: Record<AnswerField, string> = {
+    full_name: row.fullName,
+    partner_name: row.partnerName ?? "",
+    kids_names: row.kidsNames ?? "",
+    birthday: row.birthday ?? "",
+    email: row.email ?? "",
+    partner_email: row.partnerEmail ?? "",
+    address_line1: row.addressLine1 ?? "",
+    address_line2: row.addressLine2 ?? "",
+    city: row.city ?? "",
+    state_region: row.stateRegion ?? "",
+    postal_code: row.postalCode ?? "",
+    country: row.country ?? "",
+  };
+  // `||`, not `??`: an empty value counts as absent, as it does on approval.
+  const reply = (field: AnswerField) => display[field] || saved[field];
+  const changed = (field: AnswerField) => reply(field) !== saved[field];
+
+  const address = (value: (field: AnswerField) => string, mark: boolean) => {
+    const at = (field: AnswerField) => {
+      const text = value(field);
+      if (text === "") return null;
+      return mark && changed(field) ? `${MARK_START}${text}${MARK_END}` : text;
+    };
+    const lines =
+      addressLines({
+        addressLine1: at("address_line1"),
+        addressLine2: at("address_line2"),
+        city: at("city"),
+        stateRegion: at("state_region"),
+        postalCode: at("postal_code"),
+        country: at("country"),
+      }) ?? ADDRESS_FIELDS.map(at).filter((text) => text !== null);
+    return {
+      label: null,
+      parts: lines
+        .join(", ")
+        .split(MARKED)
+        .map((text, i) => ({ text, changed: i % 2 === 1 }))
+        .filter((part) => part.text !== ""),
+    };
+  };
+  const others = OTHER_FIELDS.filter(([field]) => changed(field));
+
+  // A partner's reply stores their email as partner_email; otherwise the reply
+  // is from whoever did not make the saved change.
+  const from: Recipient =
+    display.partner_email !== undefined || savedBy === "primary"
+      ? "partner"
+      : "primary";
+  return {
+    submissionId,
+    saved: {
+      name: savedBy && savedBy !== from ? personName(row, savedBy) : null,
+      lines: [
+        address((field) => saved[field], false),
+        ...others.map(([field, label]) => ({
+          label,
+          parts: [{ text: saved[field] || "—", changed: false }],
+        })),
+      ],
+    },
+    incoming: {
+      name: personName(row, from),
+      lines: [
+        address(reply, true),
+        ...others.map(([field, label]) => ({
+          label,
+          parts: [{ text: reply(field) || "—", changed: true }],
+        })),
+      ],
+    },
+  };
+}
+
 
 export function changedValues(
   values: SheetValues,

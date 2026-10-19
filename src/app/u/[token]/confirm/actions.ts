@@ -12,6 +12,7 @@ import { TOKEN_SHAPE } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { INVALID_LINK_MESSAGE } from "../../notice";
 import { isSpentToken, notifyOwner, ownerForToken } from "../owner";
+import { readSeenAt } from "../token-data";
 
 export type ConfirmState = { error?: string; confirmed?: boolean };
 
@@ -50,9 +51,10 @@ export async function confirmTokenAddress(
   let applied = false;
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.apply_token_update(${token}, '{}'::jsonb) as ok`,
+      sql`select private.apply_token_update(${token}, '{}'::jsonb,
+            ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
-    applied = rows[0]?.ok === true;
+    applied = rows[0]?.outcome === "applied";
   } catch (err) {
     logDbError("[tu] [confirmTokenAddress] apply_token_update failed", err);
     return { error: "Something went wrong. Please try again." };

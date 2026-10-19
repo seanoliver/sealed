@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-locale";
 import { BOOK_LINK_SHAPE } from "@/lib/book-link";
 
 export const bookSchema = z.object({

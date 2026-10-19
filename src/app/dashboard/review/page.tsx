@@ -28,11 +28,16 @@ import { ReviewCardActions } from "./review-card-actions";
  * never take down the page.
  */
 
-const FIELD_LABELS: Record<TokenUpdateField, string> = {
+type ReviewField = TokenUpdateField | "partner_email";
+
+const MERGE_FIELDS: readonly ReviewField[] = [...TOKEN_UPDATE_FIELDS, "partner_email"];
+
+const FIELD_LABELS: Record<ReviewField, string> = {
   full_name: "Full name",
   partner_name: "Partner",
   kids_names: "Kids",
   email: "Email",
+  partner_email: "Partner email",
   birthday: "Birthday",
   address_line1: "Address line 1",
   address_line2: "Address line 2",
@@ -49,7 +54,7 @@ function capForDisplay(value: string): string {
     : value;
 }
 
-type FieldRow = { field: TokenUpdateField; label: string; value: string };
+type FieldRow = { field: ReviewField; label: string; value: string };
 type DiffRow = FieldRow & { current: string | null; changed: boolean };
 
 type CardModel = { id: string; submittedAtLabel: string } & (
@@ -79,15 +84,14 @@ function toCardModel(
 
   // Value-bearing fields only (legit payloads never store "", and a hostile
   // empty string carries no information worth a row).
-  const present = TOKEN_UPDATE_FIELDS.filter(
-    (field) => parsed[field] !== undefined && parsed[field] !== "",
-  );
+  const present = (fields: readonly ReviewField[]) =>
+    fields.filter((field) => parsed[field] !== undefined && parsed[field] !== "");
 
   if (!matchedContact) {
     return {
       ...base,
       kind: "new",
-      fields: present.map((field) => ({
+      fields: present(TOKEN_UPDATE_FIELDS).map((field) => ({
         field,
         label: FIELD_LABELS[field],
         // `?? ""` is unreachable (present filter) but keeps types exact.
@@ -96,11 +100,12 @@ function toCardModel(
     };
   }
 
-  const currentByField: Record<TokenUpdateField, string | null> = {
+  const currentByField: Record<ReviewField, string | null> = {
     full_name: matchedContact.fullName,
     partner_name: matchedContact.partnerName,
     kids_names: matchedContact.kidsNames,
     email: matchedContact.email,
+    partner_email: matchedContact.partnerEmail,
     birthday: matchedContact.birthday,
     address_line1: matchedContact.addressLine1,
     address_line2: matchedContact.addressLine2,
@@ -114,7 +119,7 @@ function toCardModel(
     ...base,
     kind: "merge",
     contactName: matchedContact.fullName,
-    rows: present.map((field) => {
+    rows: present(MERGE_FIELDS).map((field) => {
       const value = parsed[field] ?? "";
       const current =
         currentByField[field] === null

@@ -20,11 +20,16 @@ const NAME_FIELDS = [
   "kids",
 ] as const;
 
-export const SNAPSHOT_FIELDS = [...TOKEN_UPDATE_FIELDS, ...NAME_FIELDS] as const;
+export const SNAPSHOT_FIELDS = [
+  ...TOKEN_UPDATE_FIELDS,
+  "partner_email",
+  ...NAME_FIELDS,
+] as const;
 type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 
 /** Field snapshot keyed by schema names. No `notes`: it can never arrive via a submission. */
 export type Snapshot = Record<TokenUpdateField, string | null> & {
+  partner_email: string | null;
   first_name: string | null;
   last_name: string | null;
   partner_first_name: string | null;
@@ -38,6 +43,7 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     partner_name: row.partnerName,
     kids_names: row.kidsNames,
     email: row.email,
+    partner_email: row.partnerEmail,
     birthday: row.birthday,
     address_line1: row.addressLine1,
     address_line2: row.addressLine2,
@@ -88,6 +94,7 @@ const FIELD_TO_COLUMN = {
   partner_name: "partnerName",
   kids_names: "kidsNames",
   email: "email",
+  partner_email: "partnerEmail",
   birthday: "birthday",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
@@ -138,11 +145,20 @@ function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
   return patch as Partial<Snapshot>;
 }
 
+const sameAddress = (a: string | null | undefined, b: string | null | undefined) =>
+  a != null && b != null && a.toLowerCase() === b.toLowerCase();
+
 export function mergeUpdate(
   before: Snapshot,
   payload: SubmissionPayload,
+  { partnerEmail }: { partnerEmail?: string } = {},
 ): Partial<typeof contacts.$inferInsert> | undefined {
   const patch = mergePatch(payload);
+  // Dropped, not saved: an email equal to the other person's trips contacts_partner_email_differs.
+  if (sameAddress(patch.email, before.partner_email)) delete patch.email;
+  if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
+    patch.partner_email = partnerEmail;
+  }
   const set: Partial<Record<string, unknown>> = {};
   for (const field of SNAPSHOT_FIELDS) {
     if (field in patch && !sameJsonb(before[field], patch[field])) {

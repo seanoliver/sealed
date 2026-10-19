@@ -28,15 +28,15 @@ select ok(private.get_contact_for_token('expiredtoken') is null, 'expired token 
 select ok(private.get_contact_for_token('nosuchtoken') is null, 'unknown token returns null');
 
 -- apply_token_update: happy path, respects enabled_fields, single-use
-select ok(private.apply_token_update('testtoken',
-  '{"full_name": "Alice Updated", "city": "Newtown", "kids_names": "ShouldBeIgnored"}'),
-  'apply_token_update returns true');
+select is(private.apply_token_update('testtoken',
+  '{"full_name": "Alice Updated", "city": "Newtown", "kids_names": "ShouldBeIgnored"}'), 'applied',
+  'apply_token_update reports the update applied');
 select results_eq(
   $$ select full_name, city, kids_names from public.contacts
      where id = '20000000-0000-0000-0000-0000000000a1' $$,
   $$ values ('Alice Updated', 'Newtown', null::text) $$,
   'update applied; disabled field ignored');
-select ok(not private.apply_token_update('testtoken', '{"city": "Again"}'),
+select ok(private.apply_token_update('testtoken', '{"city": "Again"}') is null,
   'token is single-use');
 select results_eq(
   $$ select count(*) from public.contact_events
@@ -44,7 +44,7 @@ select results_eq(
   array[1::bigint], 'audit row written');
 
 -- audit whitelist: unmapped keys from the untrusted payload never reach storage
-select ok(private.apply_token_update('secondtoken', '{"city": "JunkTown", "hax": "pwn"}'),
+select is(private.apply_token_update('secondtoken', '{"city": "JunkTown", "hax": "pwn"}'), 'applied',
   'second token update succeeds');
 select is_empty(
   $$ select 1 from public.contact_events where diff -> 'payload' ? 'hax' $$,

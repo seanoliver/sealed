@@ -37,6 +37,7 @@ export function householdToRow(h: HouseholdInput) {
 export function contactDetailsToRow(d: ContactDetailsInput) {
   return {
     email: d.email ?? null,
+    partnerEmail: d.partner_email ?? null,
     birthday: d.birthday ?? null,
     addressLine1: d.address_line1 ?? null,
     addressLine2: d.address_line2 ?? null,

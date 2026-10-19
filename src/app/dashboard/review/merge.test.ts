@@ -3,13 +3,17 @@ import { eq, sql } from "drizzle-orm";
 import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
-import { parseSubmissionPayload } from "@/lib/validation/submission";
+import {
+  parsePartnerEmail,
+  parseSubmissionPayload,
+} from "@/lib/validation/submission";
 import { changedFields, mergeUpdate, rowToSnapshot, toInsertRow } from "./merge";
 
 const U = "00000000-0000-0000-0000-00000000d001";
 const B = "10000000-0000-0000-0000-00000000d001";
 const C_LEGACY = "20000000-0000-0000-0000-00000000d001";
 const C_SPLIT = "20000000-0000-0000-0000-00000000d002";
+const C_COUPLE = "20000000-0000-0000-0000-00000000d003";
 
 const ALL_ENABLED = { partner_name: true, kids_names: true, birthday: true };
 
@@ -26,7 +30,11 @@ async function load(id: string) {
 
 async function merge(id: string, payload: unknown, enabled = ALL_ENABLED) {
   const before = rowToSnapshot(await load(id));
-  const set = mergeUpdate(before, gate(payload, enabled));
+  const partnerEmail = parsePartnerEmail(payload);
+  if (!partnerEmail.success) throw new Error("partner email did not parse");
+  const set = mergeUpdate(before, gate(payload, enabled), {
+    partnerEmail: partnerEmail.data,
+  });
   if (!set) return { set, row: await load(id), diff: undefined };
   const [row] = await withRls({ sub: U }, (tx) =>
     tx.update(contacts).set(set).where(eq(contacts.id, id)).returning(),
@@ -152,6 +160,62 @@ describe("approving a household submission", () => {
       fullName: "Priya Raman",
       partnerName: "Daniel Okafor",
       kidsNames: "Asha",
+    });
+  });
+
+  describe("a partner's reply from the review queue", () => {
+    beforeAll(async () => {
+      await dbAdmin.insert(contacts).values({
+        id: C_COUPLE,
+        bookId: B,
+        fullName: "placeholder",
+        firstName: "Satya",
+        lastName: "Rao",
+        partnerFirstName: "Mei",
+        email: "satya@rao.test",
+        partnerEmail: "mei@rao.test",
+        addressLine1: "4410 Fremont Ave N",
+        city: "Seattle",
+      });
+    });
+
+    it("applies the address and the partner's own email", async () => {
+      const { row, diff } = await merge(C_COUPLE, {
+        first_name: "Satya",
+        last_name: "Rao",
+        partner_first_name: "Mei",
+        partner_email: "mei@new.test",
+        address_line1: "4410 Fremont Ave N",
+        address_line2: "Apt 2",
+        city: "Seattle",
+      });
+      expect(row).toMatchObject({
+        email: "satya@rao.test",
+        partnerEmail: "mei@new.test",
+        addressLine2: "Apt 2",
+      });
+      expect(diff?.after).toMatchObject({
+        partner_email: "mei@new.test",
+        address_line2: "Apt 2",
+      });
+    });
+
+    it("ignores an email that repeats the other person's address", async () => {
+      const { set, row } = await merge(C_COUPLE, {
+        first_name: "Satya",
+        last_name: "Rao",
+        partner_first_name: "Mei",
+        email: "MEI@new.test",
+        partner_email: "satya@rao.test",
+        city: "Tacoma",
+      });
+      expect(set).toEqual({ city: "Tacoma" });
+      expect(row).toMatchObject({ email: "satya@rao.test", partnerEmail: "mei@new.test" });
+    });
+
+    it("refuses a malformed partner email", () => {
+      expect(parsePartnerEmail({ partner_email: "not an email" })).toEqual({ success: false });
+      expect(parsePartnerEmail({ city: "Seattle" })).toEqual({ success: true, data: undefined });
     });
   });
 });

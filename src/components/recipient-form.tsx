@@ -46,6 +46,7 @@ type RecipientFormProps = {
   /** Optional helper copy under the email input (e.g. "Optional — ..."). */
   emailHint?: string;
   household: HouseholdValues;
+  seenAt?: string;
 };
 
 export function RecipientForm({
@@ -56,6 +57,7 @@ export function RecipientForm({
   pendingLabel,
   emailHint,
   household,
+  seenAt,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   // React 19 resets uncontrolled inputs to defaultValue after a form action
@@ -84,6 +86,9 @@ export function RecipientForm({
         }}
       />
 
+      {seenAt === undefined ? null : (
+        <input type="hidden" name="seen_at" value={seenAt} />
+      )}
       <TurnstileWidget resetOn={state} />
 
       <button
