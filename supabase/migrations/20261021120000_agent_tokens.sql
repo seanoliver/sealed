@@ -1,8 +1,5 @@
 set lock_timeout = '5s';
 
--- Personal access tokens for agents (MCP). Like update_tokens, only the
--- sha256 of the raw token is stored. Rows are minted over the admin
--- connection; owners may list their tokens (never the hash) and revoke them.
 create table public.agent_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -20,19 +17,15 @@ alter table public.agent_tokens enable row level security;
 
 create policy "agent_tokens_select_own" on public.agent_tokens
   for select to authenticated using (user_id = (select auth.uid()));
--- Revoke only: a revoked token can never be brought back.
 create policy "agent_tokens_revoke_own" on public.agent_tokens
   for update to authenticated
   using (user_id = (select auth.uid()) and revoked_at is null)
   with check (user_id = (select auth.uid()) and revoked_at is not null);
 
--- Column grants keep token_hash unreadable and every other column immutable
--- for client roles; no insert or delete grant.
 grant select (id, user_id, name, scopes, created_at, last_used_at, expires_at, revoked_at)
   on public.agent_tokens to authenticated;
 grant update (revoked_at) on public.agent_tokens to authenticated;
 
--- Resolves a live token to its owner and records use at most once a minute.
 create or replace function private.verify_agent_token(p_hash bytea)
 returns table (token_id uuid, user_id uuid, scopes text[], expires_at timestamptz)
 language sql security definer set search_path = '' as $$

@@ -17,7 +17,6 @@ export type CreateAgentTokenResult =
   | { token: string; summary: AgentTokenSummary }
   | { error: string };
 
-/** The plaintext token is in this response only; it cannot be shown again. */
 export async function createAgentToken(input: AgentTokenInput): Promise<CreateAgentTokenResult> {
   const claims = await requireUser();
   const parsed = agentTokenInputSchema.safeParse(input);

@@ -27,7 +27,6 @@ function rpc(token: string | null, method: string, params: object = {}) {
   );
 }
 
-/** Streamable HTTP may answer as JSON or as one SSE event. */
 async function body(response: Response) {
   const text = await response.text();
   if (!response.headers.get("content-type")?.includes("text/event-stream")) return JSON.parse(text);

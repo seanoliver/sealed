@@ -28,7 +28,6 @@ import {
 import { AgentScopeError, requireScope, type AgentScope } from "./scopes";
 import { verifyAgentToken } from "./tokens";
 
-/** withMcpAuth verifier: our personal access tokens, carried as MCP AuthInfo. */
 export async function verifyBearer(
   _req: Request,
   bearerToken?: string,
@@ -47,7 +46,6 @@ export async function verifyBearer(
 
 class ToolError extends Error {}
 
-/** Owner claims for withRls, after checking the token carries `scope`. */
 function ownerClaims(ctx: ServerContext, scope: AgentScope): SessionClaims {
   const auth = ctx.http?.authInfo;
   const claims = auth?.extra?.claims as SessionClaims | undefined;
@@ -84,7 +82,6 @@ function registerReadTool<S extends z.ZodObject>(server: McpServer, tool: ReadTo
     },
     async (input, ctx) => {
       try {
-        // The SDK has already parsed input with tool.inputSchema.
         const result = await tool.run(ownerClaims(ctx, "read"), input as z.output<S>);
         return result === null ? failure("Not found.") : json(result);
       } catch (err) {

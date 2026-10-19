@@ -24,12 +24,6 @@ import {
   type SubmissionDisplayFields,
 } from "@/lib/validation/submission";
 
-/**
- * Read side of the agent service layer. Every function takes the owner's
- * claims and reads through withRls, so RLS bounds it exactly as it bounds
- * the dashboard. Nothing here touches update_tokens or agent_tokens.
- */
-
 const pageField = z.int().min(1).default(1).describe("1-based page number.");
 const limitField = (max: number, fallback: number) =>
   z.int().min(1).max(max).default(fallback).describe(`Items per page (max ${max}).`);
@@ -69,7 +63,6 @@ export type ContactSummary = {
   stateRegion: string | null;
   postalCode: string | null;
   country: string | null;
-  /** The best of each person's latest send, as the dashboard shows it. */
   status: SendStatus;
   needsAttention: boolean;
   updatedAfterSend: boolean;
@@ -92,8 +85,6 @@ function summarize(row: ContactListRow): ContactSummary {
     missing: [...addressGaps(row), ...(blank(row.email) ? (["email"] as const) : [])],
   };
 }
-
-// ── search_contacts ─────────────────────────────────────────────────────
 
 export const searchContactsInput = z.object({
   query: z
@@ -160,8 +151,6 @@ export async function searchContacts(
   return paginate(matches.map(summarize), input);
 }
 
-// ── get_contact ─────────────────────────────────────────────────────────
-
 export const getContactInput = z.object({
   id: z.uuid().describe("Contact id from search_contacts."),
   events_limit: z
@@ -218,8 +207,6 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
   };
 }
 
-// ── book_summary ────────────────────────────────────────────────────────
-
 export const bookSummaryInput = z.object({});
 
 export async function bookSummary(claims: SessionClaims) {
@@ -267,8 +254,6 @@ export async function bookSummary(claims: SessionClaims) {
   };
 }
 
-// ── address_gaps ────────────────────────────────────────────────────────
-
 export const addressGapsInput = z.object({
   page: pageField,
   limit: limitField(200, 25).describe("Contacts listed per group (max 200)."),
@@ -301,8 +286,6 @@ export async function listAddressGaps(
       }),
   };
 }
-
-// ── find_duplicates ─────────────────────────────────────────────────────
 
 const STREET_WORDS: Record<string, string> = {
   street: "st",
@@ -399,8 +382,6 @@ function duplicateKeys(row: ContactListRow): [key: string, reason: string][] {
   return keys;
 }
 
-// ── list_review_queue ───────────────────────────────────────────────────
-
 export const reviewQueueInput = z.object({
   page: pageField,
   limit: limitField(100, 25),
@@ -413,7 +394,6 @@ export type ReviewItem = {
   from: Recipient | null;
   savedBy: Recipient | null;
   matchedContact: { id: string; name: string } | null;
-  /** Lenient display parse of the submitted payload; null when it is not an object. */
   fields: SubmissionDisplayFields | null;
 };
 
@@ -438,8 +418,6 @@ export async function listReviewQueue(
     input,
   );
 }
-
-// ── export_contacts ─────────────────────────────────────────────────────
 
 export const exportContactsInput = z.object({
   page: pageField,

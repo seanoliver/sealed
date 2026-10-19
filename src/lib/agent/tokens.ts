@@ -8,14 +8,9 @@ import { dbAdmin } from "@/lib/db/admin";
 import { agentTokens } from "@/lib/db/schema";
 import { AGENT_SCOPES, type AgentScope } from "./scopes";
 
-/**
- * Personal access tokens for agents. The raw token is shown to the owner
- * once; the database keeps only its sha256 (agent_tokens.token_hash).
- */
-
 export const AGENT_TOKEN_PREFIX = "sealed_pat_";
 
-/** Prefix plus 32 random bytes as 43-char base64url. Checked before any DB work. */
+// {43} is the base64url length of generateAgentToken's 32 random bytes; change both together.
 export const AGENT_TOKEN_SHAPE = /^sealed_pat_[A-Za-z0-9_-]{43}$/;
 
 export function hashAgentToken(token: string): Buffer {
@@ -40,7 +35,6 @@ export const agentTokenInputSchema = z.object({
 
 export type AgentTokenInput = z.input<typeof agentTokenInputSchema>;
 
-/** Token metadata as the owner sees it. Never includes the hash. */
 export type AgentTokenSummary = {
   id: string;
   name: string;
@@ -61,11 +55,7 @@ const summaryColumns = {
   revokedAt: agentTokens.revokedAt,
 };
 
-/**
- * Inserts over the admin connection: clients have no insert grant, so the
- * caller must already have authenticated `userId`. Returns the raw token,
- * which is never retrievable again.
- */
+// Bypasses RLS: `userId` must come from an authenticated session, never from request input.
 export async function mintAgentToken({
   userId,
   ...input
@@ -98,7 +88,7 @@ export async function listAgentTokens(claims: SessionClaims): Promise<AgentToken
   );
 }
 
-/** False when the token is not the caller's or was already revoked. `id` must be a validated UUID. */
+// Validate `id` as a UUID first: any other string makes Postgres throw instead of returning false.
 export async function revokeAgentToken(claims: SessionClaims, id: string): Promise<boolean> {
   const rows = await withRls(claims, (tx) =>
     tx
@@ -110,12 +100,10 @@ export async function revokeAgentToken(claims: SessionClaims, id: string): Promi
   return rows.length > 0;
 }
 
-/** A verified token: who it acts for and what it may do. */
 export type AgentPrincipal = {
   tokenId: string;
   scopes: AgentScope[];
   expiresAt: Date | null;
-  /** Owner claims for withRls, exactly as a dashboard session would supply. */
   claims: SessionClaims;
 };
 
@@ -127,10 +115,6 @@ type VerifiedRow = {
   [k: string]: unknown;
 };
 
-/**
- * Resolves a bearer token to its owner, or null when it is malformed,
- * unknown, revoked or expired. Records last use at most once a minute.
- */
 export async function verifyAgentToken(token: string | undefined): Promise<AgentPrincipal | null> {
   if (token === undefined || !AGENT_TOKEN_SHAPE.test(token)) return null;
   const [row] = await dbAdmin.execute<VerifiedRow>(

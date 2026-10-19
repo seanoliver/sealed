@@ -1,12 +1,3 @@
-/**
- * Mints an agent personal access token until Settings can.
- *
- *   pnpm exec tsx --conditions=react-server --env-file=.env.local \
- *     scripts/create-agent-token.ts --email you@example.com --name "Claude Code" \
- *     [--scopes read] [--expires-days 90]
- *
- * DATABASE_URL picks the database. Prints the token once; only its hash is stored.
- */
 import { parseArgs } from "node:util";
 import { sql } from "drizzle-orm";
 import { mintAgentToken, type AgentTokenInput } from "@/lib/agent/tokens";

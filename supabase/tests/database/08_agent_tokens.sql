@@ -24,7 +24,6 @@ begin
   execute 'set local role authenticated';
 end $$;
 
--- constraints
 select throws_ok($$
   insert into public.agent_tokens (user_id, name, token_hash, scopes)
   values ('00000000-0000-4000-8000-0000000a7001', 'x', extensions.digest('a', 'sha256'), '{admin}')
@@ -42,7 +41,6 @@ select throws_ok($$
   values ('00000000-0000-4000-8000-0000000a7001', 'x', extensions.digest('live', 'sha256'), '{read}')
 $$, '23505', null, 'token hashes are unique');
 
--- verifier (runs as the table owner, like the admin connection)
 select results_eq($$
   select token_id, user_id, scopes from private.verify_agent_token(extensions.digest('live', 'sha256'))
 $$, $$ values ('30000000-0000-4000-8000-0000000a7001'::uuid, '00000000-0000-4000-8000-0000000a7001'::uuid, '{read}'::text[]) $$,
@@ -60,7 +58,6 @@ select ok((select last_used_at < now() - interval '5 seconds' from public.agent_
   and (select last_used_at < now() - interval '5 seconds' from public.agent_tokens where name = 'other'),
   'last use is recorded at most once a minute');
 
--- RLS and column grants
 select tests.authenticate_as('00000000-0000-4000-8000-0000000a7001');
 
 select results_eq($$ select name from public.agent_tokens order by name $$,

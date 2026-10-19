@@ -1,11 +1,6 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { registerAgentTools, verifyBearer } from "@/lib/agent/mcp";
 
-/**
- * Remote MCP server for agents (Streamable HTTP, stateless). Every request
- * needs a personal access token; tools then read through withRls with the
- * token owner's claims. The session proxy skips this path (see src/proxy.ts).
- */
 const handler = createMcpHandler(registerAgentTools, {
   serverInfo: { name: "sealed", version: "1.0.0" },
   instructions:

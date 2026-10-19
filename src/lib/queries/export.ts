@@ -5,7 +5,6 @@ import { type ContactCsvRow } from "@/lib/csv/export";
 import { withRls } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
 
-/** Every contact in the caller's book as CSV cells, ordered by name. RLS scopes the select. */
 export async function listCsvRows(claims: SessionClaims): Promise<ContactCsvRow[]> {
   return withRls(claims, (tx) =>
     tx
