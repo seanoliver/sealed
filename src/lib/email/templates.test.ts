@@ -46,6 +46,14 @@ describe("addressRequestEmail", () => {
     expect(text).toContain(`Add your names and address: ${addressRequest.updateUrl}`);
   });
 
+  it("links Sealed to the about page on the app's own host", () => {
+    for (const input of [addressRequest, noAddress]) {
+      const { html, text } = addressRequestEmail(input);
+      expect(html).toContain('<a href="https://self-hosted.example/about"');
+      expect(text).toContain("Sent with Sealed (https://self-hosted.example/about)");
+    }
+  });
+
   it("mentions the 30-day expiry", () => {
     const { html, text } = addressRequestEmail(addressRequest);
     expect(html).toContain("expires in 30 days");

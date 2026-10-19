@@ -9,6 +9,7 @@ import { isSpentToken } from "../owner";
 import { storedNames } from "../token-data";
 import { confirmTokenAddress } from "./actions";
 import { ConfirmEnvelope } from "./confirm-envelope";
+import { WhyExplainer } from "@/components/why-explainer";
 
 export const metadata: Metadata = {
   title: "Confirm your address",
@@ -60,6 +61,9 @@ export default async function ConfirmAddressPage({
         lines={[household, ...address]}
         updateHref={`/u/${token}`}
       />
+      <div className="mt-4">
+        <WhyExplainer ownerName={ownerName} />
+      </div>
     </main>
   );
 }
