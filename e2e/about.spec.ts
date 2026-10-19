@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupUser,
   getUserIdByEmail,
@@ -9,6 +9,12 @@ import {
 import { signupAndLogin, stubTurnstile, uniqueEmail, uniqueSlug } from "./helpers";
 
 const ownerEmail = uniqueEmail("about-owner");
+
+async function waitForHydration(page: Page) {
+  await page.waitForFunction(() =>
+    Object.keys(document.querySelector("main") ?? {}).some((key) => key.startsWith("__reactFiber")),
+  );
+}
 let token: string;
 let slug: string;
 
@@ -40,6 +46,7 @@ test.afterAll(async () => {
 
 test("the about page answers who sent this and who sees the address", async ({ page }) => {
   await page.goto("/about");
+  await waitForHydration(page);
   await expect(page.getByRole("heading", { level: 1, name: "What is Sealed?" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Who sees my address?" })).toBeVisible();
   await expect(page.getByRole("link", { name: "hello@sealed.page" })).toHaveAttribute(
@@ -72,6 +79,7 @@ test("recipient pages and the homepage link to the about page", async ({ page })
 
 test("a visitor from another site gets no Back button", async ({ page }) => {
   await page.goto("/about", { referer: "https://mail.example.com/" });
+  await waitForHydration(page);
   await expect(page.getByRole("heading", { level: 1, name: "What is Sealed?" })).toBeVisible();
   await expect(page.getByRole("button", { name: "← Back" })).toHaveCount(0);
 });
@@ -84,4 +92,9 @@ test("the update form and the public book page explain themselves", async ({ pag
     await expect(page.getByText("Only About Owner sees what you enter.")).toBeVisible();
     await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
   }
+});
+
+test("a full page load from another Sealed page shows Back", async ({ page, baseURL }) => {
+  await page.goto("/about", { referer: `${baseURL}/u/${token}` });
+  await expect(page.getByRole("button", { name: "← Back" })).toBeVisible();
 });
