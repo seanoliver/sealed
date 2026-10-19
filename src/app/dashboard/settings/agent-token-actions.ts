@@ -22,7 +22,7 @@ export async function createAgentToken(input: AgentTokenInput): Promise<CreateAg
   const parsed = agentTokenInputSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   try {
-    const created = await mintAgentToken({ userId: claims.sub, ...input });
+    const created = await mintAgentToken(claims.sub, parsed.data);
     revalidatePath("/dashboard/settings");
     return created;
   } catch (err) {

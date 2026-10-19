@@ -32,8 +32,7 @@ describe("agent tokens", () => {
   it("generates prefixed tokens and stores only their hash", async () => {
     expect(generateAgentToken().token).toMatch(AGENT_TOKEN_SHAPE);
 
-    const { token, summary } = await mintAgentToken({
-      userId: U,
+    const { token, summary } = await mintAgentToken(U, {
       name: " Claude Code ",
       scopes: ["write", "read", "read"],
     });
@@ -47,16 +46,15 @@ describe("agent tokens", () => {
   });
 
   it("rejects bad input before touching the database", async () => {
-    await expect(mintAgentToken({ userId: U, name: "", scopes: ["read"] })).rejects.toThrow();
-    await expect(mintAgentToken({ userId: U, name: "x", scopes: [] })).rejects.toThrow();
+    await expect(mintAgentToken(U, { name: "", scopes: ["read"] })).rejects.toThrow();
+    await expect(mintAgentToken(U, { name: "x", scopes: [] })).rejects.toThrow();
     await expect(
-      mintAgentToken({ userId: U, name: "x", scopes: ["read"], expiresInDays: 0 }),
+      mintAgentToken(U, { name: "x", scopes: ["read"], expiresInDays: 0 }),
     ).rejects.toThrow();
   });
 
   it("verifies a live token to its owner's claims", async () => {
-    const { token, summary } = await mintAgentToken({
-      userId: U,
+    const { token, summary } = await mintAgentToken(U, {
       name: "agent",
       scopes: ["read"],
       expiresInDays: 30,
@@ -73,7 +71,7 @@ describe("agent tokens", () => {
   });
 
   it("records last use at most once a minute", async () => {
-    const { token, summary } = await mintAgentToken({ userId: U, name: "agent", scopes: ["read"] });
+    const { token, summary } = await mintAgentToken(U, { name: "agent", scopes: ["read"] });
     await dbAdmin.execute(sql`
       update public.agent_tokens set last_used_at = now() - interval '30 seconds' where id = ${summary.id}`);
     const before = (await stored(summary.id)).lastUsedAt;
@@ -87,7 +85,7 @@ describe("agent tokens", () => {
   });
 
   it("refuses malformed, unknown, revoked and expired tokens", async () => {
-    const { token, summary } = await mintAgentToken({ userId: U, name: "agent", scopes: ["read"] });
+    const { token, summary } = await mintAgentToken(U, { name: "agent", scopes: ["read"] });
 
     expect(await verifyAgentToken(undefined)).toBeNull();
     expect(await verifyAgentToken("not-a-token")).toBeNull();
@@ -105,8 +103,8 @@ describe("agent tokens", () => {
   });
 
   it("lists and revokes only the owner's tokens", async () => {
-    const mine = await mintAgentToken({ userId: U, name: "mine", scopes: ["read"] });
-    const theirs = await mintAgentToken({ userId: OTHER, name: "theirs", scopes: ["read"] });
+    const mine = await mintAgentToken(U, { name: "mine", scopes: ["read"] });
+    const theirs = await mintAgentToken(OTHER, { name: "theirs", scopes: ["read"] });
 
     const listed = await listAgentTokens({ sub: U });
     expect(listed.map((token) => token.name)).toEqual(["mine"]);

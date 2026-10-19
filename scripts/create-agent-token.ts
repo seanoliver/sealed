@@ -21,8 +21,7 @@ async function main() {
   );
   if (!user) throw new Error(`No user with email ${values.email}`);
 
-  const { token, summary } = await mintAgentToken({
-    userId: user.id,
+  const { token, summary } = await mintAgentToken(user.id, {
     name: values.name,
     scopes: values.scopes.split(",").map((scope) => scope.trim()) as AgentTokenInput["scopes"],
     expiresInDays:

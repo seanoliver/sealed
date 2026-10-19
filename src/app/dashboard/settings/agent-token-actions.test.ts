@@ -9,17 +9,19 @@ vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const U = "00000000-0000-4000-8000-0000000ab001";
+const OTHER = "00000000-0000-4000-8000-0000000ab002";
 
 describe("agent token actions", () => {
   beforeEach(async () => {
     vi.mocked(requireUser).mockResolvedValue({ sub: U });
-    await dbAdmin.execute(sql`delete from public.agent_tokens where user_id = ${U}`);
+    await dbAdmin.execute(sql`delete from public.agent_tokens where user_id in (${U}, ${OTHER})`);
     await dbAdmin.execute(sql`
-      insert into auth.users (id, email) values (${U}, 'ata-owner@ata.test') on conflict (id) do nothing`);
+      insert into auth.users (id, email) values (${U}, 'ata-owner@ata.test'), (${OTHER}, 'ata-other@ata.test')
+      on conflict (id) do nothing`);
   });
 
   afterAll(async () => {
-    await dbAdmin.execute(sql`delete from auth.users where id = ${U}`);
+    await dbAdmin.execute(sql`delete from auth.users where id in (${U}, ${OTHER})`);
   });
 
   it("creates a token for the signed-in owner and shows it once", async () => {
@@ -30,6 +32,31 @@ describe("agent token actions", () => {
     const listed = await listAgentTokens();
     expect(listed).toEqual([expect.objectContaining({ id: created.summary.id, name: "Claude Code" })]);
     expect(JSON.stringify(listed)).not.toContain(created.token);
+  });
+
+  it("mints for the session user even when the caller passes another user id", async () => {
+    const created = await createAgentToken({
+      name: "sneaky",
+      scopes: ["read"],
+      userId: OTHER,
+    } as never);
+    if (!("token" in created)) throw new Error(created.error);
+    expect((await verifyAgentToken(created.token))?.claims.sub).toBe(U);
+    const [{ n }] = await dbAdmin.execute<{ n: number }>(
+      sql`select count(*)::int as n from public.agent_tokens where user_id = ${OTHER}`,
+    );
+    expect(n).toBe(0);
+  });
+
+  it("returns a generic message when the insert fails", async () => {
+    const insert = vi.spyOn(dbAdmin, "insert").mockImplementationOnce(() => {
+      throw new Error("connection lost");
+    });
+    vi.spyOn(console, "error").mockImplementationOnce(() => {});
+    expect(await createAgentToken({ name: "x", scopes: ["read"] })).toEqual({
+      error: "Something went wrong. Please try again.",
+    });
+    expect(insert).toHaveBeenCalledOnce();
   });
 
   it("explains invalid input", async () => {

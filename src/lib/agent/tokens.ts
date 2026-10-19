@@ -56,10 +56,10 @@ const summaryColumns = {
 };
 
 // Bypasses RLS: `userId` must come from an authenticated session, never from request input.
-export async function mintAgentToken({
-  userId,
-  ...input
-}: { userId: string } & AgentTokenInput): Promise<{ token: string; summary: AgentTokenSummary }> {
+export async function mintAgentToken(
+  userId: string,
+  input: AgentTokenInput,
+): Promise<{ token: string; summary: AgentTokenSummary }> {
   const { name, scopes, expiresInDays } = agentTokenInputSchema.parse(input);
   const { token, hash } = generateAgentToken();
   const [summary] = await dbAdmin
