@@ -76,8 +76,21 @@ export function toSheetRow(
     postal_code: row.postalCode ?? "",
     country: row.country ?? "",
   };
-  const twoPeople =
-    row.partnerEmail !== null || row.sendStatuses.partner.status !== "none";
+  // A person whose email was removed no longer counts: their old bounce
+  // can't be resent, so it must not hold the row in Needs attention.
+  const emailed = (["primary", "partner"] as const).filter(
+    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
+  );
+  const sendOf = (recipient: Recipient): RecipientSend =>
+    emailed.includes(recipient)
+      ? row.sendStatuses[recipient]
+      : { status: "none", failureReason: null };
+  const combined = combineSends(sendOf("primary"), sendOf("partner"));
+  const attention = row.updatedAfterSend
+    ? []
+    : emailed
+        .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
+        .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status }));
   return {
     id: row.id,
     names: {
@@ -91,24 +104,17 @@ export function toSheetRow(
       kids: row.kids,
     },
     values,
-    status: row.updatedAfterSend ? "updated" : row.sendStatus,
-    failureReason: row.sendFailureReason,
-    people: twoPeople
-      ? (["primary", "partner"] as const).map((recipient) => ({
+    status: row.updatedAfterSend ? "updated" : combined.status,
+    failureReason: combined.failureReason,
+    people:
+      emailed.length === 2
+        ? emailed.map((recipient) => ({
           name: personName(row, recipient) ?? (recipient === "primary" ? "First" : "Partner"),
           ...row.sendStatuses[recipient],
         }))
       : [],
-    needsAttention: !row.updatedAfterSend && row.needsAttention,
-    attention: row.updatedAfterSend
-      ? []
-      : (["primary", "partner"] as const)
-          .filter(
-            (recipient) =>
-              (recipient === "primary" ? row.email : row.partnerEmail) !== null &&
-              NEEDS_ATTENTION.has(row.sendStatuses[recipient].status),
-          )
-          .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status })),
+    needsAttention: attention.length > 0,
+    attention,
     answers: answer ? twoAnswers(row, answer) : null,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),

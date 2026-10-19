@@ -122,7 +122,15 @@ describe("toSheetRow", () => {
   });
 
   it("needs attention when either person does, until someone answers", () => {
-    const half = { ...listRow, needsAttention: true };
+    const half: ContactListRow = {
+      ...listRow,
+      partnerEmail: "will@example.test",
+      sendStatuses: {
+        primary: { status: "delivered", failureReason: null },
+        partner: { status: "bounced", failureReason: null },
+      },
+      needsAttention: true,
+    };
     expect(toSheetRow(half, String).needsAttention).toBe(true);
     expect(toSheetRow({ ...half, updatedAfterSend: true }, String).needsAttention).toBe(false);
     expect(toSheetRow(listRow, String).needsAttention).toBe(false);
@@ -376,6 +384,39 @@ describe("statusRank", () => {
   });
 });
 
+describe("a person whose email was removed", () => {
+  const bounced: ContactListRow = {
+    ...listRow,
+    firstName: "Jen",
+    partnerFirstName: "Mark",
+    partnerEmail: null,
+    sendStatus: "bounced",
+    sendStatuses: {
+      primary: { status: "delivered", failureReason: null },
+      partner: { status: "bounced", failureReason: null },
+    },
+    needsAttention: true,
+  };
+
+  it("no longer holds the row in Needs attention or sorts it with problems", () => {
+    const row = toSheetRow(bounced, String);
+    expect(row.needsAttention).toBe(false);
+    expect(row.attention).toEqual([]);
+    expect(row.status).toBe("delivered");
+    expect(statusRank(row)).toBe(STATUS_RANK.delivered);
+  });
+
+  it("gets no chip of their own", () => {
+    expect(toSheetRow(bounced, String).people).toEqual([]);
+  });
+
+  it("leaves a contact with no email at all as not sent", () => {
+    const row = toSheetRow({ ...bounced, email: null }, String);
+    expect(row.status).toBe("none");
+    expect(row.needsAttention).toBe(false);
+  });
+});
+
 describe("sendPlan", () => {
   const ada = toSheetRow(listRow, String);
   const noEmail = toSheetRow({ ...listRow, id: "00000000-0000-0000-0000-000000000003", email: null }, String);
@@ -386,7 +427,7 @@ describe("sendPlan", () => {
       contacts: 2,
       emails: 3,
       skipped: 1,
-      replacedLinks: 3,
+      replacedLinks: 2,
     });
   });
 
