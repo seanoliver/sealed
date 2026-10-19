@@ -145,7 +145,6 @@ function parseDetails(values: Partial<ContactFormValues>): ParsedDetails {
     : details;
 }
 
-/** The contact form shows a field's error under that field, the rest on top. */
 function detailsErrorState(
   details: Extract<ParsedDetails, { success: false }>,
 ): Pick<ContactFormState, "error" | "fieldErrors"> {
