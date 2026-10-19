@@ -290,3 +290,51 @@ describe("agent read tools match the dashboard", () => {
     expect(items.map((group) => ids(group.contacts))).toEqual([[IVAN, IVAN_AGAIN]]);
   });
 });
+
+describe("get_contact's updated-after-send rule", () => {
+  const U3 = "00000000-0000-4000-8000-0000000a9201";
+  const B3 = "10000000-0000-4000-8000-0000000a9201";
+  const KIM = "20000000-0000-4000-8000-0000000a9201";
+  const LEO = "20000000-0000-4000-8000-0000000a9202";
+  const owner = { sub: U3 };
+
+  beforeAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${B3}`);
+    await dbAdmin.execute(sql`
+      insert into auth.users (id, email) values (${U3}, 'rt-rule@rt.test') on conflict (id) do nothing`);
+    await dbAdmin.execute(sql`insert into public.books (id, owner_id, slug) values (${B3}, ${U3}, 'rt-rule-book')`);
+    await dbAdmin.execute(sql`
+      insert into public.contacts (id, book_id, full_name, partner_name, email, partner_email) values
+        (${KIM}, ${B3}, 'Kim Park', null, 'kim@rt.test', null),
+        (${LEO}, ${B3}, 'Leo Hart', 'Mia Hart', 'leo@rt.test', 'mia@rt.test')`);
+    await dbAdmin.execute(sql`
+      insert into public.email_sends (contact_id, book_id, recipient, status, failure_reason, sent_at) values
+        (${KIM}, ${B3}, 'primary', 'failed', 'rejected', now() - interval '10 min'),
+        (${LEO}, ${B3}, 'primary', 'delivered', null, now() - interval '30 min'),
+        (${LEO}, ${B3}, 'partner', 'delivered', null, now() - interval '5 min')`);
+    await dbAdmin.execute(sql`
+      insert into public.contact_events (contact_id, source, recipient, diff, created_at) values
+        (${KIM}, 'owner', null, '{"city": [null, "Busan"]}', now() - interval '5 min'),
+        (${LEO}, 'token', 'primary', '{}', now() - interval '15 min')`);
+  });
+
+  afterAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${B3}`);
+    await dbAdmin.execute(sql`delete from auth.users where id = ${U3}`);
+  });
+
+  it("ignores owner edits made after a failed send", async () => {
+    const kim = await getContact(owner, getContactInput.parse({ id: KIM }));
+    expect(kim?.sendStatus).toMatchObject({
+      status: "failed",
+      updatedAfterSend: false,
+      needsAttention: true,
+      attention: [{ recipient: "primary", status: "failed" }],
+    });
+  });
+
+  it("needs the reply to be newer than both people's latest sends", async () => {
+    const leo = await getContact(owner, getContactInput.parse({ id: LEO }));
+    expect(leo?.sendStatus).toMatchObject({ status: "delivered", updatedAfterSend: false });
+  });
+});
