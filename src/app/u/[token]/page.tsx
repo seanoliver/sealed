@@ -5,6 +5,7 @@ import { storedNames } from "./token-data";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { RecipientForm } from "@/components/recipient-form";
 import { submitTokenUpdate } from "./actions";
+import { WhyExplainer } from "@/components/why-explainer";
 
 /**
  * Tokens are secrets carried in the URL — this route must NEVER be crawled,
@@ -78,6 +79,9 @@ export default async function TokenUpdatePage({
           pendingLabel="Saving…"
           household={household}
         />
+      </div>
+      <div className="mt-4">
+        <WhyExplainer ownerName={ownerLabel} />
       </div>
     </main>
   );

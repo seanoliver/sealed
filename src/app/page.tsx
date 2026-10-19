@@ -4,6 +4,7 @@ import Link from "next/link";
 import { RequestAccess, type SignInError } from "@/components/request-access-form";
 import { RequestReceived } from "@/components/request-received";
 import { SealedWordmark } from "@/components/sealed-mark";
+import { SiteFooter } from "@/components/site-footer";
 import { currentUser } from "@/lib/auth";
 import { SITE_DESCRIPTION } from "@/lib/branding";
 import { WAITLIST_REJECTION } from "@/lib/waitlist";
@@ -61,6 +62,7 @@ export default async function Home({
     params.error === "1" ? "link" : params.error ? "oauth" : undefined;
 
   return (
+    <>
     <main className="flex flex-1 items-center px-5 py-12 sm:px-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
         <SealedWordmark />
@@ -105,5 +107,7 @@ export default async function Home({
         </div>
       </div>
     </main>
+    <SiteFooter lead="A small project by Sean Oliver" />
+    </>
   );
 }

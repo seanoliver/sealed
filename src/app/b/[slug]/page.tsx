@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { InvitePageIntroduction } from "@/components/invite-page-introduction";
 import { BLANK_RECIPIENT_VALUES } from "@/components/recipient-fields";
 import { RecipientForm } from "@/components/recipient-form";
+import { WhyExplainer } from "@/components/why-explainer";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
 import {
@@ -96,6 +97,9 @@ export default async function PublicBookPage({
           emailHint={`Optional — but include it so ${ownerLabel} can reach you.`}
           household={BLANK_HOUSEHOLD_VALUES}
         />
+      </div>
+      <div className="mt-4">
+        <WhyExplainer ownerName={ownerLabel} />
       </div>
     </main>
   );

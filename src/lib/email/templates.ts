@@ -43,6 +43,7 @@ export function addressRequestEmail({
   // it enters the subject line. Resend's JSON API can't be header-injected,
   // but that guarantee shouldn't be outsourced to the transport.
   const safeOwnerName = ownerName.replace(/\p{Cc}+/gu, " ").trim();
+  const aboutUrl = new URL("/about", updateUrl).href;
   const hasAddress = envelope.address !== null;
   const subject = hasAddress
     ? `Will ${safeOwnerName}'s holiday card reach you? · Sealed`
@@ -67,7 +68,7 @@ export function addressRequestEmail({
   <p style="margin:0 0 20px">Hi, ${intro}</p>
   ${envelopeHtml}
   ${actions}
-  <p style="margin:0;color:#6a6157;font-size:13px;text-align:center">Sent with Sealed. This link is personal to you, so please don&#39;t forward it. It expires in ${TOKEN_TTL_DAYS} days.</p>
+  <p style="margin:0;color:#6a6157;font-size:13px;text-align:center">Sent with <a href="${escapeHtml(aboutUrl)}" style="color:#6a6157">Sealed</a>. This link is personal to you, so please don&#39;t forward it. It expires in ${TOKEN_TTL_DAYS} days.</p>
 </div>`;
 
   const plainLines = [envelope.household, ...(envelope.address ?? [])].map((line) => `  ${line}`).join("\n");
@@ -81,7 +82,7 @@ Will this reach you?
 Yes, send it here: ${confirmUrl}
 Fix a name or the address: ${updateUrl}
 
-Sent with Sealed. This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
+Sent with Sealed (${aboutUrl}). This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
 `
     : `Hi, ${safeOwnerName} is addressing holiday cards and wants to send you one. Here's what's on your envelope so far:
 
@@ -89,7 +90,7 @@ ${plainLines}
 
 Add your names and address: ${updateUrl}
 
-Sent with Sealed. This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
+Sent with Sealed (${aboutUrl}). This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
 `;
 
   return { subject, html, text };
