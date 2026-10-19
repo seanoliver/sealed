@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  exceedsCaps,
   FIRST_NAME_REQUIRED,
+  KIDS_MAX,
+  NAME_MAX,
   ROW_FIRST_NAME_REQUIRED,
   householdSchema,
   lastNameRequired,
@@ -209,5 +212,23 @@ describe("householdSchema", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.path).toEqual(["partner_first_name"]);
+  });
+});
+
+describe("exceedsCaps", () => {
+  const base = { first_name: "Jen", last_name: "Holloway", partner: null, kids: [] };
+  const kid = { first: "Ada", last: "Holloway" };
+
+  it("passes values inside the caps", () => {
+    expect(exceedsCaps({ ...base, kids: Array(KIDS_MAX).fill(kid) })).toBe(false);
+  });
+
+  it.each([
+    ["too many kids", { ...base, kids: Array(KIDS_MAX + 1).fill(kid) }],
+    ["a long first name", { ...base, first_name: "x".repeat(NAME_MAX + 1) }],
+    ["a long partner name", { ...base, partner: { first: "Pat", last: "y".repeat(NAME_MAX + 1) } }],
+    ["a long kid name", { ...base, kids: [{ first: "z".repeat(NAME_MAX + 1), last: "" }] }],
+  ])("flags %s", (_, values) => {
+    expect(exceedsCaps(values)).toBe(true);
   });
 });

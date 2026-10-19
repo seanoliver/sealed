@@ -17,7 +17,10 @@ import {
   TOKEN_DETAIL_FIELDS,
   tokenDetailSchema,
 } from "@/lib/validation/contact";
+import { householdPrefill, isUntouchedPrefill } from "@/lib/names";
 import {
+  exceedsCaps,
+  type HouseholdValues,
   lastNameRequired,
   parseHouseholdForm,
   readHouseholdValues,
@@ -26,20 +29,32 @@ import {
 // client code is pulled into this server action bundle.
 import { type RecipientFormState } from "@/components/recipient-form";
 import { INVALID_LINK_MESSAGE } from "../notice";
+import { storedNames, type TokenData, tokenDataSchema } from "./token-data";
 
 export type TokenUpdateState = RecipientFormState;
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-async function ownerNameForToken(token: string): Promise<string | null> {
+function keepLegacyNames(data: TokenData, posted: HouseholdValues): boolean {
+  const sections = {
+    partner: data.enabled_fields.partner_name,
+    kids: data.enabled_fields.kids_names,
+  };
+  const names = storedNames(data.contact);
+  return (
+    isUntouchedPrefill(names, posted, sections) && exceedsCaps(householdPrefill(names, sections))
+  );
+}
+
+async function tokenData(token: string): Promise<TokenData | null> {
   try {
     const rows = await dbAdmin.execute(
-      sql`select private.get_contact_for_token(${token}) ->> 'owner_name' as owner`,
+      sql`select private.get_contact_for_token(${token}) as data`,
     );
-    const owner = rows[0]?.owner;
-    return typeof owner === "string" ? owner : null;
+    const parsed = tokenDataSchema.safeParse(rows[0]?.data ?? null);
+    return parsed.success ? parsed.data : null;
   } catch (err) {
-    logDbError("[tu] [ownerNameForToken] get_contact_for_token failed", err);
+    logDbError("[tu] [tokenData] get_contact_for_token failed", err);
     return null;
   }
 }
@@ -89,11 +104,13 @@ export async function submitTokenUpdate(
   //    (which can echo values into logs) stay unreachable.
   const household = parseHouseholdForm(formData, { ownerName: "the sender" });
   const details = tokenDetailSchema.safeParse(submitted);
-  if (!household.ok || !details.success) {
-    const fieldErrors = household.ok ? undefined : household.fieldErrors;
-    if (fieldErrors?.last_name !== undefined) {
-      const ownerName = await ownerNameForToken(token);
-      if (ownerName !== null) fieldErrors.last_name = lastNameRequired(ownerName);
+  const data = household.ok ? null : await tokenData(token);
+  const keepNames =
+    data !== null && keepLegacyNames(data, readHouseholdValues(formData, { kidsLimit: Infinity }));
+  if ((!household.ok && !keepNames) || !details.success) {
+    const fieldErrors = household.ok || keepNames ? undefined : household.fieldErrors;
+    if (fieldErrors?.last_name !== undefined && data !== null) {
+      fieldErrors.last_name = lastNameRequired(data.owner_name);
     }
     return {
       error: details.success
@@ -112,16 +129,17 @@ export async function submitTokenUpdate(
   //    CAN inject extra keys here, but apply_token_update re-gates disabled
   //    fields against books.enabled_fields server-side, so they are inert.
   //    Test the section markers: a removed partner row posts no partner keys.
-  const names = household.data;
-  const payload: Record<string, unknown> = {
-    first_name: names.first_name,
-    last_name: names.last_name,
-  };
-  if (formData.has("partner_section")) {
-    payload.partner_first_name = names.partner_first_name ?? "";
-    payload.partner_last_name = names.partner_last_name ?? "";
+  const payload: Record<string, unknown> = {};
+  if (household.ok) {
+    const names = household.data;
+    payload.first_name = names.first_name;
+    payload.last_name = names.last_name;
+    if (formData.has("partner_section")) {
+      payload.partner_first_name = names.partner_first_name ?? "";
+      payload.partner_last_name = names.partner_last_name ?? "";
+    }
+    if (formData.has("kids_section")) payload.kids = names.kids ?? [];
   }
-  if (formData.has("kids_section")) payload.kids = names.kids ?? [];
   for (const field of TOKEN_DETAIL_FIELDS) {
     if (formData.has(field)) payload[field] = details.data[field] ?? "";
   }

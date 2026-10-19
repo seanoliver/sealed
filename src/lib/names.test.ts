@@ -8,6 +8,7 @@ import {
   formatPerson,
   householdLine,
   householdPrefill,
+  isHouseholdLabel,
   isSplit,
   kidsCount,
   kidsSummary,
@@ -206,6 +207,32 @@ describe("householdPrefill", () => {
 
 });
 
+describe("isHouseholdLabel", () => {
+  it.each(["Satya & Family", "Satya's Parents", "Satya’s Family", "The Smiths", "Lee kids", "Ana and family", "Satya's Place"])(
+    "treats %s as a label",
+    (name) => expect(isHouseholdLabel(name)).toBe(true),
+  );
+
+  it.each(["Jen Holloway", "Mary Ann Smith", "D'Souza Rao", "Theo Chang", "Satya"])(
+    "treats %s as a name",
+    (name) => expect(isHouseholdLabel(name)).toBe(false),
+  );
+});
+
+describe("householdPrefill for a household label", () => {
+  it("prefills the whole label as the first name", () => {
+    expect(householdPrefill({ ...legacy, fullName: "Satya & Family" })).toMatchObject({
+      first_name: "Satya & Family",
+      last_name: "",
+    });
+  });
+
+  it("matches as untouched when posted back unchanged", () => {
+    const label = { ...legacy, fullName: "Satya's Parents" };
+    expect(isUntouchedPrefill(label, householdPrefill(label))).toBe(true);
+  });
+});
+
 describe("lastNameKey and compareLastName", () => {
   it("has no key for an unsplit contact", () => {
     expect(lastNameKey(legacy)).toBeUndefined();
@@ -281,5 +308,12 @@ describe("isUntouchedPrefill", () => {
   it("is false for a split contact", () => {
     const split = { ...legacy, firstName: "Jen", lastName: "Holloway" };
     expect(isUntouchedPrefill(split, householdPrefill(split))).toBe(false);
+  });
+
+  it("compares against the prefill with switched-off sections left out", () => {
+    const sections = { partner: false, kids: false };
+    const shown = householdPrefill(legacy, sections);
+    expect(isUntouchedPrefill(legacy, shown, sections)).toBe(true);
+    expect(isUntouchedPrefill(legacy, shown)).toBe(false);
   });
 });

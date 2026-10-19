@@ -43,6 +43,19 @@ export function naiveSplit(fullName: string): { first: string; last: string } {
   };
 }
 
+const LABEL_WORDS = new Set(["family", "fam", "kids", "children", "parents", "household", "crew", "clan"]);
+
+/** "Satya & Family", "Satya's Parents", "The Smiths": a household label with no guessable split. */
+export function isHouseholdLabel(fullName: string): boolean {
+  const words = fullName.trim().toLowerCase().split(/\s+/);
+  return (
+    words[0] === "the" ||
+    words.some(
+      (word) => LABEL_WORDS.has(word.replace(/[^\p{L}]/gu, "")) || /\p{L}['’]s$/u.test(word),
+    )
+  );
+}
+
 export function splitKids(kidsNames: string): string[] {
   return kidsNames
     .split(/,|\s+and\s+/i)
@@ -68,7 +81,9 @@ export const isSplit = (names: StoredNames) => names.firstName !== null;
 function contactPerson(names: StoredNames): Person {
   return isSplit(names)
     ? { first: names.firstName ?? "", last: names.lastName ?? "" }
-    : naiveSplit(names.fullName);
+    : isHouseholdLabel(names.fullName)
+      ? { first: names.fullName.trim(), last: "" }
+      : naiveSplit(names.fullName);
 }
 
 function partnerPerson(names: StoredNames): Person | null {
@@ -129,9 +144,13 @@ export function householdPrefill(
   };
 }
 
-export function isUntouchedPrefill(names: StoredNames, posted: HouseholdValues): boolean {
+export function isUntouchedPrefill(
+  names: StoredNames,
+  posted: HouseholdValues,
+  sections: { partner?: boolean; kids?: boolean } = {},
+): boolean {
   if (isSplit(names)) return false;
-  return JSON.stringify(posted) === JSON.stringify(householdPrefill(names));
+  return JSON.stringify(posted) === JSON.stringify(householdPrefill(names, sections));
 }
 
 export function lastNameKey(names: StoredNames): Person | undefined {
