@@ -8,7 +8,7 @@ import { combineSends, type RecipientSend } from "@/lib/contacts-sheet";
 import { type StoredNames } from "@/lib/names";
 import { type Recipient } from "@/lib/recipients";
 
-const SEND_STATUSES = [
+export const SEND_STATUSES = [
   "sent",
   "delivered",
   "opened",
