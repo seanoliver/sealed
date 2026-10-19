@@ -20,9 +20,12 @@ type TurnstileGlobal = {
     container: HTMLElement,
     options: {
       sitekey: string;
+      appearance: "always" | "execute" | "interaction-only";
       callback: () => void;
       "expired-callback": () => void;
       "error-callback": () => void;
+      "before-interactive-callback": () => void;
+      "after-interactive-callback": () => void;
     },
   ) => string;
   reset: (widgetId: string) => void;
@@ -33,25 +36,32 @@ function turnstileGlobal(): TurnstileGlobal | undefined {
   return (window as { turnstile?: TurnstileGlobal }).turnstile;
 }
 
+export type TurnstileStatus = "checking" | "ready" | "failed";
+
 /**
  * Keep explicit rendering: implicit mode scans the page once, so a remounted form gets no widget.
  * Pass the action state as `resetOn`; siteverify consumes each response.
  */
 export function TurnstileWidget({
   resetOn,
-  onTokenChange,
+  onStatusChange,
 }: {
   resetOn?: unknown;
-  onTokenChange?: (hasToken: boolean) => void;
+  onStatusChange?: (status: TurnstileStatus) => void;
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [widgetId, setWidgetId] = useState<string>();
   const [failed, setFailed] = useState(false);
+  const [interactive, setInteractive] = useState(false);
   const initialResetOn = useRef(resetOn);
-  const onTokenChangeRef = useRef(onTokenChange);
+  const onStatusChangeRef = useRef(onStatusChange);
   useEffect(() => {
-    onTokenChangeRef.current = onTokenChange;
+    onStatusChangeRef.current = onStatusChange;
   });
+  const fail = () => {
+    setFailed(true);
+    onStatusChangeRef.current?.("failed");
+  };
 
   function renderWidget() {
     const turnstile = turnstileGlobal();
@@ -60,15 +70,15 @@ export function TurnstileWidget({
     setWidgetId(
       turnstile.render(container, {
         sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
+        appearance: "interaction-only",
         callback: () => {
           setFailed(false);
-          onTokenChangeRef.current?.(true);
+          onStatusChangeRef.current?.("ready");
         },
-        "expired-callback": () => onTokenChangeRef.current?.(false),
-        "error-callback": () => {
-          setFailed(true);
-          onTokenChangeRef.current?.(false);
-        },
+        "expired-callback": () => onStatusChangeRef.current?.("checking"),
+        "error-callback": fail,
+        "before-interactive-callback": () => setInteractive(true),
+        "after-interactive-callback": () => setInteractive(false),
       }),
     );
   }
@@ -80,7 +90,7 @@ export function TurnstileWidget({
 
   useEffect(() => {
     if (!widgetId || resetOn === initialResetOn.current) return;
-    onTokenChangeRef.current?.(false);
+    onStatusChangeRef.current?.("checking");
     turnstileGlobal()?.reset(widgetId);
   }, [resetOn, widgetId]);
 
@@ -90,9 +100,9 @@ export function TurnstileWidget({
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
         onReady={renderWidget}
-        onError={() => setFailed(true)}
+        onError={fail}
       />
-      <div ref={containerRef} />
+      <div ref={containerRef} className={interactive ? undefined : "hidden"} />
       {failed ? (
         <p role="alert" className="text-sm text-destructive">
           The verification check didn’t load. Allow challenges.cloudflare.com in

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { TurnstileWidget } from "@/components/turnstile-widget";
+import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-widget";
 import { type ConfirmState } from "./actions";
 
 type Props = {
@@ -30,7 +30,7 @@ export function ConfirmEnvelope({
     },
     {},
   );
-  const [hasToken, setHasToken] = useState(false);
+  const [turnstile, setTurnstile] = useState<TurnstileStatus>("checking");
 
   if (state.confirmed) {
     return (
@@ -75,17 +75,17 @@ export function ConfirmEnvelope({
           ))}
         </address>
       </div>
-      <TurnstileWidget resetOn={state} onTokenChange={setHasToken} />
+      <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
       <button
         type="submit"
-        disabled={pending || !hasToken}
+        disabled={pending || turnstile !== "ready"}
         className="h-12 rounded-lg bg-primary text-base font-semibold text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50"
       >
         {pending
           ? "Saving…"
-          : hasToken
-            ? "Yes, send it here"
-            : "Checking you're human…"}
+          : turnstile === "checking"
+            ? "Checking you're human…"
+            : "Yes, send it here"}
       </button>
       <a
         href={updateHref}
