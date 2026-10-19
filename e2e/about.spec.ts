@@ -10,6 +10,7 @@ import { signupAndLogin, stubTurnstile, uniqueEmail, uniqueSlug } from "./helper
 
 const ownerEmail = uniqueEmail("about-owner");
 let token: string;
+let slug: string;
 
 test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
@@ -17,7 +18,7 @@ test.beforeAll(async ({ browser }) => {
   await page.close();
   const bookId = await seedBook({
     ownerId: await getUserIdByEmail(ownerEmail),
-    slug: uniqueSlug("about-book"),
+    slug: (slug = uniqueSlug("about-book")),
     displayName: "About Owner",
   });
   token = await seedUpdateToken(
@@ -65,6 +66,22 @@ test("recipient pages and the homepage link to the about page", async ({ page })
   await stubTurnstile(page);
   for (const path of [`/u/${token}`, `/u/${token}/confirm`, "/"]) {
     await page.goto(path);
+    await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
+  }
+});
+
+test("a visitor from another site gets no Back button", async ({ page }) => {
+  await page.goto("/about", { referer: "https://mail.example.com/" });
+  await expect(page.getByRole("heading", { level: 1, name: "What is Sealed?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "← Back" })).toHaveCount(0);
+});
+
+test("the update form and the public book page explain themselves", async ({ page }) => {
+  await stubTurnstile(page);
+  for (const path of [`/u/${token}`, `/b/${slug}`]) {
+    await page.goto(path);
+    await page.getByText("Why am I getting this?").click();
+    await expect(page.getByText("Only About Owner sees what you enter.")).toBeVisible();
     await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
   }
 });
