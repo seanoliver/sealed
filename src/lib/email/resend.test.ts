@@ -12,7 +12,12 @@ vi.mock("resend", () => ({
 
 import { sendAddressRequests, sendNotification } from "./resend";
 
-const item = { to: "a@example.test", subject: "Hi", html: "<p>Hi</p>", text: "Hi" };
+const item = {
+  to: "a@example.test",
+  subject: "Hi",
+  html: "<p>Hi</p>",
+  text: "Hi",
+};
 
 describe("sendNotification", () => {
   beforeEach(() => {
@@ -34,7 +39,10 @@ describe("sendNotification", () => {
   it("returns true when Resend accepts the email", async () => {
     await expect(sendNotification(item)).resolves.toBe(true);
     expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({ from: "Sealed <hello@example.test>", to: item.to }),
+      expect.objectContaining({
+        from: "Sealed <hello@example.test>",
+        to: item.to,
+      }),
     );
   });
 
@@ -45,7 +53,10 @@ describe("sendNotification", () => {
   });
 
   it("returns false when Resend reports an error", async () => {
-    send.mockResolvedValue({ data: null, error: { name: "validation_error", message: "bad" } });
+    send.mockResolvedValue({
+      data: null,
+      error: { name: "validation_error", message: "bad" },
+    });
     await expect(sendNotification(item)).resolves.toBe(false);
   });
 
@@ -63,8 +74,14 @@ describe("sendNotification", () => {
 
 describe("sendAddressRequests", () => {
   const items = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ ...item, to: `r${i}@example.test` }));
-  const ok = (ids: string[], errors?: { index: number; message: string }[]) => ({
+    Array.from({ length: n }, (_, i) => ({
+      ...item,
+      to: `r${i}@example.test`,
+    }));
+  const ok = (
+    ids: string[],
+    errors?: { index: number; message: string }[],
+  ) => ({
     data: { data: ids.map((id) => ({ id })), ...(errors ? { errors } : {}) },
     error: null,
   });
@@ -96,14 +113,44 @@ describe("sendAddressRequests", () => {
     expect(batchSend).toHaveBeenCalledTimes(2);
     expect(batchSend.mock.calls[0][0]).toHaveLength(100);
     expect(batchSend.mock.calls[1][0]).toHaveLength(50);
-    expect(batchSend.mock.calls[0][1]).toEqual({ batchValidation: "permissive", idempotencyKey: "k1/0" });
-    expect(batchSend.mock.calls[1][1]).toEqual({ batchValidation: "permissive", idempotencyKey: "k1/1" });
+    expect(batchSend.mock.calls[0][1]).toEqual({
+      batchValidation: "permissive",
+      idempotencyKey: "k1/0",
+    });
+    expect(batchSend.mock.calls[1][1]).toEqual({
+      batchValidation: "permissive",
+      idempotencyKey: "k1/1",
+    });
     expect(results.every((r) => r.status === "sent")).toBe(true);
-    expect(results[149]).toEqual({ status: "sent", id: "id49", to: "r149@example.test" });
+    expect(results[149]).toEqual({
+      status: "sent",
+      id: "id49",
+      to: "r149@example.test",
+    });
+  });
+
+  it("says why an email failed", async () => {
+    batchSend.mockResolvedValueOnce(ok(["a"], [{ index: 1, message: "bad" }]));
+    expect((await sendAddressRequests(items(2), opts))[1]).toMatchObject({
+      status: "failed",
+      reason: "rejected",
+    });
+    batchSend.mockResolvedValueOnce(fail("daily_quota_exceeded", 429));
+    expect((await sendAddressRequests(items(1), opts))[0]).toMatchObject({
+      status: "failed",
+      reason: "quota",
+    });
+    batchSend.mockResolvedValueOnce(fail("validation_error", 422));
+    expect((await sendAddressRequests(items(1), opts))[0]).toMatchObject({
+      status: "failed",
+      reason: "error",
+    });
   });
 
   it("fails only the rejected emails and keeps the other ids in place", async () => {
-    batchSend.mockResolvedValue(ok(["a", "c"], [{ index: 1, message: "Invalid `to` field" }]));
+    batchSend.mockResolvedValue(
+      ok(["a", "c"], [{ index: 1, message: "Invalid `to` field" }]),
+    );
     const results = await sendAddressRequests(items(3), opts);
     expect(results.map((r) => [r.status, r.id])).toEqual([
       ["sent", "a"],
@@ -115,7 +162,11 @@ describe("sendAddressRequests", () => {
   it("marks accepted emails unknown when the id count does not line up", async () => {
     batchSend.mockResolvedValue(ok(["a"], [{ index: 2, message: "bad" }]));
     const results = await sendAddressRequests(items(3), opts);
-    expect(results.map((r) => r.status)).toEqual(["unknown", "unknown", "failed"]);
+    expect(results.map((r) => r.status)).toEqual([
+      "unknown",
+      "unknown",
+      "failed",
+    ]);
   });
 
   it("retries network errors, rate limits and key conflicts with the same key", async () => {
@@ -126,7 +177,9 @@ describe("sendAddressRequests", () => {
       .mockResolvedValueOnce(ok(["a"]));
     const results = await sendAddressRequests(items(1), opts);
     expect(batchSend).toHaveBeenCalledTimes(4);
-    expect(new Set(batchSend.mock.calls.map((c) => c[1].idempotencyKey))).toEqual(new Set(["k1/0"]));
+    expect(
+      new Set(batchSend.mock.calls.map((c) => c[1].idempotencyKey)),
+    ).toEqual(new Set(["k1/0"]));
     expect(results[0].status).toBe("sent");
   });
 
@@ -153,15 +206,23 @@ describe("sendAddressRequests", () => {
 
   it("treats a missing status code as ambiguous", async () => {
     batchSend
-      .mockResolvedValueOnce({ data: null, error: { name: "application_error", message: "x" } })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { name: "application_error", message: "x" },
+      })
       .mockResolvedValueOnce(ok(["a"]));
     const results = await sendAddressRequests(items(1), opts);
     expect(results[0].status).toBe("sent");
   });
 
   it("times out a hung call and retries it with the same key", async () => {
-    batchSend.mockReturnValueOnce(new Promise(() => {})).mockResolvedValueOnce(ok(["a"]));
-    const results = await sendAddressRequests(items(1), { ...opts, attemptTimeoutMs: 5 });
+    batchSend
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce(ok(["a"]));
+    const results = await sendAddressRequests(items(1), {
+      ...opts,
+      attemptTimeoutMs: 5,
+    });
     expect(batchSend).toHaveBeenCalledTimes(2);
     expect(batchSend.mock.calls[1][1].idempotencyKey).toBe("k1/0");
     expect(results[0].status).toBe("sent");
@@ -174,16 +235,21 @@ describe("sendAddressRequests", () => {
       now += 100;
       return ok(payload.map((_, i) => `id${i}`));
     });
-    const results = await sendAddressRequests(items(150), { ...opts, budgetMs: 50 });
+    const results = await sendAddressRequests(items(150), {
+      ...opts,
+      budgetMs: 50,
+    });
     expect(batchSend).toHaveBeenCalledTimes(1);
     expect(results[0].status).toBe("sent");
-    expect(results[100].status).toBe("failed");
+    expect(results[100]).toMatchObject({ status: "failed", reason: "error" });
   });
 
   it("ignores a rejected index outside the chunk", async () => {
     batchSend.mockResolvedValue(ok(["a"], [{ index: 9, message: "x" }]));
     const results = await sendAddressRequests(items(1), opts);
-    expect(results).toEqual([{ status: "sent", id: "a", to: "r0@example.test" }]);
+    expect(results).toEqual([
+      { status: "sent", id: "a", to: "r0@example.test" },
+    ]);
   });
 
   it("times out each call after 20s and gives up within 240s by default", async () => {
@@ -191,10 +257,12 @@ describe("sendAddressRequests", () => {
     try {
       batchSend.mockReturnValue(new Promise(() => {}));
       let settled = false;
-      const done = sendAddressRequests(items(1), { batchKey: "k1" }).then((r) => {
-        settled = true;
-        return r;
-      });
+      const done = sendAddressRequests(items(1), { batchKey: "k1" }).then(
+        (r) => {
+          settled = true;
+          return r;
+        },
+      );
       await vi.advanceTimersByTimeAsync(19_999);
       expect(batchSend).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1 + 1000);
@@ -226,9 +294,11 @@ describe("sendAddressRequests", () => {
     try {
       batchSend.mockReturnValue(new Promise(() => {}));
       let settled = false;
-      void sendAddressRequests(items(1), { ...opts, attemptTimeoutMs: 60_000, budgetMs: 30_000 }).then(
-        () => (settled = true),
-      );
+      void sendAddressRequests(items(1), {
+        ...opts,
+        attemptTimeoutMs: 60_000,
+        budgetMs: 30_000,
+      }).then(() => (settled = true));
       await vi.advanceTimersByTimeAsync(30_001);
       expect(settled).toBe(true);
     } finally {
@@ -237,7 +307,9 @@ describe("sendAddressRequests", () => {
   });
 
   it("treats a thrown client error as retryable", async () => {
-    batchSend.mockRejectedValueOnce(new TypeError("fetch failed")).mockResolvedValueOnce(ok(["a"]));
+    batchSend
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(ok(["a"]));
     const results = await sendAddressRequests(items(1), opts);
     expect(results[0].status).toBe("sent");
   });
@@ -256,16 +328,36 @@ describe("sendAddressRequests", () => {
   it("keeps sending later chunks after one fails", async () => {
     batchSend
       .mockResolvedValueOnce(fail("validation_error", 422))
-      .mockImplementationOnce(async (payload: unknown[]) => ok(payload.map((_, i) => `b${i}`)));
+      .mockImplementationOnce(async (payload: unknown[]) =>
+        ok(payload.map((_, i) => `b${i}`)),
+      );
     const results = await sendAddressRequests(items(101), opts);
     expect(results[0].status).toBe("failed");
-    expect(results[100]).toEqual({ status: "sent", id: "b0", to: "r100@example.test" });
+    expect(results[100]).toEqual({
+      status: "sent",
+      id: "b0",
+      to: "r100@example.test",
+    });
   });
 
   it("refuses to send without EMAIL_FROM", async () => {
     vi.stubEnv("EMAIL_FROM", "");
-    await expect(sendAddressRequests(items(1), opts)).rejects.toThrow("EMAIL_FROM is not set");
+    await expect(sendAddressRequests(items(1), opts)).rejects.toThrow(
+      "EMAIL_FROM is not set",
+    );
     expect(batchSend).not.toHaveBeenCalled();
+  });
+
+  it("rejects reserved .invalid addresses in dry-run", async () => {
+    vi.stubEnv("EMAIL_DRY_RUN", "1");
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const results = await sendAddressRequests(
+      [{ ...item, to: "ivy@bad.invalid" }],
+      opts,
+    );
+    expect(results).toEqual([
+      { status: "failed", id: null, to: "ivy@bad.invalid", reason: "rejected" },
+    ]);
   });
 
   it("returns sent dry-run ids without calling Resend", async () => {
@@ -273,6 +365,8 @@ describe("sendAddressRequests", () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const results = await sendAddressRequests(items(2), opts);
     expect(batchSend).not.toHaveBeenCalled();
-    expect(results.every((r) => r.status === "sent" && r.id.startsWith("dry_"))).toBe(true);
+    expect(
+      results.every((r) => r.status === "sent" && r.id.startsWith("dry_")),
+    ).toBe(true);
   });
 });

@@ -8,6 +8,7 @@ import {
   isSplit,
   type StoredNames,
 } from "@/lib/names";
+import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
 import type { ContactFormValues } from "@/lib/validation/contact";
 import {
@@ -36,6 +37,7 @@ export interface SheetRow {
   names: StoredNames;
   values: SheetValues;
   status: StatusKey;
+  failureReason: FailureReason | null;
   updatedAtIso: string;
   updatedAtLabel: string;
 }
@@ -65,6 +67,7 @@ export function toSheetRow(
       country: row.country ?? "",
     },
     status: row.updatedAfterSend ? "updated" : row.sendStatus,
+    failureReason: row.sendFailureReason,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
   };
@@ -72,14 +75,24 @@ export function toSheetRow(
 
 /** Sort rank for the status column: ascending puts problems first. */
 export const STATUS_RANK: Record<StatusKey, number> = {
-  bounced: 0,
-  complained: 1,
-  none: 2,
-  sent: 3,
-  delivered: 4,
-  opened: 5,
-  updated: 6,
+  failed: 0,
+  bounced: 1,
+  complained: 2,
+  unconfirmed: 3,
+  none: 4,
+  sent: 5,
+  delivered: 6,
+  opened: 7,
+  updated: 8,
 };
+
+/** Latest sends the owner should look at: failed, bounced or never confirmed. */
+export const NEEDS_ATTENTION: ReadonlySet<StatusKey> = new Set([
+  "failed",
+  "bounced",
+  "complained",
+  "unconfirmed",
+]);
 
 export function changedValues(
   values: SheetValues,

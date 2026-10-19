@@ -10,6 +10,7 @@ import {
   namesFromValues,
   parseStoredLayout,
   sheetName,
+  NEEDS_ATTENTION,
   STATUS_RANK,
   toSheetRow,
   validateHousehold,
@@ -34,6 +35,7 @@ const listRow: ContactListRow = {
   postalCode: "SW1Y 4JH",
   country: "United Kingdom",
   sendStatus: "delivered",
+  sendFailureReason: null,
   updatedAfterSend: false,
   updatedAt: new Date("2026-10-01T12:00:00Z"),
 };
@@ -135,8 +137,10 @@ describe("STATUS_RANK", () => {
   it("puts delivery problems first and updates last", () => {
     const keys = Object.keys(STATUS_RANK) as StatusKey[];
     expect(keys.sort((a, b) => STATUS_RANK[a] - STATUS_RANK[b])).toEqual([
+      "failed",
       "bounced",
       "complained",
+      "unconfirmed",
       "none",
       "sent",
       "delivered",
@@ -281,5 +285,11 @@ describe("household drafts", () => {
     expect(
       validateHousehold({ first_name: "Cher", last_name: "Sarkisian", partner: null, kids: [] }),
     ).toMatchObject({ ok: true });
+  });
+});
+
+describe("NEEDS_ATTENTION", () => {
+  it("covers every send the owner should look at", () => {
+    expect([...NEEDS_ATTENTION].sort()).toEqual(["bounced", "complained", "failed", "unconfirmed"]);
   });
 });

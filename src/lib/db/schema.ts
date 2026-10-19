@@ -72,6 +72,7 @@ export const emailSends = pgTable("email_sends", {
   status: text("status").notNull().default("sent"),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+  failureReason: text("failure_reason").$type<"rejected" | "quota" | "error">(),
 });
 
 export const contactEvents = pgTable("contact_events", {

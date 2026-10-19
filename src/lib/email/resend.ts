@@ -13,7 +13,16 @@ export interface EmailItem {
 /** Positional. `unknown`: Resend may have accepted the email but never confirmed it. */
 export type SendResult =
   | { status: "sent"; id: string; to: string }
-  | { status: "failed" | "unknown"; id: null; to: string };
+  | { status: "failed"; id: null; to: string; reason: FailureReason }
+  | { status: "unknown"; id: null; to: string };
+
+/** Why Resend refused an email: a bad address, the plan's quota, or anything else. */
+export type FailureReason = "rejected" | "quota" | "error";
+
+const QUOTA_ERRORS = new Set([
+  "daily_quota_exceeded",
+  "monthly_quota_exceeded",
+]);
 
 /** Resend's batch endpoint accepts at most 100 emails per call. */
 const BATCH_LIMIT = 100;
@@ -105,6 +114,10 @@ export async function sendAddressRequests(
       // Dev-only: surface the tokenized link so it can be opened locally.
       const url = item.text.match(/https?:\/\/\S+/)?.[0] ?? "<no url found>";
       console.info(`[em] [dry-run] address request to ${item.to}: ${url}`);
+      // The reserved .invalid domain stands in for an address Resend rejects.
+      if (item.to.endsWith(".invalid")) {
+        return { status: "failed", id: null, to: item.to, reason: "rejected" };
+      }
       return {
         status: "sent",
         id: `dry_${dryRunCounter++}_${randomBytes(4).toString("hex")}`,
@@ -131,15 +144,16 @@ export async function sendAddressRequests(
     const idempotencyKey = `${batchKey}/${start / BATCH_LIMIT}`;
     let outcome: Outcome[] = [];
     let ambiguous = false;
-    const giveUp = () =>
-      chunk.map((): Outcome => ({
-        status: ambiguous ? "unknown" : "failed",
-        id: null,
-      }));
+    const giveUp = (reason: FailureReason) =>
+      chunk.map((): Outcome =>
+        ambiguous
+          ? { status: "unknown", id: null }
+          : { status: "failed", id: null, reason },
+      );
     for (let attempt = 0; ; attempt++) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        outcome = giveUp();
+        outcome = giveUp("error");
         break;
       }
       let error: BatchError;
@@ -169,7 +183,7 @@ export async function sendAddressRequests(
       );
       ambiguous ||= isAmbiguous(error);
       if (!isRetryable(error) || attempt >= retryDelaysMs.length) {
-        outcome = giveUp();
+        outcome = giveUp(QUOTA_ERRORS.has(error.name) ? "quota" : "error");
         break;
       }
       await sleep(retryDelaysMs[attempt]);
@@ -209,7 +223,10 @@ function attributeIds(
   accepted.forEach((index, n) => {
     if (aligned) out[index] = { status: "sent", id: data.data[n].id };
   });
-  rejected.forEach((index) => (out[index] = { status: "failed", id: null }));
+  rejected.forEach(
+    (index) =>
+      (out[index] = { status: "failed", id: null, reason: "rejected" }),
+  );
   return out;
 }
 

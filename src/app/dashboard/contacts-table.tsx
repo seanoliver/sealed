@@ -48,6 +48,7 @@ import {
   namesFromValues,
   parseStoredLayout,
   sheetName,
+  NEEDS_ATTENTION,
   STATUS_RANK,
   validateHousehold,
   type HouseholdDraft,
@@ -57,6 +58,7 @@ import {
   type SheetValues,
   type StatusKey,
 } from "@/lib/contacts-sheet";
+import type { FailureReason } from "@/lib/email/resend";
 import { compareLastName, lastNameKey, type StoredNames } from "@/lib/names";
 import { type HouseholdFieldErrors } from "@/lib/validation/household";
 import {
@@ -81,6 +83,10 @@ const chipStyles: Record<StatusKey, string> = {
     "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
   complained:
     "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
+  failed:
+    "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
+  unconfirmed:
+    "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200",
 };
 
 const chipLabels: Record<StatusKey, string> = {
@@ -91,12 +97,37 @@ const chipLabels: Record<StatusKey, string> = {
   opened: "Opened",
   bounced: "Bounced",
   complained: "Complained",
+  failed: "Not sent",
+  unconfirmed: "Unconfirmed",
 };
 
-function StatusChip({ status }: { status: StatusKey }) {
+const failureLabels: Record<FailureReason, string> = {
+  rejected: "Invalid email",
+  quota: "Daily limit hit",
+  error: "Send failed",
+};
+
+const failureTitles: Record<FailureReason, string> = {
+  rejected: "Not sent: the email provider rejected this address.",
+  quota: "Not sent: the daily sending limit was reached. Try again tomorrow.",
+  error: "Not sent: the email provider returned an error.",
+};
+
+function StatusChip({
+  status,
+  failureReason,
+}: {
+  status: StatusKey;
+  failureReason: FailureReason | null;
+}) {
   return (
-    <span className={`${chipBase} ${chipStyles[status]}`}>
-      {chipLabels[status]}
+    <span
+      className={`${chipBase} ${chipStyles[status]}`}
+      title={status === "failed" && failureReason ? failureTitles[failureReason] : undefined}
+    >
+      {status === "failed" && failureReason
+        ? failureLabels[failureReason]
+        : chipLabels[status]}
     </span>
   );
 }
@@ -300,11 +331,19 @@ const SEND_PENDING = "Still sending address requests. Try again when they finish
  * email (and rotate the live links of) contacts the dialog never mentioned.
  */
 type ConfirmState = {
-  mode: "selected" | "shown";
+  mode: "selected" | "shown" | "attention";
   ids: string[];
   sendable: number;
   skipped: number;
+  replacedLinks: number;
 };
+
+const HAS_LINK: ReadonlySet<StatusKey> = new Set([
+  "sent",
+  "delivered",
+  "opened",
+  "unconfirmed",
+]);
 
 type EditState = { id: string; error?: string; stalled?: boolean };
 
@@ -317,7 +356,28 @@ type SavedOverlay = {
 
 type SortChoice = "default" | "last_name";
 
-export function ContactsTable({ rows }: { rows: SheetRow[] }) {
+export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
+  const [attentionIds, setAttentionIds] = useState<ReadonlySet<string> | null>(null);
+  const attentionCount = useMemo(
+    () => allRows.filter((row) => NEEDS_ATTENTION.has(row.status)).length,
+    [allRows],
+  );
+  const rows = useMemo(
+    () => (attentionIds ? allRows.filter((row) => attentionIds.has(row.id)) : allRows),
+    [allRows, attentionIds],
+  );
+  const [sendLost, setSendLost] = useState(false);
+  const attentionSnapshot = () =>
+    new Set([
+      ...allRows.filter((row) => NEEDS_ATTENTION.has(row.status)).map((row) => row.id),
+      ...(editingIdRef.current ? [editingIdRef.current] : []),
+    ]);
+  const linkedCount = (ids: string[]) => {
+    const wanted = new Set(ids);
+    return allRows.filter(
+      (row) => wanted.has(row.id) && HAS_LINK.has(row.status),
+    ).length;
+  };
   const router = useRouter();
   const layout = useStoredLayout();
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
@@ -526,7 +586,11 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
       try {
         res = await requestAddresses(input);
       } catch {
-        res = { error: "Couldn't send. Check your connection and try again." };
+        setSendLost(true);
+        res = {
+          error:
+            "The send may not have finished, and the server may still be sending. Wait about 5 minutes, then reload to see who got an email.",
+        };
       }
       sendingRef.current = false;
       setResult(res);
@@ -537,23 +601,32 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
 
   const banner =
     result === null ? null : "error" in result ? (
-      <p
+      <div
         role="alert"
-        className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
       >
-        {result.error}
-      </p>
+        <span className="flex-1">{result.error}</span>
+        {sendLost ? (
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className={buttonClasses}
+          >
+            Reload
+          </button>
+        ) : null}
+      </div>
     ) : (
       <p
         role="status"
         className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
       >
         {[
-          `Sent ${result.sent} ${result.sent === 1 ? "request" : "requests"}`,
+          `Sent ${result.sent} of ${result.sent + result.failed}`,
           result.skippedNoEmail > 0
             ? `${result.skippedNoEmail} skipped (no email)`
             : null,
-          result.failed > 0 ? `${result.failed} failed` : null,
+          result.failed > 0 ? `${result.failed} need attention` : null,
         ]
           .filter(Boolean)
           .join(" · ")}
@@ -591,13 +664,14 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
         ) : null}
         <button
           type="button"
-          disabled={selectedCount === 0 || isSending || isSaving}
+          disabled={selectedCount === 0 || isSending || isSaving || sendLost}
           onClick={() =>
             setConfirm({
               mode: "selected",
               ids: selectedIds,
               sendable: selectedCount,
               skipped: 0,
+              replacedLinks: linkedCount(selectedIds),
             })
           }
           className={selectedCount > 0 ? primaryButtonClasses : buttonClasses}
@@ -606,18 +680,25 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
         </button>
         <button
           type="button"
-          disabled={rows.length === 0 || isSending || isSaving}
-          onClick={() =>
+          disabled={rows.length === 0 || isSending || isSaving || sendLost}
+          onClick={() => {
             // All VISIBLE rows (search-filtered), never the whole book. The
             // no-email ones are included so the server reports them skipped.
             // slice: the action caps at 1000 ids per request.
+            const targets = (
+              attentionIds
+                ? rows.filter((row) => NEEDS_ATTENTION.has(row.status))
+                : rows
+            ).slice(0, 1000);
+            const sendable = targets.filter((row) => row.values.email !== "").length;
             setConfirm({
-              mode: "shown",
-              ids: rows.slice(0, 1000).map((row) => row.id),
-              sendable: emailableCount,
-              skipped: rows.length - emailableCount,
-            })
-          }
+              mode: attentionIds ? "attention" : "shown",
+              ids: targets.map((row) => row.id),
+              sendable,
+              skipped: targets.length - sendable,
+              replacedLinks: linkedCount(targets.map((row) => row.id)),
+            });
+          }}
           className={buttonClasses}
         >
           Send to all shown
@@ -633,6 +714,20 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
         ) : null}
         {isSending ? (
           <span className="text-sm text-muted-foreground">Sending…</span>
+        ) : null}
+        {attentionCount > 0 || attentionIds ? (
+          <button
+            type="button"
+            aria-pressed={attentionIds !== null}
+            onClick={() => setAttentionIds(attentionIds ? null : attentionSnapshot())}
+            className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+              attentionIds
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background text-foreground hover:bg-secondary"
+            }`}
+          >
+            Needs attention ({attentionCount})
+          </button>
         ) : null}
         <span className="flex-1" />
         <Menu.Root>
@@ -739,13 +834,24 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
             <strong>
               {confirm.mode === "shown"
                 ? `the ${confirm.sendable} ${confirm.sendable === 1 ? "contact" : "contacts"} shown`
-                : `${confirm.sendable} ${confirm.sendable === 1 ? "contact" : "contacts"}`}
+                : confirm.mode === "attention"
+                  ? `the ${confirm.sendable} shown that still ${confirm.sendable === 1 ? "needs" : "need"} attention`
+                  : `${confirm.sendable} ${confirm.sendable === 1 ? "contact" : "contacts"}`}
             </strong>
             {confirm.skipped > 0 ? (
               <> ({confirm.skipped} will be skipped: no email)</>
             ) : null}
-            ? Each gets a personal update link that expires in 30 days; any
-            previously sent links stop working.
+            ? Each gets a personal update link that expires in 30 days.
+            {confirm.replacedLinks > 0 ? (
+              <>
+                {" "}
+                <strong>
+                  {confirm.replacedLinks} already{" "}
+                  {confirm.replacedLinks === 1 ? "has a link" : "have a link"}
+                </strong>
+                , which gets replaced once the new email arrives.
+              </>
+            ) : null}
           </p>
           <div className="mt-3 flex gap-2">
             <button
@@ -903,7 +1009,10 @@ export function ContactsTable({ rows }: { rows: SheetRow[] }) {
                     {place || "No address yet"}
                   </span>
                 </Link>
-                <StatusChip status={row.original.status} />
+                <StatusChip
+                  status={row.original.status}
+                  failureReason={row.original.failureReason}
+                />
               </li>
             );
           })}
@@ -1034,7 +1143,10 @@ function StaticCell({
 }) {
   return columnId === "status" ? (
     <td className={cellClasses}>
-      <StatusChip status={row.original.status} />
+      <StatusChip
+                  status={row.original.status}
+                  failureReason={row.original.failureReason}
+                />
     </td>
   ) : (
     <td
