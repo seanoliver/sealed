@@ -371,7 +371,16 @@ test("Save and Cancel stay in view when the table is wider than the window", asy
       const box = await table().getByRole("button", { name, exact: true }).boundingBox();
       expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width);
     }
-    await page.keyboard.press("Escape");
+    const country = table().getByRole("textbox", { name: "Country" });
+    await country.focus();
+    expect(
+      await country.evaluate((input) => {
+        const box = input.getBoundingClientRect();
+        return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === input;
+      }),
+    ).toBe(true);
+    await table().getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(table().getByRole("textbox")).toHaveCount(0);
   } finally {
     await page.setViewportSize({ width: 1280, height: 720 });
   }

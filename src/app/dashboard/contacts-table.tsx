@@ -901,7 +901,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
       ) : null}
 
       <div className="hidden md:block">
-          <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+          <div className="mt-3 scroll-pr-[120px] overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
             <table
               aria-label="Contacts"
               className="table-fixed border-separate border-spacing-0 text-sm"
