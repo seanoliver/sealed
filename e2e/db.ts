@@ -213,7 +213,6 @@ export async function seedEmailSend(opts: {
             ${opts.failureReason ?? null}, ${opts.recipient ?? "primary"})`;
 }
 
-/** A reply apply_token_reply queued, after the other person's link update. */
 export async function seedPendingReply(opts: {
   bookId: string;
   contactId: string;

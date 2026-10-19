@@ -27,8 +27,6 @@ import { generateToken, TOKEN_TTL_DAYS } from "@/lib/tokens";
 // email — and rotate the live links of — the rest of the book).
 const requestSchema = z.union([
   z.object({ contactIds: z.array(z.uuid()).min(1).max(1000) }),
-  // Only these people, e.g. a resend to whoever's last email failed: the
-  // other person keeps their live link and gets no duplicate.
   z.object({
     recipients: z
       .array(z.object({ contactId: z.uuid(), recipient: z.enum(["primary", "partner"]) }))

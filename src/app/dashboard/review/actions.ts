@@ -223,7 +223,6 @@ export async function approveMerge(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       // Same strict-parse + gate as approveNew (see module doc).
-      // A token reply keeps its emptied keys; they become `clear` below.
       const token = submission.source === "token";
       const payload = token ? withoutBlanks(submission.payload) : submission.payload;
       const parsed = parseSubmissionPayload(payload, book.enabledFields);

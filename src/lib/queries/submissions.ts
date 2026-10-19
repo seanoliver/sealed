@@ -55,16 +55,11 @@ export type PendingReply = {
   contactId: string;
   /** ATTACKER-CONTROLLED jsonb, as in listPendingSubmissions. */
   payload: unknown;
-  /** Who sent the reply, and whose saved change it would replace. */
   from: Recipient;
   savedBy: Recipient;
 };
 
-/**
- * The oldest reply per contact that apply_token_reply queued because it
- * collided with the other person's, for the sheet's "Two answers" chip.
- * Permalink submissions stay on the review page only.
- */
+/** Token collisions only: permalink matches are unverified and stay on the review page. */
 export async function listPendingReplies(
   claims: SessionClaims,
 ): Promise<PendingReply[]> {
@@ -76,7 +71,6 @@ export async function listPendingReplies(
       .limit(1);
     if (!book) return [];
 
-    // The token_people check makes recipient and saved_by non-null here.
     return tx
       .selectDistinctOn([submissions.matchedContactId], {
         id: submissions.id,

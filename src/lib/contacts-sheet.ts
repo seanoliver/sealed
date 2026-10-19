@@ -49,14 +49,12 @@ export interface SheetRow {
   failureReason: FailureReason | null;
   people: PersonSend[];
   needsAttention: boolean;
-  /** The people with an address whose latest send needs a look. */
   attention: { recipient: Recipient; status: SendStatus }[];
   answers: TwoAnswers | null;
   updatedAtIso: string;
   updatedAtLabel: string;
 }
 
-/** A reply queued because it collided, already parsed for display. */
 export type PendingAnswer = {
   submissionId: string;
   display: SubmissionDisplayFields;
@@ -158,10 +156,7 @@ export function combineSends(
   };
 }
 
-/**
- * The status column's sort rank. A row needing attention ranks by its worst
- * person, so "Failed / Delivered" sorts with the problems.
- */
+/** Not the best person's status: "Failed / Delivered" must sort with the problems. */
 export function statusRank(row: Pick<SheetRow, "status" | "people" | "needsAttention">): number {
   const ranks = row.needsAttention
     ? row.people.filter((person) => person.status !== "none").map((person) => STATUS_RANK[person.status])
@@ -169,23 +164,16 @@ export function statusRank(row: Pick<SheetRow, "status" | "people" | "needsAtten
   return Math.min(STATUS_RANK[row.status], ...ranks);
 }
 
-/** Statuses whose recipient holds a live link that a new email replaces. */
 const HAS_LINK: ReadonlySet<StatusKey> = new Set(["sent", "delivered", "opened", "unconfirmed"]);
 
 export type SendPlan = {
   input: { contactIds: string[] } | { recipients: { contactId: string; recipient: Recipient }[] };
-  /** Contacts that get at least one email. */
   contacts: number;
   emails: number;
-  /** Contacts with no email at all. */
   skipped: number;
   replacedLinks: number;
 };
 
-/**
- * What a send to these rows emails. With `attentionOnly`, only the people
- * whose last email needs a look: the other person keeps their live link.
- */
 export function sendPlan(
   rows: SheetRow[],
   { attentionOnly }: { attentionOnly: boolean },

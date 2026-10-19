@@ -684,7 +684,6 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
           disabled={selectedCount === 0 || isSending || isSaving || sendLost}
           onClick={() => {
             const selected = new Set(selectedIds);
-            // While filtered, a resend goes only to the people who need it.
             setConfirm({
               mode: "selected",
               ...sendPlan(

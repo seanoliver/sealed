@@ -207,7 +207,6 @@ export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
 const isBlank = (value: unknown) =>
   value === null || (typeof value === "string" && value.trim() === "");
 
-/** A token reply's payload minus its emptied keys, for the strict parse. */
 export function withoutBlanks(payload: unknown): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return payload;
@@ -219,10 +218,7 @@ export function withoutBlanks(payload: unknown): unknown {
   );
 }
 
-/**
- * Fields a reply queued by apply_token_reply empties, which approving it
- * clears. Only for token replies: permalink payloads never mean "clear".
- */
+/** Token replies only: an empty value in a permalink payload never means "clear". */
 export function clearedFields(
   payload: unknown,
   enabled: EnabledFields,

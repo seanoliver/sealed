@@ -18,8 +18,6 @@ alter table public.contact_events add column recipient text
   check (recipient in ('primary', 'partner') and source = 'token' or recipient is null);
 update public.contact_events set recipient = 'primary' where source = 'token';
 
--- A reply apply_token_reply queued because it collided with the other
--- person's: who sent it and whose saved change it would replace.
 alter table public.submissions
   add column source text not null default 'permalink'
     constraint submissions_source_check check (source in ('permalink', 'token')),

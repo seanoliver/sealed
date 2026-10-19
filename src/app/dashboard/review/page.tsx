@@ -125,7 +125,6 @@ function toCardModel(
     contactName: matchedContact.fullName,
     rows: [
       ...present(MERGE_FIELDS),
-      // A token reply's emptied field clears it when approved.
       ...(submission.source === "token"
         ? MERGE_FIELDS.filter(
             (field) =>
