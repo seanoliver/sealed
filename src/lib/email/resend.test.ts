@@ -137,6 +137,49 @@ describe("sendAddressRequests", () => {
     expect(results.map((r) => r.status)).toEqual(["unknown", "unknown"]);
   });
 
+  it("reports unknown when a permanent error follows an ambiguous attempt", async () => {
+    batchSend
+      .mockResolvedValueOnce(fail("application_error", null))
+      .mockResolvedValueOnce(fail("daily_quota_exceeded", 429));
+    const results = await sendAddressRequests(items(2), opts);
+    expect(results.map((r) => r.status)).toEqual(["unknown", "unknown"]);
+  });
+
+  it("reports failed when every attempt was rate limited", async () => {
+    batchSend.mockResolvedValue(fail("rate_limit_exceeded", 429));
+    const results = await sendAddressRequests(items(1), opts);
+    expect(results[0].status).toBe("failed");
+  });
+
+  it("treats a missing status code as ambiguous", async () => {
+    batchSend
+      .mockResolvedValueOnce({ data: null, error: { name: "application_error", message: "x" } })
+      .mockResolvedValueOnce(ok(["a"]));
+    const results = await sendAddressRequests(items(1), opts);
+    expect(results[0].status).toBe("sent");
+  });
+
+  it("times out a hung call and retries it with the same key", async () => {
+    batchSend.mockReturnValueOnce(new Promise(() => {})).mockResolvedValueOnce(ok(["a"]));
+    const results = await sendAddressRequests(items(1), { ...opts, attemptTimeoutMs: 5 });
+    expect(batchSend).toHaveBeenCalledTimes(2);
+    expect(batchSend.mock.calls[1][1].idempotencyKey).toBe("k1/0");
+    expect(results[0].status).toBe("sent");
+  });
+
+  it("stops at the time budget, failing chunks it never sent", async () => {
+    let now = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    batchSend.mockImplementation(async (payload: unknown[]) => {
+      now += 100;
+      return ok(payload.map((_, i) => `id${i}`));
+    });
+    const results = await sendAddressRequests(items(150), { ...opts, budgetMs: 50 });
+    expect(batchSend).toHaveBeenCalledTimes(1);
+    expect(results[0].status).toBe("sent");
+    expect(results[100].status).toBe("failed");
+  });
+
   it("treats a thrown client error as retryable", async () => {
     batchSend.mockRejectedValueOnce(new TypeError("fetch failed")).mockResolvedValueOnce(ok(["a"]));
     const results = await sendAddressRequests(items(1), opts);

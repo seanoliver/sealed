@@ -193,6 +193,49 @@ describe("requestAddresses", () => {
     expect(await isLive(A, newer)).toBe(true);
   });
 
+  it("never deletes a link the contact already used", async () => {
+    answer();
+    await requestAddresses({ contactIds: [A] });
+    await dbAdmin
+      .update(updateTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(updateTokens.contactId, A));
+
+    send.mockReset();
+    answer();
+    await requestAddresses({ contactIds: [A] });
+    expect(await liveTokens(A)).toHaveLength(2);
+  });
+
+  it("returns an error and sends nothing when minting fails", async () => {
+    vi.spyOn(dbAdmin, "insert").mockImplementationOnce(() => {
+      throw new Error("db down");
+    });
+    await expect(requestAddresses({ contactIds: [A] })).resolves.toEqual({
+      error: "Something went wrong. Please try again.",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("still reports the sends, and keeps every link, when bookkeeping fails", async () => {
+    answer();
+    await requestAddresses({ contactIds: [A] });
+    const first = sentLinks()["ana@ra.test"];
+
+    send.mockReset();
+    answer();
+    const transaction = dbAdmin.transaction.bind(dbAdmin);
+    vi.spyOn(dbAdmin, "transaction").mockImplementation((...args) =>
+      send.mock.calls.length > 0 ? Promise.reject(new Error("db down")) : transaction(...args),
+    );
+    await expect(requestAddresses({ contactIds: [A] })).resolves.toMatchObject({
+      sent: 1,
+      failed: 0,
+    });
+    expect(await isLive(A, first)).toBe(true);
+    expect(await isLive(A, sentLinks()["ana@ra.test"])).toBe(true);
+  });
+
   it("passes a fresh idempotency batch key on every request", async () => {
     answer();
     await requestAddresses({ contactIds: [A] });

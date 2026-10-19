@@ -42,17 +42,39 @@ function getClient(): Resend {
   return client;
 }
 
-type BatchError = { name: string; message: string; statusCode: number | null };
+type BatchError = { name: string; message: string; statusCode?: number | null };
 
 // Quota errors are also 429s but will not clear on retry.
-const RETRYABLE = new Set(["rate_limit_exceeded", "concurrent_idempotent_requests"]);
+const RETRYABLE = new Set([
+  "rate_limit_exceeded",
+  "concurrent_idempotent_requests",
+]);
 const isRetryable = (error: BatchError) =>
-  error.statusCode === null || error.statusCode >= 500 || RETRYABLE.has(error.name);
+  isAmbiguous(error) || RETRYABLE.has(error.name);
+const isAmbiguous = (error: BatchError) =>
+  error.statusCode == null || error.statusCode >= 500;
 
 type Outcome = DistributiveOmit<SendResult, "to">;
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new DOMException("batch send timed out", "TimeoutError")),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Send address-request emails via Resend's batch API, chunked to its
@@ -65,7 +87,18 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function sendAddressRequests(
   items: EmailItem[],
-  { batchKey, retryDelaysMs = [1000, 2000, 4000] }: { batchKey: string; retryDelaysMs?: number[] },
+  {
+    batchKey,
+    retryDelaysMs = [1000, 2000, 4000],
+    attemptTimeoutMs = 20_000,
+    budgetMs = 240_000,
+  }: {
+    batchKey: string;
+    retryDelaysMs?: number[];
+    attemptTimeoutMs?: number;
+    /** Stays under the dashboard's maxDuration so bookkeeping still runs. */
+    budgetMs?: number;
+  },
 ): Promise<SendResult[]> {
   if (isEmailDryRun()) {
     return items.map((item) => {
@@ -84,6 +117,7 @@ export async function sendAddressRequests(
   if (!from) throw new Error("EMAIL_FROM is not set");
   const resend = getClient();
 
+  const deadline = Date.now() + budgetMs;
   const results: SendResult[] = [];
   for (let start = 0; start < items.length; start += BATCH_LIMIT) {
     const chunk = items.slice(start, start + BATCH_LIMIT);
@@ -96,13 +130,27 @@ export async function sendAddressRequests(
     }));
     const idempotencyKey = `${batchKey}/${start / BATCH_LIMIT}`;
     let outcome: Outcome[] = [];
+    let ambiguous = false;
+    const giveUp = () =>
+      chunk.map((): Outcome => ({
+        status: ambiguous ? "unknown" : "failed",
+        id: null,
+      }));
     for (let attempt = 0; ; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        outcome = giveUp();
+        break;
+      }
       let error: BatchError;
       try {
-        const response = await resend.batch.send(payload, {
-          batchValidation: "permissive",
-          idempotencyKey,
-        });
+        const response = await withTimeout(
+          resend.batch.send(payload, {
+            batchValidation: "permissive",
+            idempotencyKey,
+          }),
+          Math.min(attemptTimeoutMs, remaining),
+        );
         if (!response.error) {
           outcome = attributeIds(chunk.length, response.data);
           break;
@@ -110,17 +158,18 @@ export async function sendAddressRequests(
         error = response.error;
       } catch (err) {
         // Log only the error type, never the payload.
-        error = { name: err instanceof Error ? err.name : typeof err, message: "threw", statusCode: null };
+        error = {
+          name: err instanceof Error ? err.name : typeof err,
+          message: "threw",
+          statusCode: null,
+        };
       }
       console.error(
         `[em] [sendAddressRequests] batch attempt ${attempt + 1} failed: ${error.name} ${error.statusCode ?? "-"} ${error.message}`,
       );
-      if (!isRetryable(error)) {
-        outcome = chunk.map(() => ({ status: "failed", id: null }));
-        break;
-      }
-      if (attempt >= retryDelaysMs.length) {
-        outcome = chunk.map(() => ({ status: "unknown", id: null }));
+      ambiguous ||= isAmbiguous(error);
+      if (!isRetryable(error) || attempt >= retryDelaysMs.length) {
+        outcome = giveUp();
         break;
       }
       await sleep(retryDelaysMs[attempt]);
@@ -133,20 +182,30 @@ export async function sendAddressRequests(
 // `errors` names rejected indexes and `data` holds accepted ids in request order.
 function attributeIds(
   size: number,
-  data: { data: { id: string }[]; errors?: { index: number; message: string }[] },
+  data: {
+    data: { id: string }[];
+    errors?: { index: number; message: string }[];
+  },
 ): Outcome[] {
   const rejected = new Set((data.errors ?? []).map((e) => e.index));
   for (const e of data.errors ?? []) {
-    console.error(`[em] [sendAddressRequests] email ${e.index} rejected: ${e.message}`);
+    console.error(
+      `[em] [sendAddressRequests] email ${e.index} rejected: ${e.message}`,
+    );
   }
-  const accepted = Array.from({ length: size }, (_, i) => i).filter((i) => !rejected.has(i));
+  const accepted = Array.from({ length: size }, (_, i) => i).filter(
+    (i) => !rejected.has(i),
+  );
   const aligned = accepted.length === data.data.length;
   if (!aligned) {
     console.error(
       `[em] [sendAddressRequests] ${data.data.length} ids for ${accepted.length} accepted emails`,
     );
   }
-  const out: Outcome[] = Array.from({ length: size }, () => ({ status: "unknown", id: null }));
+  const out: Outcome[] = Array.from({ length: size }, () => ({
+    status: "unknown",
+    id: null,
+  }));
   accepted.forEach((index, n) => {
     if (aligned) out[index] = { status: "sent", id: data.data[n].id };
   });

@@ -29,6 +29,8 @@ Send to a contact once. Then send again with Resend returning an error for that 
 - New tokens are inserted without touching old ones. After the send, one transaction records the `email_sends` rows and deletes the contact's older unused tokens. This runs only for confirmed sends, and only for tokens created before this request's mint, so a newer concurrent send keeps its link.
 - Rejected emails delete their new token. Unconfirmed emails keep both links.
 - Batches use `batchValidation: "permissive"` with a per-chunk `Idempotency-Key` (`<uuid>/<chunk>`). Network errors, 5xx, `rate_limit_exceeded` and `concurrent_idempotent_requests` retry with the same key. Quota errors fail immediately, because they are 429s too but won't clear on a retry.
+- An attempt that ends ambiguously (network error, timeout, 5xx) marks the chunk `unknown` if it later gives up, even on a permanent error.
+- Each call times out after 20s. The whole send has a 240s budget under the dashboard page's `maxDuration = 300`. A chunk not attempted before the budget runs out is `failed`.
 - The result now includes `failedContactIds`.
 
 ## Verification
