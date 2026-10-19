@@ -6,6 +6,7 @@ import {
   type McpServer,
   type ServerContext,
 } from "@modelcontextprotocol/server";
+import { withMcpAuth } from "mcp-handler";
 import { type z } from "zod";
 import { type SessionClaims } from "@/lib/auth";
 import { logDbError } from "@/lib/log";
@@ -28,10 +29,7 @@ import {
 import { AgentScopeError, requireScope, type AgentScope } from "./scopes";
 import { verifyAgentToken } from "./tokens";
 
-export async function verifyBearer(
-  _req: Request,
-  bearerToken?: string,
-): Promise<AuthInfo | undefined> {
+async function verifyBearer(bearerToken: string | undefined): Promise<AuthInfo | undefined> {
   const principal = await verifyAgentToken(bearerToken);
   if (!principal) return undefined;
   return {
@@ -41,6 +39,34 @@ export async function verifyBearer(
     expiresAt:
       principal.expiresAt === null ? undefined : Math.floor(principal.expiresAt.getTime() / 1000),
     extra: { claims: principal.claims },
+  };
+}
+
+function bearerToken(req: Request): string | undefined {
+  const [type, token] = req.headers.get("authorization")?.split(" ") ?? [];
+  return type?.toLowerCase() === "bearer" ? token : undefined;
+}
+
+/**
+ * Bearer auth for the MCP route. Verifies before withMcpAuth because it turns
+ * any verifier throw into 401 invalid_token, and a database outage must not
+ * look like a dead credential.
+ */
+export function withAgentAuth(
+  handler: (req: Request) => Promise<Response>,
+): (req: Request) => Promise<Response> {
+  return async (req) => {
+    let auth: AuthInfo | undefined;
+    try {
+      auth = await verifyBearer(bearerToken(req));
+    } catch (err) {
+      logDbError("[mc] [auth] token verification failed", err, { includeMessage: false });
+      return Response.json(
+        { error: "temporarily_unavailable" },
+        { status: 503, headers: { "Retry-After": "30" } },
+      );
+    }
+    return withMcpAuth(handler, () => auth, { required: true })(req);
   };
 }
 

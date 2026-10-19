@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
 import { generateAgentToken, mintAgentToken } from "@/lib/agent/tokens";
 import { dbAdmin } from "@/lib/db/admin";
@@ -44,8 +44,8 @@ describe("/api/mcp", () => {
     await dbAdmin.execute(sql`
       insert into public.contacts (id, book_id, full_name, email, city)
       values (${C}, ${B}, 'Ana Reyes', 'ana@mcp.test', 'Springfield')`);
-    readToken = (await mintAgentToken({ userId: U, name: "read", scopes: ["read"] })).token;
-    writeOnlyToken = (await mintAgentToken({ userId: U, name: "write", scopes: ["write"] })).token;
+    readToken = (await mintAgentToken(U, { name: "read", scopes: ["read"] })).token;
+    writeOnlyToken = (await mintAgentToken(U, { name: "write", scopes: ["write"] })).token;
   });
 
   afterAll(async () => {
@@ -88,6 +88,48 @@ describe("/api/mcp", () => {
       const response = await rpc(token, "tools/list");
       expect(response.status).toBe(401);
       expect(response.headers.get("www-authenticate")).toMatch(/^Bearer /);
+    }
+  });
+
+  it("answers 503, not 401, when the database is down during verification", async () => {
+    vi.spyOn(dbAdmin, "execute").mockRejectedValueOnce(
+      Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+    );
+    const log = vi.spyOn(console, "error").mockImplementationOnce(() => {});
+    const response = await rpc(readToken, "tools/list");
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("30");
+    expect(log).toHaveBeenCalledWith(
+      "[mc] [auth] token verification failed db error",
+      JSON.stringify({ code: "ECONNREFUSED" }),
+    );
+  });
+
+  it("reports an unknown contact as a tool error", async () => {
+    const call = await body(
+      await rpc(readToken, "tools/call", {
+        name: "get_contact",
+        arguments: { id: "20000000-0000-4000-8000-0000000aa0ff" },
+      }),
+    );
+    expect(call.result).toMatchObject({ isError: true, content: [{ type: "text", text: "Not found." }] });
+  });
+
+  it("hides unexpected failures behind a generic tool error", async () => {
+    vi.spyOn(dbAdmin, "transaction").mockRejectedValue(new Error("relation exploded"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const call = await body(
+        await rpc(readToken, "tools/call", { name: "book_summary", arguments: {} }),
+      );
+      expect(call.result).toMatchObject({
+        isError: true,
+        content: [{ type: "text", text: "Something went wrong. Please try again." }],
+      });
+      expect(JSON.stringify(call)).not.toContain("exploded");
+      expect(log).toHaveBeenCalledWith("[mc] [book_summary] db error", expect.any(String));
+    } finally {
+      vi.restoreAllMocks();
     }
   });
 
