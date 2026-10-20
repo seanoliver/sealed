@@ -343,3 +343,8 @@ function generateHash(token: string): Buffer {
 export async function setContactAddressLine2(contactId: string, line2: string): Promise<void> {
   await db`update public.contacts set address_line2 = ${line2} where id = ${contactId}`;
 }
+
+export async function getContactPostalCode(contactId: string): Promise<string | null> {
+  const rows = await db`select postal_code from public.contacts where id = ${contactId}`;
+  return rows[0].postal_code;
+}

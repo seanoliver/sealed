@@ -28,8 +28,10 @@ alter table public.contact_events drop constraint contact_events_source_check;
 alter table public.contact_events
   add constraint contact_events_source_check
     check (source in ('owner', 'token', 'submission', 'agent')),
-  add column agent_token_id uuid references public.agent_tokens (id) on delete set null,
-  add column agent_preview_id uuid references public.agent_previews (id) on delete set null,
+  -- Cascade, not set null: a user delete removes contacts in the same statement,
+  -- and a set-null update on a doomed event fails its contact foreign key.
+  add column agent_token_id uuid references public.agent_tokens (id) on delete cascade,
+  add column agent_preview_id uuid references public.agent_previews (id) on delete cascade,
   -- The contact's updated_at right after this write: undo is refused once it moves.
   add column contact_updated_at timestamptz,
   add constraint contact_events_agent_check check (

@@ -82,12 +82,11 @@ select results_eq($$ select agent_token_id from public.contact_events where sour
   $$ values ('30000000-0000-4000-8000-0000000a8001'::uuid) $$, 'owners read their agent events');
 
 reset role;
-delete from public.agent_previews where id = '40000000-0000-4000-8000-0000000a8001';
-select is((select agent_preview_id from public.contact_events where source = 'agent'), null,
-  'a removed preview leaves its events');
-delete from public.agent_tokens where id = '30000000-0000-4000-8000-0000000a8001';
-select is((select count(*)::int from public.contact_events where source = 'agent'), 1,
-  'a removed token leaves its events');
+select lives_ok($$ delete from auth.users where id = '00000000-0000-4000-8000-0000000a8001' $$,
+  'deleting an owner removes their contacts, tokens, previews and agent events together');
+select is((select count(*)::int from public.contact_events
+  where contact_id = '20000000-0000-4000-8000-0000000a8001'), 0,
+  'no agent event outlives its owner');
 
 select * from finish();
 rollback;

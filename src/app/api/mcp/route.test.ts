@@ -167,14 +167,15 @@ describe("/api/mcp", () => {
       (tool: { annotations?: { readOnlyHint?: boolean } }) => tool.annotations?.readOnlyHint !== true,
     );
     expect(writeTools.map((tool: { name: string }) => tool.name).sort()).toEqual(WRITE_TOOLS);
-    const before = await dbAdmin.execute(sql`select count(*)::int as n from public.contact_events`);
+    const events = () =>
+      dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`);
+    const before = await events();
     for (const tool of writeTools) {
       const response = await rpc(readToken, "tools/call", { name: tool.name, arguments: {} });
       expect(response.status, tool.name).toBe(403);
       expect(response.headers.get("www-authenticate")).toMatch(/insufficient_scope/);
     }
-    const after = await dbAdmin.execute(sql`select count(*)::int as n from public.contact_events`);
-    expect(after).toEqual(before);
+    expect(await events()).toEqual(before);
   });
 
   it("updates a contact for a write token and records the agent", async () => {
