@@ -22,16 +22,8 @@ import {
 } from "./merge";
 
 /**
- * `submissions.payload` is ATTACKER-CONTROLLED jsonb
- * (public permalink submissions; submit_to_book does not gate enabled_fields
- * and stores whatever object it was handed). Every approval therefore:
- *   1. re-validates the payload through the STRICT parseSubmissionPayload
- *      (household or legacy shape; unknown keys — including a smuggled
- *      `notes` — stripped, per-field caps, a name required), which also
- *   2. drops fields DISABLED on the book (dropDisabledFields)
- * BEFORE anything touches `contacts`. The DB CHECK constraints are the third
- * net. Display-side gating (review/page.tsx) uses the same dropDisabledFields
- * helper, so display and merge can never disagree.
+ * `submissions.payload` is ATTACKER-CONTROLLED: every approval must run the
+ * strict parseSubmissionPayload and dropDisabledFields before touching contacts.
  */
 
 export const GENERIC_ERROR = "Something went wrong. Please try again.";
@@ -51,15 +43,8 @@ const approvalActor = (actor: Actor): Actor =>
   actor.source === "owner" ? { source: "submission" } : actor;
 
 /**
- * Atomic concurrency gate for the approve paths: flip pending → approved and
- * report whether WE won the flip. Two concurrent approvals both read the
- * same pending row, but under READ COMMITTED the second UPDATE blocks on the
- * row lock and re-evaluates `status = 'pending'` after the first commits —
- * exactly one caller ever gets a row back. Contract: run in the SAME
- * transaction as the contact write, AFTER all read-only checks and BEFORE
- * any write — a losing racer must return having written nothing, and a
- * failed contact write (e.g. duplicate email) must throw so the rollback
- * restores the submission to pending.
+ * Call in the contact write's transaction, after read-only checks and before any
+ * write: only one concurrent approval gets a row back, and a failed write rolls the flip back.
  */
 async function winApprovalFlip(
   tx: RlsTx,
@@ -80,13 +65,7 @@ async function winApprovalFlip(
   return rows.length === 1;
 }
 
-/**
- * The caller's book + the PENDING submission, both RLS-scoped (the explicit
- * predicates mirror what RLS enforces). undefined ⇒ no book, unknown id,
- * another user's submission, or already reviewed — all indistinguishable.
- * Read-only — the AUTHORITATIVE pending check is winApprovalFlip (this
- * select alone would be check-then-act under concurrency).
- */
+/** Read-only: winApprovalFlip, not this select, is the authoritative pending check. */
 async function loadPendingSubmission(tx: RlsTx, ownerId: string, id: string) {
   const [book] = await tx
     .select({ id: books.id, enabledFields: books.enabledFields })
@@ -127,18 +106,10 @@ export async function approveNewAs(
       if (!loaded) return { kind: "not_found" };
       const { book, submission } = loaded;
 
-      // STRICT re-validation of the untrusted payload (unknown keys stripped,
-      // caps enforced, a name required — a missing/invalid name fails
-      // here), then drop book-disabled fields. Nothing unvalidated or
-      // ungated ever reaches `contacts`.
       const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
       if (!parsed.success) return { kind: "invalid" };
       const gated = parsed.data;
 
-      // Concurrency gate: atomically flip pending → approved FIRST; a
-      // concurrent approval of the same submission loses here and returns
-      // without writing anything. If the insert below throws, the whole tx
-      // (flip included) rolls back and the submission stays pending.
       if (!(await winApprovalFlip(tx, submission.id, book.id))) {
         return { kind: "not_found" };
       }
@@ -224,22 +195,14 @@ export async function approveMergeAs(
         .limit(1);
       if (!existing) return { kind: "no_match" };
 
-      // Merge semantics: PRESENT keys overwrite, ABSENT keys stay untouched.
-      // Legit payloads are value-bearing by construction (submitToBook drops
-      // empty values), and the strict parse turns "" into undefined — so an
-      // empty string (only craftable by a hostile direct insert) is treated
-      // as absent and can never CLEAR a column. This intentionally differs
-      // from token updates, where a present-but-empty key means "clear".
+      // Absent keys stay untouched and "" counts as absent: a permalink payload
+      // can never clear a column (token replies can; see clearedFields).
       const before = rowToSnapshot(existing);
       const set = mergeUpdate(before, gated, {
         partnerEmail: partnerEmail.data,
         clear: token ? clearedFields(submission.payload, book.enabledFields) : [],
       });
 
-      // Concurrency gate: atomically flip pending → approved after all the
-      // read-only checks and BEFORE the contact write; a concurrent approval
-      // loses here and returns without writing. A failed update below rolls
-      // the flip back to pending.
       if (!(await winApprovalFlip(tx, submission.id, book.id))) {
         return { kind: "not_found" };
       }
