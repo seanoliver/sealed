@@ -22,6 +22,8 @@ let wangId: string;
 let wangTokens: string[];
 let ukId: string;
 let unknownId: string;
+let beaId: string;
+let beaToken: string;
 
 const pickCountry = async (page: Page, typed: string, name: string) => {
   const picker = page.getByRole("combobox", { name: "Country" });
@@ -76,6 +78,17 @@ test.beforeAll(async ({ browser }) => {
     postalCode: "bs6 5qt",
     country: "UK",
   });
+  beaId = await seedContact({
+    bookId,
+    fullName: "Bea Brown",
+    household: { firstName: "Bea", lastName: "Brown" },
+    addressLine1: "2 Pulteney Bridge",
+    city: "Bath",
+    stateRegion: "Somerset",
+    postalCode: "BA2 4AT",
+    countryCode: "GB",
+  });
+  beaToken = await seedUpdateToken(beaId);
   unknownId = await seedContact({
     bookId,
     fullName: "Nemo Diver",
@@ -201,6 +214,34 @@ test("a China address in Chinese prints postcode first and name last, and saves 
     postal_code: null,
     country_code: "CN",
   });
+});
+
+test("a stored value the country has no field for stays, and the picker settles on blur", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await stubTurnstile(page);
+  await page.goto(`/u/${beaToken}`);
+  await expect(page.getByLabel("County")).toHaveValue("Somerset");
+  await expect(page.getByRole("region", { name: "Envelope preview" })).toContainText("Somerset");
+
+  const picker = page.getByRole("combobox", { name: "Country" });
+  await picker.fill("xyzzy");
+  await page.getByLabel("Street address").click();
+  await expect(picker).toHaveValue("xyzzy");
+  await expect(page.getByText("No country matches “xyzzy”. Pick one from the list.")).toBeVisible();
+  await page.getByRole("button", { name: "Update my details" }).click();
+  await expect(picker).toBeFocused();
+  await expect(page).toHaveURL(new RegExp(`/u/${beaToken}$`));
+
+  await picker.fill("united k");
+  await page.getByLabel("Street address").click();
+  await expect(picker).toHaveValue("United Kingdom");
+  await page.getByRole("button", { name: "Update my details" }).click();
+  await expect(page).toHaveURL(/\/u\/thanks$/);
+  await context.close();
+  expect(await getContactAddress(beaId)).toMatchObject({ state_region: "Somerset", country_code: "GB" });
 });
 
 test("the owner's contact page edits the address with the envelope beside it", async () => {
