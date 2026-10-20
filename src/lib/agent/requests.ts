@@ -235,7 +235,6 @@ export async function approveRequest(
         await tx.delete(contacts).where(inArray(contacts.id, items.map((item) => item.id)));
       } else {
         const [item] = request.items as EmailItem[];
-        // Only the emails must match the request: other edits don't block it.
         const [existing] = await tx
           .select()
           .from(contacts)
