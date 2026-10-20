@@ -154,7 +154,6 @@ describe("contactsToCsv", () => {
 
     const { valid, errors } = parseContactsCsv(contactsToCsv(rows));
 
-    // The country column comes back as its code.
     const displayRow = {
       ...Object.fromEntries(
         Object.entries(rows[0]).filter(

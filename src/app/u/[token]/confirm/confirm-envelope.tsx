@@ -10,7 +10,6 @@ type Props = {
   action: (state: ConfirmState, formData: FormData) => Promise<ConfirmState>;
   ownerName: string;
   lines: EnvelopeLine[];
-  /** The household line and the street, for the thank-you copy. */
   name: string;
   street: string;
   updateHref: string;

@@ -8,13 +8,11 @@ export type PostalAddress = {
   stateRegion: string | null;
   postalCode: string | null;
   countryCode: string | null;
-  /** Country text from before codes that no code matched; printed as typed. */
   legacyCountry?: string | null;
 };
 
 type AddressColumns = Omit<PostalAddress, "legacyCountry"> & { legacyCountry: string | null };
 
-/** A contacts row's address. Leftover country text only counts while no code is set. */
 export function rowAddress(row: AddressColumns): PostalAddress {
   return {
     addressLine1: row.addressLine1,
@@ -30,35 +28,26 @@ export function rowAddress(row: AddressColumns): PostalAddress {
 
 export type EnvelopeLine = {
   text: string;
-  /** The format capitalized something the person typed in lower case. */
   uppercased: boolean;
 };
 
 export type Envelope = {
   lines: EnvelopeLine[];
-  /** Written in the country's own script and order (postcode first in China). */
   local: boolean;
   country: Country | null;
-  /** The sender's own country, so the envelope has no country line. */
   domestic: boolean;
 };
 
 export type EnvelopeOptions = {
-  /** The household line. Omitted, the envelope has address lines only. */
   name?: string | null;
-  /** Code of the country the owner mails from. */
   senderCountry: string;
-  /** Skip the country's upper-case rules, to compare against what was typed. */
   asTyped?: boolean;
 };
 
-// The old US-order layout, for country text no code matches.
 const UNKNOWN_FMT = "%N%n%A%n%D%n%C, %S %Z";
 
-// Countries where the flat or unit is written before the street.
 const SUBPREMISE_FIRST = new Set(["GB", "IE", "AU", "NZ"]);
 
-// Added after the name in a local-script envelope.
 const NAME_SUFFIX: Record<string, string> = {
   CN: " 收",
   TW: " 收",
@@ -70,7 +59,6 @@ const NAME_SUFFIX: Record<string, string> = {
 
 const clean = (value: string | null | undefined) => value?.trim().replace(/\s+/g, " ") ?? "";
 
-/** True when a letter in the address is from a non-Latin script (汉字, かな, 한글, Кириллица…). */
 export function isLocalScript(
   address: Pick<
     PostalAddress,
@@ -140,7 +128,6 @@ function renderLine(parts: Part[], value: (field: FormatField) => string): strin
   return out.trim();
 }
 
-/** The envelope for an address, or null when there is no street line to mail to. */
 export function formatEnvelope(
   address: PostalAddress,
   { name, senderCountry, asTyped = false }: EnvelopeOptions,
@@ -167,7 +154,6 @@ export function formatEnvelope(
     A: street.filter(Boolean).join(local ? "\n" : ", "),
     D: clean(address.district),
     C: clean(address.city),
-    // A city that is its own province (上海市, Madrid) prints once.
     S:
       clean(address.stateRegion).toLowerCase() === clean(address.city).toLowerCase()
         ? ""
@@ -198,15 +184,10 @@ export function formatEnvelope(
   return { lines, local, country, domestic };
 }
 
-/** Envelope lines as text, or null when there is no street line. */
 export function envelopeLines(address: PostalAddress, options: EnvelopeOptions): string[] | null {
   return formatEnvelope(address, options)?.lines.map((line) => line.text) ?? null;
 }
 
-/**
- * The address on one line ("Flat 2, 14 Kestrel Lane, BRISTOL, BS6 5QT, UNITED KINGDOM").
- * Without a street, whatever parts there are, so a contact is still recognizable.
- */
 export function addressSummary(
   address: PostalAddress,
   { senderCountry }: { senderCountry: string },

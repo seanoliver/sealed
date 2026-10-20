@@ -9,8 +9,6 @@ const DETAIL_COLUMNS = CONTACT_FIELDS.filter(
     field !== "full_name" && field !== "partner_name" && field !== "kids_names" && field !== "notes",
 );
 
-// `country` is the English name (or text no code matched) and `envelope` the
-// printed lines; re-import reads `country` and `country_code` alike and ignores `envelope`.
 export const CSV_COLUMNS = [
   "full_name",
   "partner_name",

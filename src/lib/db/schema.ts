@@ -46,7 +46,6 @@ export const contacts = pgTable("contacts", {
   stateRegion: text("state_region"),
   postalCode: text("postal_code"),
   countryCode: text("country_code"),
-  /** Country text from before country_code that no code matched; cleared when a code is written. */
   legacyCountry: text("country"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

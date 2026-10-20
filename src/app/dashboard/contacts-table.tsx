@@ -189,7 +189,6 @@ const FIELD_COLUMNS: FieldColumn[] = [
   { field: "country_code", label: "Country", size: 130, maxLength: 2 },
 ];
 
-/** What the Country cell shows and sorts by: the English name, or text no code matched. */
 function countryLabel(row: SheetRow): string {
   return row.values.country_code ? countryName(row.values.country_code) : (row.legacyCountry ?? "");
 }

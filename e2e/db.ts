@@ -97,7 +97,6 @@ export async function seedContact(opts: {
   city?: string;
   stateRegion?: string;
   postalCode?: string;
-  /** Free text, as the app wrote it before codes; the database derives the code. */
   country?: string;
   countryCode?: string;
   household?: {

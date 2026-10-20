@@ -35,7 +35,6 @@ export interface ContactListRow extends StoredNames {
   stateRegion: string | null;
   postalCode: string | null;
   countryCode: string | null;
-  /** Country text no code matched; ignore it when countryCode is set. */
   legacyCountry: string | null;
   /** Factual latest-send status; the UI layers an "updated" chip on top. */
   sendStatus: SendStatus;

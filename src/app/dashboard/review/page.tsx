@@ -58,7 +58,6 @@ const FIELD_LABELS: Record<ReviewField, string> = {
   country_code: "Country",
 };
 
-/** Codes read as country names; old text no code matched is labeled as such. */
 function forDisplay(fields: SubmissionDisplayFields): Partial<Record<ReviewField, string>> {
   const { country, ...rest } = fields;
   if (rest.country_code) return { ...rest, country_code: countryName(rest.country_code) };

@@ -21,7 +21,6 @@ const isRealDate = (s: string) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 };
 
-/** A two-letter code from the country list; names are mapped to codes before this. */
 const countryCode = z
   .string()
   .trim()
@@ -67,11 +66,6 @@ export type AddressCheck<T> =
   | { ok: true; data: T }
   | { ok: false; field: "postal_code"; error: string };
 
-/**
- * Normalizes the address (spaces, postcode, US state) and checks the postcode
- * against the country's pattern. A postcode and country that match `stored`
- * pass unchecked, so a contact saved before the check can still be edited.
- */
 export function checkAddress<T extends AddressInput>(
   data: T,
   { stored }: { stored?: { postal_code?: string | null; country_code?: string | null } } = {},

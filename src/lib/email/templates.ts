@@ -15,10 +15,6 @@ export interface AddressRequestEmailInput {
   recipientName?: string | null;
   updateUrl: string;
   confirmUrl: string;
-  /**
-   * What the envelope says today: the printed lines with the household line in
-   * its place for the country, or null without an address (the household alone shows).
-   */
   envelope: { household: string; lines: string[] | null };
 }
 

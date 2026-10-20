@@ -1,10 +1,6 @@
 /**
- * Names people type for a country besides its English name and code. Keys
- * are compared after `countryKey`, so case, accents, dots and a leading
- * "the" don't matter. The migration's private.country_code_for was
- * generated from this list plus the English names (see
- * scripts/generate-address-data.ts --sql); add new aliases here and in a
- * new migration together.
+ * Adding an alias needs a new migration regenerating private.country_code_for
+ * (scripts/generate-address-data.ts --sql), or the database maps it to no code.
  */
 export const COUNTRY_ALIASES: Record<string, string> = {
   usa: "US",
@@ -54,7 +50,7 @@ export const COUNTRY_ALIASES: Record<string, string> = {
   "east timor": "TL",
 };
 
-/** Lowercase, accent-free, dot-free, single-spaced, without a leading "the". */
+/** private.country_code_for repeats this normalization in SQL; change both, or they disagree on which text names a country. */
 export function countryKey(text: string): string {
   return text
     .normalize("NFKD")

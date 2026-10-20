@@ -1,16 +1,11 @@
 set lock_timeout = '5s';
 
--- A contact's country is now country_code, an ISO 3166 code. The old free-text
--- country column stays for the code that is live while this runs, and keeps
--- text no code matched (shown to the owner as unrecognized) until a country
--- is picked. The app clears it when it writes a code.
 alter table public.contacts
   add column country_code text
     constraint contacts_country_code_check check (country_code ~ '^[A-Z]{2}$'),
   add column district text
     constraint contacts_district_check check (char_length(district) <= 120);
 
--- The country envelopes are mailed from: their country line is left off.
 alter table public.books
   add column sender_country text not null default 'US'
     constraint books_sender_country_check check (sender_country ~ '^[A-Z]{2}$');
@@ -588,8 +583,8 @@ where country is not null and country_code is null;
 alter table public.contacts enable trigger contacts_touch;
 alter table public.contacts enable trigger contacts_sync_names;
 
--- Code deployed before this migration still writes country text; derive the
--- code from it. A write that sets country_code itself is left alone.
+-- A write that sets country_code itself is left alone, so a derived code never
+-- overwrites a picked one.
 create function private.sync_country_code()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
@@ -708,7 +703,6 @@ begin
     return null;
   end if;
 
-  -- A malformed code is a bad payload, like malformed kids.
   v_country_given := p_payload ? 'country_code';
   if v_country_given and coalesce(nullif(trim(p_payload ->> 'country_code'), ''), 'US') !~ '^[A-Z]{2}$' then
     return null;
@@ -770,8 +764,6 @@ begin
       state_region  = case when p_payload ? 'state_region' then nullif(trim(p_payload ->> 'state_region'), '') else c.state_region end,
       postal_code   = case when p_payload ? 'postal_code' then nullif(trim(p_payload ->> 'postal_code'), '') else c.postal_code end,
       country_code  = case when v_country_given then nullif(trim(p_payload ->> 'country_code'), '') else c.country_code end,
-      -- A picked code settles unrecognized text; a blank one leaves it for the
-      -- owner. The old form's text still lands here.
       country       = case when nullif(trim(p_payload ->> 'country_code'), '') is not null then null
                            when p_payload ? 'country' then nullif(trim(p_payload ->> 'country'), '')
                            else c.country end

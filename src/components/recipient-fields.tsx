@@ -39,7 +39,6 @@ type RecipientFieldsProps = {
   household: { defaults: HouseholdValues; errors?: HouseholdFieldErrors };
   ownerName: string;
   senderCountry: string;
-  /** Country text from before codes that no code matched. */
   legacyCountry?: string | null;
   addressRef?: Ref<AddressFieldsHandle>;
 };

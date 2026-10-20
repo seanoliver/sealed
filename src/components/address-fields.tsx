@@ -29,7 +29,6 @@ export const BLANK_ADDRESS: AddressValues = {
 };
 
 export type AddressFieldsHandle = {
-  /** Checks the postcode before a save; on a problem shows it, focuses the field and returns false. */
   validate: () => boolean;
 };
 
@@ -37,20 +36,14 @@ export type AddressFieldStyles = { input: string; label: string };
 
 type AddressFieldsProps = {
   defaults: AddressValues;
-  /** Country text from before codes that no code matched. */
   legacyCountry?: string | null;
   senderCountry: string;
-  /** Who is typing: the recipient sees the owner's name in the preview's notes. */
   audience: { kind: "recipient"; ownerName: string } | { kind: "owner" };
   styles: AddressFieldStyles;
-  /** Server-side errors for the postcode or country. */
   errors?: { postal_code?: string; country_code?: string };
   preview: "below" | "beside";
   handleRef?: Ref<AddressFieldsHandle>;
-  /**
-   * Start a blank country at the sender's. Off for a saved contact, so a save
-   * doesn't set a country nobody picked; the fields still follow the sender's.
-   */
+  /** Off for a saved contact: prefilling there would save a country nobody picked. */
   prefillCountry?: boolean;
 };
 
@@ -81,7 +74,6 @@ function placeName(country: Country): string {
   );
 }
 
-/** Two-letter code for a stored state when it names a US state, so the list can select it. */
 function initialValues(defaults: AddressValues): AddressValues {
   return {
     ...defaults,
@@ -182,11 +174,6 @@ function previewCaption(
   return notes.length > 0 ? notes.join(" ") : null;
 }
 
-/**
- * The address part of the recipient and owner forms: country first, then the
- * country's own fields in its order, with an envelope preview that redraws as
- * people type. Fields a country lacks post empty, so a save clears them.
- */
 export function AddressFields({
   defaults,
   legacyCountry,
@@ -206,7 +193,6 @@ export function AddressFields({
     country_code:
       initial.current.country_code || (unrecognized || !prefillCountry ? "" : senderCountry),
   }));
-  // Values from fields the current country lacks, restored if its country comes back.
   const [stash, setStash] = useState<Partial<AddressValues>>({});
   const [showLine2, setShowLine2] = useState(initial.current.address_line2 !== "");
   const [postcodeError, setPostcodeError] = useState<string | null>(errors?.postal_code ?? null);
@@ -292,7 +278,6 @@ export function AddressFields({
     { name, senderCountry },
   );
   const asTyped = formatEnvelope(typed, { name, senderCountry, asTyped: true });
-  // Mark the lines the format changed from what was typed (capitals, postcode spacing).
   const envelope = printed && {
     ...printed,
     lines: printed.lines.map((line, i) => ({

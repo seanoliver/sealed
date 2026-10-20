@@ -11,11 +11,6 @@ import {
 } from "./db";
 import { signupAndLogin, stubTurnstile, uniqueEmail, uniqueSlug } from "./helpers";
 
-/**
- * Country-aware addresses (#99): the recipient form and the owner's contact
- * page follow the picked country's fields, check postcodes, and preview the
- * envelope; Settings holds the country the owner mails from.
- */
 test.describe.configure({ mode: "serial" });
 
 const ownerEmail = uniqueEmail("addr-owner");
@@ -114,7 +109,6 @@ test("the recipient form follows the country, checks the postcode and previews t
   await expect(preview).not.toContainText("in capitals");
   await expect(preview.locator("[data-uppercased]")).toHaveCount(0);
 
-  // The preview follows the name fields too.
   await page.locator("#first_name").fill("Augusta");
   await expect(preview).toContainText("Augusta Lovelace");
 
@@ -130,7 +124,6 @@ test("the recipient form follows the country, checks the postcode and previews t
   await expect(preview).toContainText("UNITED KINGDOM");
   await expect(preview).toContainText("print in capitals, as Royal Mail asks.");
 
-  // Back to the US: the state dropped for the UK comes back.
   await pickCountry(page, "usa", "United States");
   await expect(page.getByLabel("State")).toHaveValue("OR");
 
@@ -145,7 +138,6 @@ test("the recipient form follows the country, checks the postcode and previews t
   ).toBeVisible();
   await expect(preview).toContainText("1016 Amsterdam");
 
-  // Save stays enabled; tapping it with the error keeps the page and focuses the field.
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(new RegExp(`/u/${adaToken}$`));
   await expect(page.getByLabel("Postcode")).toBeFocused();
@@ -195,12 +187,10 @@ test("a China address in Chinese prints postcode first and name last, and saves 
   await expect(preview).toContainText("Chinese order: postcode first, name last.");
   await context.close();
 
-  // Saved without touching the address, the old one-line address stays as it was.
   const again = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const unchanged = await again.newPage();
   await stubTurnstile(unchanged);
   await unchanged.goto(`/u/${wangTokens[1]}`);
-  // A one-word name needs a last name before any save; that rule predates addresses.
   await unchanged.locator("#last_name").fill("Wang");
   await unchanged.getByRole("button", { name: "Update my details" }).click();
   await expect(unchanged).toHaveURL(/\/u\/thanks$/);
@@ -233,7 +223,6 @@ test("the owner's contact page edits the address with the envelope beside it", a
     country_code: "GB",
   });
 
-  // Text no code matched stays visible until a country is picked.
   await ownerPage.goto(`/dashboard/contacts/${unknownId}`);
   await expect(ownerPage.getByText("Saved as “Atlantis”, which isn't on the list.")).toBeVisible();
   await expect(ownerPage.getByRole("region", { name: "On the envelope" })).toContainText(

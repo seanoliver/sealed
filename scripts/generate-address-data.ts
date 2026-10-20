@@ -1,11 +1,3 @@
-/**
- * Regenerates src/lib/address/data.json from Google's libaddressinput
- * metadata (the data Chrome autofill uses). See
- * docs/investigations/2026-10-20-libaddressinput-address-data.md.
- *
- *   pnpm exec tsx scripts/generate-address-data.ts         # rewrite data.json
- *   pnpm exec tsx scripts/generate-address-data.ts --sql   # print the alias rows for a migration
- */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { COUNTRY_ALIASES, countryKey } from "../src/lib/address/aliases";
@@ -15,8 +7,6 @@ const DATA_URL =
   "https://www.gstatic.com/chrome/autofill/libaddressinput/chromium-i18n/ssl-address/data";
 const OUT = path.join(__dirname, "../src/lib/address/data.json");
 
-// Intl's English names are written for menus ("Congo - Kinshasa"); these read
-// better on an envelope's last line.
 const NAME_OVERRIDES: Record<string, string> = {
   HK: "Hong Kong",
   MO: "Macao",
@@ -29,7 +19,7 @@ const NAME_OVERRIDES: Record<string, string> = {
   HM: "Heard Island and McDonald Islands",
 };
 
-// Defaults from data/ZZ; a country only stores what differs from them.
+// Changing a default without the matching fallback in getCountry misreads every country that omits the key.
 const DEFAULTS = {
   fmt: "%N%n%O%n%A%n%C",
   require: "AC",
@@ -43,7 +33,6 @@ const DEFAULTS = {
 type Raw = Partial<Record<string, string>>;
 
 export type CountryRecord = {
-  /** English name for menus and the envelope's country line. */
   n: string;
   f?: string;
   lf?: string;
@@ -55,7 +44,6 @@ export type CountryRecord = {
   sn?: string;
   ln?: string;
   dn?: string;
-  /** Subdivisions as [code, name] (US only). */
   s?: [string, string][];
 };
 

@@ -50,7 +50,6 @@ type RecipientFormProps = {
   seenAt?: string;
   ownerName: string;
   senderCountry: string;
-  /** Country text from before codes that no code matched. */
   legacyCountry?: string | null;
 };
 

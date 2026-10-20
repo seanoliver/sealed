@@ -111,7 +111,6 @@ export type ParsedDetails =
   | { success: true; data: ContactDetailsInput }
   | { success: false; error: string; field?: "partner_email" | "postal_code" | "country_code" };
 
-/** `stored` is the contact being edited: its saved postcode is not re-checked. */
 export function parseDetails(
   values: Partial<ContactFormValues>,
   { stored }: { stored?: Pick<ContactRow, "postalCode" | "countryCode"> } = {},

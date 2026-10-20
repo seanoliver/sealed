@@ -57,7 +57,6 @@ function addressGaps(row: ContactListRow): GapField[] {
   return GAP_FIELDS.filter((field) => blank(values[field]));
 }
 
-/** English name and code; text from before codes that no code matched comes back with a null code. */
 function countryOf(row: Pick<ContactListRow, "countryCode" | "legacyCountry">) {
   return row.countryCode
     ? { country: countryName(row.countryCode), countryCode: row.countryCode }
@@ -76,7 +75,6 @@ export type ContactSummary = {
   city: string | null;
   stateRegion: string | null;
   postalCode: string | null;
-  /** English name, or unrecognized text when countryCode is null. */
   country: string | null;
   countryCode: string | null;
   status: StatusKey;

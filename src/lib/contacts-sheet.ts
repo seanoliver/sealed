@@ -46,9 +46,7 @@ export interface SheetRow {
   id: string;
   names: StoredNames;
   values: SheetValues;
-  /** Country text from before codes that no code matched, while no code is set. */
   legacyCountry: string | null;
-  /** The address on one line, as it prints. */
   place: string;
   status: StatusKey;
   failureReason: FailureReason | null;

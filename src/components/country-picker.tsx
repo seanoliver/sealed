@@ -9,7 +9,6 @@ type Option = { code: string; name: string };
 
 const ALL: Option[] = COUNTRY_OPTIONS.map(([code, name]) => ({ code, name }));
 
-/** Countries matching what was typed: code, then name, alias and word starts, then anywhere in the name. */
 export function filterCountries(query: string): Option[] {
   const key = countryKey(query);
   if (key === "") return ALL;
@@ -38,7 +37,6 @@ export function filterCountries(query: string): Option[] {
 
 type CountryPickerProps = {
   id: string;
-  /** The hidden input's name; it posts the two-letter code. */
   name: string;
   value: string;
   onChange: (code: string) => void;
@@ -48,10 +46,6 @@ type CountryPickerProps = {
   placeholder?: string;
 };
 
-/**
- * Type-to-filter country picker (ARIA combobox with a listbox popup). Matches
- * English names, short forms like UK and USA, and two-letter codes.
- */
 export function CountryPicker({
   id,
   name,

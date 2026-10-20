@@ -23,22 +23,18 @@ export type AddressFieldSpec = {
   name: AddressField;
   label: string;
   required: boolean;
-  /** US states: picked from a list and stored as the two-letter code. */
   options: readonly (readonly [string, string])[] | null;
   autoComplete: string;
 };
 
 export type AddressRow = {
   fields: AddressFieldSpec[];
-  /** Two fields that stack on a phone and sit side by side on a wider screen. */
   wideOnly: boolean;
 };
 
 export type AddressLayout = {
   rows: AddressRow[];
-  /** Fields this country's envelope prints; the rest are cleared on save. */
   fields: ReadonlySet<AddressField>;
-  /** The second street line shows only when it already holds something. */
   line2OnlyWhenFilled: boolean;
 };
 
@@ -60,7 +56,6 @@ const TOKEN_FOR: Record<AddressField, FormatField> = {
 
 const SHORT = new Set<AddressField>(["district", "city", "state_region", "postal_code"]);
 
-// Where the house number follows the street name.
 const STREET_AND_NUMBER = new Set([
   "NL",
   "DE",
@@ -88,7 +83,6 @@ const STREET_AND_NUMBER = new Set([
   "LT",
 ]);
 const FLAT_FIRST = new Set(["GB", "IE", "AU", "NZ"]);
-// The street line usually carries the flat or room too.
 const ONE_STREET_LINE = new Set(["NL", "CN", "TW", "HK", "MO", "JP", "KR"]);
 const POSTCODE = new Set(["GB", "NL", "AU", "NZ", "ZA"]);
 
@@ -147,10 +141,8 @@ export function fieldLabel(field: AddressField, country: Country | null): string
   }
 }
 
-// For text no code matched: every field, in the old order.
 const UNKNOWN_FORMAT = "%A%n%C%n%S %Z";
 
-/** Which fields a country's address has, how they're labeled, and their order. */
 export function addressLayout(code: string | null): AddressLayout {
   const country = getCountry(code);
   const format = country?.fmt ?? UNKNOWN_FORMAT;
@@ -175,7 +167,6 @@ export function addressLayout(code: string | null): AddressLayout {
     }[name],
   });
 
-  // Postcode-first formats (China, Japan) still ask for it last.
   const streetAt = lines.findIndex((line) => line.includes("A"));
   const zipAt = lines.findIndex((line) => line.includes("Z"));
   const zipFirst = zipAt !== -1 && zipAt < streetAt;

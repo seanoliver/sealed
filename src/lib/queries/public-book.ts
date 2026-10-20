@@ -22,7 +22,6 @@ export const SLUG_SHAPE = BOOK_LINK_SHAPE;
 export type PublicBook = {
   ownerName: string;
   enabledFields: { partner_name: boolean; kids_names: boolean; birthday: boolean };
-  /** Prefills the form's country and drops it from the envelope preview, so every visitor sees it anyway. */
   senderCountry: string;
 };
 

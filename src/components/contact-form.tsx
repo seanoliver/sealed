@@ -12,8 +12,7 @@ const initialState: ContactFormState = {};
 const inputClasses =
   "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 ";
 const labelClasses = "text-sm font-medium text-foreground";
-// On wide screens the envelope preview sits beside the address; the other
-// fields keep to the same column.
+// The envelope preview's 17rem column plus its gap, so these fields line up with the address.
 const column = "lg:mr-[18.5rem]";
 
 type ContactFormProps = {
@@ -28,7 +27,6 @@ type ContactFormProps = {
   version?: string;
   submitLabel: string;
   senderCountry: string;
-  /** Country text from before codes that no code matched. */
   legacyCountry?: string | null;
 };
 

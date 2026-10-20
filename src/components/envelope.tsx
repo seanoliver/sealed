@@ -3,13 +3,11 @@ import { type EnvelopeLine } from "@/lib/address";
 
 type EnvelopeProps = {
   lines: readonly EnvelopeLine[];
-  /** Mark the lines the format capitalized, so the writer sees what changed. */
   highlight?: boolean;
   caption?: ReactNode;
   className?: string;
 };
 
-/** An envelope's face: stamp corner, then the address lines as they will print. */
 export function Envelope({ lines, highlight = false, caption, className = "" }: EnvelopeProps) {
   return (
     <div className={`rounded-md border border-border bg-background px-4 pt-4 pb-5 ${className}`}>

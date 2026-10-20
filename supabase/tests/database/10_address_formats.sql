@@ -12,7 +12,6 @@ select throws_ok($$
   update public.books set sender_country = 'usa' where id = '10000000-0000-4000-8000-000000099001'
 $$, '23514', null, 'the sender country is a two-letter code');
 
--- The production values, plus the aliases people type.
 select results_eq(
   $$ select private.country_code_for(t) from unnest(array[
        'United States', 'USA', 'usa', 'US', 'u.s.a.', 'CHINA', 'PRC', '中国', 'Netherlands',
@@ -34,7 +33,6 @@ select throws_ok($$
   values ('10000000-0000-4000-8000-000000099001', 'Long District', repeat('d', 121))
 $$, '23514', null, 'a district has the same cap as a city');
 
--- The app deployed before this migration writes country text only.
 insert into public.contacts (id, book_id, full_name, email, country) values
   ('20000000-0000-4000-8000-000000099001', '10000000-0000-4000-8000-000000099001', 'Ana', 'ana@af.test', 'United Kingdom'),
   ('20000000-0000-4000-8000-000000099002', '10000000-0000-4000-8000-000000099001', 'Ben', 'ben@af.test', 'Atlantis'),
@@ -69,7 +67,6 @@ insert into public.contacts (id, book_id, full_name, country, country_code) valu
 select is((select country_code from public.contacts where id = '20000000-0000-4000-8000-000000099004'), 'CA',
   'an insert that names its code keeps it');
 
--- Recipient links.
 update public.contacts set country_code = 'US', country = 'United States', city = 'Portland',
   district = null where id = '20000000-0000-4000-8000-000000099003';
 insert into public.update_tokens (contact_id, token_hash, expires_at) values
@@ -118,7 +115,6 @@ select results_eq(
   $$ values (null::text, 'Germany', null::text) $$,
   'an empty code clears the code and district but keeps old text for the owner');
 
--- A colliding reply is queued with its new keys.
 update public.contacts set partner_email = 'eve@af.test', country_code = 'US'
 where id = '20000000-0000-4000-8000-000000099001';
 insert into public.contact_events (contact_id, source, recipient, diff, created_at) values
@@ -135,7 +131,6 @@ select is((select payload from public.submissions
 select is((select country_code from public.contacts where id = '20000000-0000-4000-8000-000000099001'), 'US',
   'the queued reply changes nothing yet');
 
--- The owner edits through RLS like any other column.
 set local role authenticated;
 set local request.jwt.claims = '{"sub": "00000000-0000-4000-8000-000000099001", "role": "authenticated"}';
 update public.contacts set country_code = 'SG', district = 'Tanjong Pagar'

@@ -37,10 +37,6 @@ const hasHouseholdNames = (payload: unknown) =>
   payload !== null &&
   ("first_name" in payload || "last_name" in payload);
 
-/**
- * Payloads saved before country codes carry `country` text. Map it to a code;
- * text no code matches is dropped (the review card still shows it).
- */
 export function withCountryCode(payload: unknown): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
   const { country, ...rest } = payload as Record<string, unknown>;
@@ -123,7 +119,6 @@ export const submissionDisplaySchema = z.object({
   state_region: displayValue,
   postal_code: displayValue,
   country_code: displayValue,
-  /** Country text from before codes; display maps it to a code when it can. */
   country: displayValue,
   first_name: rawName,
   last_name: rawName,
@@ -135,7 +130,6 @@ export const submissionDisplaySchema = z.object({
 export type SubmissionDisplayFields = Partial<
   Record<TokenUpdateField | "partner_email", string>
 > & {
-  /** Old country text no code matched. */
   country?: string;
 };
 

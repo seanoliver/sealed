@@ -24,7 +24,6 @@ export const tokenDataSchema = z.object({
     state_region: z.string().nullable(),
     postal_code: z.string().nullable(),
     country_code: z.string().nullable(),
-    /** Text from before country codes that no code matched. */
     country: z.string().nullable(),
   }),
   enabled_fields: z.object({

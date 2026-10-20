@@ -34,7 +34,6 @@ const ADJECTIVES: Record<string, string> = {
   ZA: "South African",
 };
 
-// Names that read with "the" in a sentence.
 const WITH_THE =
   /^(United|Netherlands|Philippines|Bahamas|Gambia|Czech|Dominican|Central African|Maldives|Marshall|Solomon|Comoros|Cayman|Falkland|Faroe|Cook|British|U\.S\.|Democratic|Republic|Vatican|Turks|Northern Mariana|Cocos|Caribbean)/;
 
@@ -56,7 +55,6 @@ function count(n: number, noun: string): string {
   return `${NUMBERS[n] ?? n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-/** "four digits and two letters" for 1234 AB, or null when the shape mixes letters and digits. */
 function shapeOf(example: string): string | null {
   const parts: string[] = [];
   for (const token of example.split(/([ -])/)) {
@@ -82,7 +80,6 @@ function postcodeNoun(country: Country): string {
   return `${/^[aeio]/i.test(noun) ? "An" : "A"} ${noun} in ${name}`;
 }
 
-/** Why a postcode doesn't fit the country's pattern, or null when it fits (or the country has none). */
 export function postcodeProblem(
   countryCode: string | null | undefined,
   postcode: string | null | undefined,
@@ -99,10 +96,6 @@ export function postcodeProblem(
 
 const collapse = (value: string) => value.trim().replace(/\s+/g, " ");
 
-/**
- * Postcode as the post office writes it: upper case, and for the UK, Canada
- * and the Netherlands the space in its usual place when the pattern fits.
- */
 export function normalizePostcode(
   countryCode: string | null | undefined,
   postcode: string,
@@ -121,7 +114,6 @@ export function normalizePostcode(
   return country.zip === null || country.zip.test(formatted) ? formatted : value;
 }
 
-/** A US state's name or code as its two-letter code; other text as typed. */
 export function normalizeState(countryCode: string | null | undefined, state: string): string {
   const value = collapse(state);
   const subdivisions = getCountry(countryCode)?.subdivisions;
@@ -143,7 +135,6 @@ export type AddressInput = {
   country_code?: string;
 };
 
-/** Trimmed, single-spaced, postcode and state in their usual form. Blank stays blank. */
 export function normalizeAddress<T extends AddressInput>(input: T): T {
   const out: AddressInput = { ...input };
   const country = input.country_code;
