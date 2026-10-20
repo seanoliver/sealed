@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(38);
+select plan(44);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-000000099001', 'af@test.dev');
 insert into public.books (id, owner_id, slug)
@@ -21,6 +21,9 @@ select results_eq(
             ('GB'), ('GB'), ('GB'), ('GB'), ('SG'), ('GR'), ('ES'), ('ES'), ('ZA'), ('DE'), ('DE') $$,
   'country names, aliases and codes map to codes, ignoring case, dots and accents');
 select is(private.country_code_for('Atlantis'), null, 'unknown text maps to nothing');
+select is(private.country_code_for('한국'), 'KR', 'Hangul typed in composed form maps to its code');
+select is(private.country_code_for('Korea, Republic of'), 'KR', 'ISO long forms map to codes');
+select is(private.country_code_for('St. Lucia'), 'LC', '"St." reads as "Saint"');
 select is(private.country_code_for(''), null, 'blank text maps to nothing');
 select is(private.country_code_for(null), null, 'no text maps to nothing');
 
@@ -106,14 +109,27 @@ select results_eq(
 
 select is(private.apply_token_reply('af3', '{"country_code": "usa"}'), null,
   'a malformed code is a bad payload');
+select is(private.apply_token_reply('af3', '{"country_code": "ZZ"}'), null,
+  'a well-formed code that is no country is a bad payload');
 select is((select used_at from public.update_tokens where token_hash = extensions.digest('af3', 'sha256')), null,
   'a bad payload leaves the link usable');
 select is(private.apply_token_reply('af3', '{"country_code": "", "district": ""}'), 'applied',
   'an empty code clears it');
 select results_eq(
   $$ select country_code, country, district from public.contacts where id = '20000000-0000-4000-8000-000000099003' $$,
-  $$ values (null::text, 'Germany', null::text) $$,
-  'an empty code clears the code and district but keeps old text for the owner');
+  $$ values (null::text, null::text, null::text) $$,
+  'an empty code clears the code, its old text and the district');
+
+insert into public.contacts (id, book_id, full_name, country) values
+  ('20000000-0000-4000-8000-000000099005', '10000000-0000-4000-8000-000000099001', 'Nemo', 'Atlantis');
+insert into public.update_tokens (contact_id, token_hash, expires_at) values
+  ('20000000-0000-4000-8000-000000099005', extensions.digest('af5', 'sha256'), now() + interval '1 day');
+select is(private.apply_token_reply('af5', '{"country_code": "", "city": "Port Royal"}'), 'applied',
+  'a reply that leaves an unrecognized country blank applies');
+select results_eq(
+  $$ select country_code, country from public.contacts where id = '20000000-0000-4000-8000-000000099005' $$,
+  $$ values (null::text, 'Atlantis') $$,
+  'unrecognized text stays when the reply leaves the country blank');
 
 update public.contacts set partner_email = 'eve@af.test', country_code = 'US'
 where id = '20000000-0000-4000-8000-000000099001';

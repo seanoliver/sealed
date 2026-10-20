@@ -79,16 +79,28 @@ export const COUNTRY_OPTIONS: readonly (readonly [string, string])[] = Object.en
   ([code, record]) => [code, record.n] as const,
 );
 
+/** Every key that names a country, as [key, code]: codes, English names, aliases, "St" for "Saint". */
+export function countryKeyEntries(
+  records: Record<string, { n: string }> = RECORDS,
+): [string, string][] {
+  const keys = new Map<string, string>();
+  const add = (text: string, code: string) => {
+    const key = countryKey(text);
+    keys.set(key, code);
+    if (/\bsaint\b/.test(key)) keys.set(key.replace(/\bsaint\b/g, "st"), code);
+  };
+  for (const [code, record] of Object.entries(records)) {
+    add(code, code);
+    add(record.n, code);
+  }
+  for (const [alias, code] of Object.entries(COUNTRY_ALIASES)) add(alias, code);
+  return [...keys];
+}
+
 let lookup: Map<string, string> | null = null;
 
 function lookupTable(): Map<string, string> {
-  if (lookup) return lookup;
-  lookup = new Map();
-  for (const [code, record] of Object.entries(RECORDS)) {
-    lookup.set(countryKey(code), code);
-    lookup.set(countryKey(record.n), code);
-  }
-  for (const [alias, code] of Object.entries(COUNTRY_ALIASES)) lookup.set(countryKey(alias), code);
+  lookup ??= new Map(countryKeyEntries());
   return lookup;
 }
 

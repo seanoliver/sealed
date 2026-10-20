@@ -196,7 +196,7 @@ describe("envelopeLines", () => {
         },
         US,
       ),
-    ).toEqual(["Calle Mayor 5", "28013 MADRID", "SPAIN"]);
+    ).toEqual(["Calle Mayor 5", "28013 MADRID MADRID", "SPAIN"]);
     expect(
       envelopeLines(
         {
@@ -237,6 +237,69 @@ describe("envelopeLines", () => {
         { senderCountry: "NL" },
       ),
     ).toEqual(["Keizersgracht 212", "1016 DZ Amsterdam"]);
+  });
+
+  it("keeps a state that matches its city unless the format runs them together", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "350 5th Ave", city: "New York", stateRegion: "New York", postalCode: "10001", countryCode: "US" },
+        US,
+      ),
+    ).toEqual(["350 5th Ave", "New York, New York 10001"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "1 Rue des Jardins", city: "Québec", stateRegion: "Québec", postalCode: "G1R 4P5", countryCode: "CA" },
+        US,
+      ),
+    ).toEqual(["1 RUE DES JARDINS", "QUÉBEC QUÉBEC G1R 4P5", "CANADA"]);
+  });
+
+  it("prints a stored value the country's format has no place for, beside the street", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "1-1-1 Jingumae", city: "Shibuya-ku", stateRegion: "Tokyo", postalCode: "150-0001", countryCode: "JP" },
+        US,
+      ),
+    ).toEqual(["1-1-1 Jingumae, Shibuya-ku, TOKYO", "150-0001", "JAPAN"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "千代田区丸の内1-1-1", city: "千代田区", stateRegion: "東京都", postalCode: "100-0005", countryCode: "JP" },
+        US,
+      ),
+    ).toEqual(["〒100-0005", "東京都", "千代田区", "千代田区丸の内1-1-1", "JAPAN"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "12 Sheikh Zayed Road", city: "Dubai", stateRegion: "Dubai", countryCode: "AE" },
+        US,
+      ),
+    ).toEqual(["12 Sheikh Zayed Road, Dubai", "Dubai", "UNITED ARAB EMIRATES"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "5 Main St", city: "George Town", stateRegion: "Grand Cayman", postalCode: "KY1-1001", countryCode: "KY" },
+        US,
+      ),
+    ).toEqual(["5 Main St, George Town", "Grand Cayman KY1-1001", "CAYMAN ISLANDS"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "Civic Centre", city: "Yaren", stateRegion: "Yaren District", countryCode: "NR" },
+        US,
+      ),
+    ).toEqual(["Civic Centre, Yaren", "Yaren District", "NAURU"]);
+  });
+
+  it("adds the country line even when an address line mentions the country", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "4400 Canada Way", city: "Burnaby", stateRegion: "BC", postalCode: "V5G 1J6", countryCode: "CA" },
+        US,
+      )?.at(-1),
+    ).toBe("CANADA");
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "1 Queen's Road Central", city: "Central", stateRegion: "Hong Kong Island", countryCode: "HK" },
+        US,
+      ),
+    ).toEqual(["1 Queen's Road Central", "Central", "HONG KONG ISLAND", "HONG KONG"]);
   });
 
   it("drops separators next to an empty field", () => {

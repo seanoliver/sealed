@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { COUNTRY_ALIASES, countryKey } from "../src/lib/address/aliases";
+import { countryKeyEntries } from "../src/lib/address/countries";
 
 const INDEX_URL = "https://chromium-i18n.appspot.com/ssl-address/data";
 const DATA_URL =
@@ -102,13 +102,7 @@ function compact(code: string, raw: Raw, names: Intl.DisplayNames): CountryRecor
 }
 
 function sqlRows(data: Record<string, CountryRecord>): string {
-  const rows = new Map<string, string>();
-  for (const [code, record] of Object.entries(data)) {
-    rows.set(countryKey(code), code);
-    rows.set(countryKey(record.n), code);
-  }
-  for (const [alias, code] of Object.entries(COUNTRY_ALIASES)) rows.set(countryKey(alias), code);
-  return [...rows]
+  return countryKeyEntries(data)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, code]) => `    ('${key.replace(/'/g, "''")}', '${code}')`)
     .join(",\n");

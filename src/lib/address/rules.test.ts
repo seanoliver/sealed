@@ -30,6 +30,19 @@ describe("countryCodeFor", () => {
     ["  germany  ", "DE"],
     ["Côte d’Ivoire", "CI"],
     ["Saint Kitts & Nevis", "KN"],
+    ["한국", "KR"],
+    ["Korea, Republic of", "KR"],
+    ["South Korea", "KR"],
+    ["Viet Nam", "VN"],
+    ["Republic of Ireland", "IE"],
+    ["Brasil", "BR"],
+    ["PR China", "CN"],
+    ["Taiwan, ROC", "TW"],
+    ["St. Lucia", "LC"],
+    ["N. Ireland", "GB"],
+    ["Northern Ireland", "GB"],
+    ["Bosnia", "BA"],
+    ["Iran, Islamic Republic of", "IR"],
   ])("maps %s to %s", (text, code) => {
     expect(countryCodeFor(text)).toBe(code);
   });
@@ -79,6 +92,7 @@ describe("normalizePostcode", () => {
     expect(normalizePostcode("GB", " bs6   5qt ")).toBe("BS6 5QT");
     expect(normalizePostcode("CA", "k1a0b1")).toBe("K1A 0B1");
     expect(normalizePostcode("NL", "1016dz")).toBe("1016 DZ");
+    expect(normalizePostcode("IE", "a65f4e2")).toBe("A65 F4E2");
   });
 
   it("leaves a postcode that doesn't fit as typed, upper-cased", () => {

@@ -148,39 +148,50 @@ export function formatEnvelope(
       ? [line2, line1]
       : [line1, line2];
   const suffix = local && country ? (NAME_SUFFIX[country.code] ?? "") : "";
+  const city = clean(address.city);
+  const state = clean(address.stateRegion);
   const values: Record<FormatField, string> = {
     N: clean(name) === "" ? "" : `${clean(name)}${suffix}`,
     O: "",
-    A: street.filter(Boolean).join(local ? "\n" : ", "),
+    A: "",
     D: clean(address.district),
-    C: clean(address.city),
-    S:
-      clean(address.stateRegion).toLowerCase() === clean(address.city).toLowerCase()
-        ? ""
-        : clean(address.stateRegion),
+    C: city,
+    S: /%S%C|%C%S/.test(fmt) && state.toLowerCase() === city.toLowerCase() ? "" : state,
     Z: clean(address.postalCode),
   };
+  // A stored value the format has no place for still prints, next to the street.
+  const countryLine = (known?.name ?? legacy).toUpperCase();
+  const slotless = (["D", "C", "S", "Z"] as const).filter(
+    (field) =>
+      values[field] !== "" &&
+      !fmt.includes(`%${field}`) &&
+      values[field].toUpperCase() !== countryLine,
+  );
+  const extra = slotless.map((field) => values[field]);
+  values.A = (local ? [...extra, ...street] : [...street, ...extra])
+    .filter(Boolean)
+    .join(local ? "\n" : ", ");
   const raw = (field: FormatField) => values[field] ?? "";
   const cased = (field: FormatField) => (upper.has(field) ? raw(field).toUpperCase() : raw(field));
 
+  let printsCountry = false;
   const lines: EnvelopeLine[] = [];
   for (const formatLine of fmt.split("%n")) {
     const parts = parseLine(formatLine);
     const typed = renderLine(parts, raw).split("\n");
     const printed = renderLine(parts, cased).split("\n");
+    const fixedName = parts.some(
+      (part) => "literal" in part && countryLine !== "" && part.literal.includes(countryLine),
+    );
     printed.forEach((text, i) => {
-      if (text.trim() !== "") lines.push({ text: text.trim(), uppercased: text !== typed[i] });
+      if (text.trim() === "") return;
+      if (fixedName && text.includes(countryLine)) printsCountry = true;
+      lines.push({ text: text.trim(), uppercased: text !== typed[i] });
     });
   }
 
   const domestic = known !== null ? known.code === senderCountry : legacy === "";
-  if (!domestic) {
-    const countryLine = (known?.name ?? legacy).toUpperCase();
-    const named = new RegExp(`(^|\\s)${countryLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`);
-    if (!lines.some((line) => named.test(line.text))) {
-      lines.push({ text: countryLine, uppercased: false });
-    }
-  }
+  if (!domestic && !printsCountry) lines.push({ text: countryLine, uppercased: false });
   return { lines, local, country, domestic };
 }
 

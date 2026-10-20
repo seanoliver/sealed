@@ -107,6 +107,8 @@ export function normalizePostcode(
   let formatted = value;
   if ((country.code === "GB" || country.code === "CA") && compact.length > 3) {
     formatted = `${compact.slice(0, -3)} ${compact.slice(-3)}`;
+  } else if (country.code === "IE" && compact.length === 7) {
+    formatted = `${compact.slice(0, 3)} ${compact.slice(3)}`;
   } else if (country.code === "NL") {
     const match = /^(\d{4})([A-Z]{2})$/.exec(compact);
     if (match) formatted = `${match[1]} ${match[2]}`;
