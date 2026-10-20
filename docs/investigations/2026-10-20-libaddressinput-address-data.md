@@ -37,6 +37,16 @@ Where does Sealed get each country's address format, which parts of that data it
 - `Intl.DisplayNames` output depends on the Node ICU version that runs the script; review name changes in the diff when regenerating.
 - Only country text that no code matched stays in `contacts.country`: the migration's backfill and the trigger for old-style writes null the text whenever they derive a code. It shows to the owner as unrecognized. The forms, table and agents clear it only when the code changes, so a no-change save writes nothing; token replies and approvals clear it when a code is set or a stored code is cleared, and an old reply's unmatched text never replaces a stored code. It is part of the history snapshot (`country`), so undo brings it back. `rowAddress` ignores it once `country_code` is set. CSV import and pre-deploy submissions keep unmatched text there too.
 
+## Rolling back to code from before #122
+
+Migration `20261024120000_address_formats.sql` nulls `contacts.country` wherever it derived a code, and its trigger turns country text from old-style writes into a code and nulls the text. Code from before #122 reads and writes only `country`, so before redeploying it, drop the trigger (or old-style writes lose their text) and rebuild the text from the codes. Generate the statement from the vendored names, review it, then run it as the database owner:
+
+```bash
+node -e 'const d=require("./src/lib/address/data.json");const m=Object.fromEntries(Object.entries(d).map(([c,r])=>[c,r.n]));console.log("drop trigger contacts_sync_country_code on public.contacts;\nupdate public.contacts c set country = m.name from jsonb_each_text($json$"+JSON.stringify(m)+"$json$::jsonb) m(code, name) where c.country is null and c.country_code = m.code;")'
+```
+
+The new columns (`country_code`, `district`, `books.sender_country`) can stay: old code ignores them. Districts are not folded back into another column, so an address that relies on one prints without it until #122 is redeployed. Checked on 2026-10-20 in a rolled-back transaction: a `GB` row got "United Kingdom".
+
 ## Open questions
 
 - Postcode-specific checks beyond the regex (state-to-ZIP ranges from `sub_zips`) are not used.

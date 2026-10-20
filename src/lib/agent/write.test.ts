@@ -582,8 +582,13 @@ describe("agent write tools", () => {
       await dbAdmin.execute(sql`update public.contacts set country = 'USA' where id = ${ANA}`);
       const result = await update({ id: ANA, fields: { city: "Bend" } });
       expect(result).toEqual(expect.objectContaining({ before: { city: "Portland" }, after: { city: "Bend" } }));
-      expect(summarizeDiff({ before: { city: "A", country: "USA" }, after: { city: "B", country: null } })).toBe(
-        "City A → B",
+      const backfilled = { before: { city: "A", country: "USA" }, after: { city: "B", country: null } };
+      expect(summarizeDiff(backfilled, { countryCode: "US" })).toBe("City A → B");
+      expect(summarizeDiff({ before: { country: "France" }, after: { country: null } }, { countryCode: null })).toBe(
+        "Removed country",
+      );
+      expect(summarizeDiff({ before: { country: "France" }, after: { country: null } }, { countryCode: "US" })).toBe(
+        "Removed country",
       );
     });
 

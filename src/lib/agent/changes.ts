@@ -10,7 +10,7 @@ import {
   type SnapshotField,
   type WriteResult,
 } from "@/app/dashboard/contacts/write";
-import { countryName } from "@/lib/address";
+import { countryCodeFor, countryName } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -68,14 +68,24 @@ function asDiff(value: unknown): Diff {
   return value !== null && typeof value === "object" ? (value as Diff) : {};
 }
 
-export function summarizeDiff(raw: unknown): string {
+/** `countryCode` is the contact's current code, to tell backfilled text from a real removal. */
+export function summarizeDiff(
+  raw: unknown,
+  { countryCode = null }: { countryCode?: string | null } = {},
+): string {
   const diff = asDiff(raw);
   const after = diff.after ?? {};
   if (!diff.before) return "Added the contact";
+  const backfilledText =
+    blank(after.country) &&
+    !("country_code" in after) &&
+    countryCode !== null &&
+    typeof diff.before.country === "string" &&
+    countryCodeFor(diff.before.country) === countryCode;
   const fields = (Object.keys(FIELD_LABELS) as (keyof typeof FIELD_LABELS)[]).filter(
     (field) =>
       field in after &&
-      !(field === "country" && ("country_code" in after || blank(after.country))) &&
+      !(field === "country" && ("country_code" in after || backfilledText)) &&
       !(DERIVED[field as SnapshotField] ?? []).some((name) => name in after),
   );
   const parts = fields.map((field) => {
@@ -137,6 +147,7 @@ export async function listAgentChanges(
           partnerLastName: contacts.partnerLastName,
           kids: contacts.kids,
         },
+        countryCode: contacts.countryCode,
         hasBefore: sql<boolean>`${contactEvents.diff} ? 'before'`,
         current: sql<boolean>`coalesce(${contacts.updatedAt} = ${contactEvents.contactUpdatedAt}, false)`,
         undone: sql<boolean>`exists (
@@ -172,7 +183,7 @@ export async function listAgentChanges(
       eventId: event.id,
       contactId: event.contactId,
       contactName: householdLine(pickStoredNames(event.contact)),
-      summary: summarizeDiff(event.diff),
+      summary: summarizeDiff(event.diff, { countryCode: event.countryCode }),
       at: event.at,
       undo: undoState(event),
     })),

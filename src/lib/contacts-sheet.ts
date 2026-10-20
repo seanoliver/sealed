@@ -376,7 +376,7 @@ export function twoAnswers(
           label,
           parts: [{ text: reply(field) || REMOVED, changed: true }],
         })),
-        ...(display.country && display.country_code === undefined
+        ...(display.country && display.country_code === undefined && row.countryCode === null
           ? [{ label: "Country", parts: [{ text: `${display.country} (not on the list)`, changed: true }] }]
           : []),
       ],

@@ -238,8 +238,15 @@ describe("twoAnswers", () => {
     expect(answers.incoming.lines[0]?.parts.at(-1)).toEqual({ text: "CANADA", changed: true });
   });
 
-  it("shows a reply's unrecognized country text without touching the stored country", () => {
-    const answers = twoAnswers(couple, {
+  it("shows a reply's unrecognized country text only where no country is stored, as approval does", () => {
+    const withCode = twoAnswers(couple, {
+      submissionId: "s1",
+      from: "partner",
+      savedBy: "primary",
+      display: { country: "Atlantis" },
+    });
+    expect(withCode.incoming.lines).toHaveLength(1);
+    const answers = twoAnswers({ ...couple, countryCode: null }, {
       submissionId: "s1",
       from: "partner",
       savedBy: "primary",

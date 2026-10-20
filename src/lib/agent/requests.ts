@@ -352,6 +352,7 @@ export async function listPendingRequests(claims: SessionClaims): Promise<Pendin
             contactId: contactEvents.contactId,
             at: contactEvents.createdAt,
             diff: contactEvents.diff,
+            countryCode: sql<string | null>`(select c.country_code from public.contacts c where c.id = ${contactEvents.contactId})`,
           })
           .from(contactEvents)
           .where(
@@ -373,7 +374,7 @@ export async function listPendingRequests(claims: SessionClaims): Promise<Pendin
               email: item.email,
               partnerEmail: item.partnerEmail,
               address: item.address,
-              agentEdit: edit ? { at: edit.at, summary: summarizeDiff(edit.diff) } : null,
+              agentEdit: edit ? { at: edit.at, summary: summarizeDiff(edit.diff, { countryCode: edit.countryCode }) } : null,
             };
           }),
         };
