@@ -13,8 +13,12 @@ import {
   CLEARABLE_FIELDS,
   DISPLAY_VALUE_MAX,
   parseSubmissionForDisplay,
+  submittedPeople,
   type EnabledFields,
 } from "@/lib/validation/submission";
+import { NameWithReading } from "@/components/name-with-reading";
+import { contactReadings, readingsForContact } from "@/lib/pinyin";
+import { type Readings } from "@/lib/readings";
 import { ReviewCardActions } from "./review-card-actions";
 
 /**
@@ -61,17 +65,20 @@ function capForDisplay(value: string): string {
 type FieldRow = { field: ReviewField; label: string; value: string };
 type DiffRow = FieldRow & { current: string | null; changed: boolean };
 
-type CardModel = { id: string; submittedAtLabel: string } & (
+const NAME_FIELDS: ReadonlySet<ReviewField> = new Set(["full_name", "partner_name"]);
+
+type CardModel = { id: string; submittedAtLabel: string; readings: Readings } & (
   | { kind: "malformed" }
   | { kind: "new"; fields: FieldRow[] }
   | { kind: "merge"; contactName: string; rows: DiffRow[] }
 );
 
-function toCardModel(
+async function toCardModel(
   { submission, matchedContact }: PendingSubmission,
   enabled: EnabledFields,
-): CardModel {
+): Promise<CardModel> {
   const base = {
+    readings: {},
     id: submission.id,
     submittedAtLabel: submission.createdAt.toLocaleString("en-US", {
       month: "short",
@@ -91,9 +98,11 @@ function toCardModel(
   const present = (fields: readonly ReviewField[]) =>
     fields.filter((field) => parsed[field] !== undefined && parsed[field] !== "");
 
+  const people = submittedPeople(submission.payload, enabled);
   if (!matchedContact) {
     return {
       ...base,
+      readings: await contactReadings({ people }),
       kind: "new",
       fields: present(TOKEN_UPDATE_FIELDS).map((field) => ({
         field,
@@ -121,6 +130,7 @@ function toCardModel(
 
   return {
     ...base,
+    readings: await readingsForContact(matchedContact, { extra: people }),
     kind: "merge",
     contactName: matchedContact.fullName,
     rows: [
@@ -161,7 +171,9 @@ export default async function ReviewPage() {
   if (!book) redirect("/onboarding");
 
   const pending = await listPendingSubmissions(claims);
-  const cards = pending.map((item) => toCardModel(item, book.enabledFields));
+  const cards = await Promise.all(
+    pending.map((item) => toCardModel(item, book.enabledFields)),
+  );
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
@@ -183,9 +195,12 @@ export default async function ReviewPage() {
             <li key={card.id} className={cardClasses}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-medium text-foreground">
-                  {card.kind === "merge"
-                    ? `Possible update to existing contact: ${card.contactName}`
-                    : card.kind === "new"
+                  {card.kind === "merge" ? (
+                    <>
+                      Possible update to existing contact:{" "}
+                      <NameWithReading text={card.contactName} readings={card.readings} />
+                    </>
+                  ) : card.kind === "new"
                       ? "New contact"
                       : "Malformed submission"}
                 </span>
@@ -210,7 +225,13 @@ export default async function ReviewPage() {
                         <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           {row.label}
                         </dt>
-                        <dd className={valueClasses}>{row.value}</dd>
+                        <dd className={valueClasses}>
+                          {NAME_FIELDS.has(row.field) ? (
+                            <NameWithReading text={row.value} readings={card.readings} />
+                          ) : (
+                            row.value
+                          )}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -238,17 +259,27 @@ export default async function ReviewPage() {
                             {row.label}
                           </td>
                           <td className={`py-2 pr-4 ${valueClasses}`}>
-                            {row.current ?? (
+                            {row.current === null ? (
                               <span className="text-muted-foreground/70">
                                 —
                               </span>
+                            ) : NAME_FIELDS.has(row.field) ? (
+                              <NameWithReading text={row.current} readings={card.readings} />
+                            ) : (
+                              row.current
                             )}
                           </td>
                           <td className={`py-2 ${valueClasses}`}>
                             {row.changed ? (
                               <mark className="rounded bg-amber-100 px-1 py-0.5 text-foreground dark:bg-amber-900/60 ">
-                                {row.value}
+                                {NAME_FIELDS.has(row.field) ? (
+                                  <NameWithReading text={row.value} readings={card.readings} />
+                                ) : (
+                                  row.value
+                                )}
                               </mark>
+                            ) : NAME_FIELDS.has(row.field) ? (
+                              <NameWithReading text={row.value} readings={card.readings} />
                             ) : (
                               row.value
                             )}

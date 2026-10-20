@@ -6,9 +6,11 @@ import { books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
 import type { FailureReason } from "@/lib/email/resend";
 import { combineSends, type RecipientSend } from "@/lib/contacts-sheet";
 import { type StoredNames } from "@/lib/names";
+import { readingsForContact } from "@/lib/pinyin";
+import { isPinyinQuery, matchesReading } from "@/lib/readings";
 import { type Recipient } from "@/lib/recipients";
 
-const SEND_STATUSES = [
+export const SEND_STATUSES = [
   "sent",
   "delivered",
   "opened",
@@ -62,10 +64,14 @@ function toSendStatus(value: string | null): SendStatus {
     : "none";
 }
 
+// Postgres ARE escapes: CJK ideographs, compatibility ideographs, extensions B and up.
+const HAN_PATTERN = String.raw`[\u3400-\u9fff\uf900-\ufaff\U00020000-\U0003ffff]`;
+
 /**
  * Contacts in the caller's book with their latest send status and an
  * "updated since last send" flag, ordered by name. `search` filters by
- * full_name OR partner_name (case-insensitive substring).
+ * full_name OR partner_name (case-insensitive substring), or by the pinyin of
+ * a name in Chinese characters, with or without tone marks.
  */
 export async function listContacts(
   claims: SessionClaims,
@@ -103,6 +109,10 @@ export async function listContacts(
 
     const term = search?.trim();
     const pattern = term ? `%${escapeLike(term)}%` : undefined;
+    const pinyinTerm = term && isPinyinQuery(term) ? term : undefined;
+    const literal = pattern
+      ? or(ilike(contacts.fullName, pattern), ilike(contacts.partnerName, pattern))
+      : undefined;
 
     const rows = await tx
       .select({
@@ -124,6 +134,7 @@ export async function listContacts(
         stateRegion: contacts.stateRegion,
         postalCode: contacts.postalCode,
         country: contacts.country,
+        literalMatch: literal ? sql<boolean>`${literal}` : sql<boolean>`true`,
         // Wrapped in sql`` because drizzle types flat partial selects from a
         // left-joined subquery as non-nullable; this is string | null.
         primaryStatus: sql<string | null>`${primarySend.status}`,
@@ -149,18 +160,41 @@ export async function listContacts(
       .where(
         and(
           eq(contacts.bookId, book.id),
-          pattern
+          pinyinTerm
             ? or(
-                ilike(contacts.fullName, pattern),
-                ilike(contacts.partnerName, pattern),
+                literal,
+                sql`${contacts.fullName} ~ ${HAN_PATTERN}`,
+                sql`${contacts.partnerName} ~ ${HAN_PATTERN}`,
               )
-            : undefined,
+            : literal,
         ),
       )
       .orderBy(asc(contacts.fullName));
 
-    return rows.map(
-      ({ primaryStatus, primaryFailureReason, partnerStatus, partnerFailureReason, ...row }) => {
+    const pinyinMatches = pinyinTerm
+      ? await Promise.all(
+          rows.map(
+            async (row) =>
+              !row.literalMatch &&
+              matchesReading({
+                names: [row.fullName, row.partnerName],
+                readings: await readingsForContact(row),
+                query: pinyinTerm,
+              }),
+          ),
+        )
+      : [];
+
+    return rows.flatMap(
+      ({
+        primaryStatus,
+        primaryFailureReason,
+        partnerStatus,
+        partnerFailureReason,
+        literalMatch,
+        ...row
+      }, i) => {
+        if (pinyinTerm && !literalMatch && !pinyinMatches[i]) return [];
         const sendStatuses = {
           primary: { status: toSendStatus(primaryStatus), failureReason: primaryFailureReason },
           partner: { status: toSendStatus(partnerStatus), failureReason: partnerFailureReason },
@@ -169,13 +203,15 @@ export async function listContacts(
           sendStatuses.primary,
           sendStatuses.partner,
         );
-        return {
-          ...row,
-          sendStatus: status,
-          sendFailureReason: failureReason,
-          sendStatuses,
-          needsAttention,
-        };
+        return [
+          {
+            ...row,
+            sendStatus: status,
+            sendFailureReason: failureReason,
+            sendStatuses,
+            needsAttention,
+          },
+        ];
       },
     );
   });

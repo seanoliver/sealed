@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  createContext,
   Fragment,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -52,6 +54,7 @@ import {
   householdEdited,
   householdPatchInput,
   moveCursor,
+  NAME_LINE_LABELS,
   namesFromValues,
   parseStoredLayout,
   sendPlan,
@@ -69,6 +72,8 @@ import {
   type TwoAnswers,
 } from "@/lib/contacts-sheet";
 import type { FailureReason } from "@/lib/email/resend";
+import { type Readings } from "@/lib/readings";
+import { NameWithReading } from "@/components/name-with-reading";
 import { compareLastName, lastNameKey, type StoredNames } from "@/lib/names";
 import { type HouseholdFieldErrors } from "@/lib/validation/household";
 import {
@@ -334,6 +339,45 @@ function useStoredLayout() {
   };
 }
 
+const PINYIN_STORAGE_KEY = "sealed.contacts.pinyin.v1";
+
+function useShowPinyin({ hasReadings }: { hasReadings: boolean }) {
+  const [stored, setStored] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let value: string | null = null;
+    try {
+      value = window.localStorage.getItem(PINYIN_STORAGE_KEY);
+    } catch {}
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- storage only exists after hydration
+    if (value === "on" || value === "off") setStored(value === "on");
+  }, []);
+
+  function setShow(show: boolean) {
+    setStored(show);
+    try {
+      window.localStorage.setItem(PINYIN_STORAGE_KEY, show ? "on" : "off");
+    } catch {}
+  }
+
+  return { show: stored ?? hasReadings, setShow };
+}
+
+const ShowPinyin = createContext(true);
+
+function SheetName({
+  text,
+  readings,
+  className,
+}: {
+  text: string;
+  readings: Readings;
+  className?: string;
+}) {
+  const show = useContext(ShowPinyin);
+  return <NameWithReading text={text} readings={readings} show={show} className={className} />;
+}
+
 const ROW_KEYS: ReadonlySet<string> = new Set<RowKey>([
   "ArrowUp",
   "ArrowDown",
@@ -396,6 +440,11 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
     ]);
   const router = useRouter();
   const layout = useStoredLayout();
+  const hasReadings = useMemo(
+    () => allRows.some((row) => Object.keys(row.readings).length > 0),
+    [allRows],
+  );
+  const pinyin = useShowPinyin({ hasReadings });
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [result, setResult] = useState<RequestAddressesResult | null>(null);
   const [isSending, startSend] = useTransition();
@@ -664,6 +713,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
     .filter((column) => column.getCanHide());
 
   return (
+    <ShowPinyin value={pinyin.show}>
     <div>
       {banner}
 
@@ -829,6 +879,35 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                       {COLUMN_LABELS[column.id]}
                     </Menu.CheckboxItem>
                   ))}
+                  {hasReadings ? (
+                    <>
+                      <Menu.Separator className="my-1 h-px bg-border" />
+                      <Menu.CheckboxItem
+                        checked={pinyin.show}
+                        onCheckedChange={pinyin.setShow}
+                        closeOnClick={false}
+                        className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 outline-none select-none data-highlighted:bg-muted"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="flex size-4 items-center justify-center rounded border border-input"
+                        >
+                          <Menu.CheckboxItemIndicator>
+                            <svg
+                              viewBox="0 0 16 16"
+                              className="size-3"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                            >
+                              <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+                            </svg>
+                          </Menu.CheckboxItemIndicator>
+                        </span>
+                        Show pinyin
+                      </Menu.CheckboxItem>
+                    </>
+                  ) : null}
                 </Menu.Popup>
               </Menu.Positioner>
             </Menu.Portal>
@@ -976,6 +1055,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                       {answersOpen ? (
                         <AnswersRow
                           answers={answers}
+                          readings={row.original.readings}
                           name={row.original.names.fullName}
                           colSpan={shared.cells.length}
                           onClose={() => {
@@ -1047,7 +1127,13 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                       <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
                         {name.split ? null : <UnsplitDot />}
                         <span className="flex min-w-0 items-baseline">
-                          <HouseholdLabel line={name.line} kids={name.kids} />
+                          <HouseholdLabel
+                            line={name.line}
+                            kids={name.kids}
+                            renderLine={(line) => (
+                              <SheetName text={line} readings={row.original.readings} />
+                            )}
+                          />
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-1">
@@ -1069,12 +1155,15 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
                     </span>
                   </Link>
                 </div>
-                {answers ? <PhoneAnswers answers={answers} /> : null}
+                {answers ? (
+                  <PhoneAnswers answers={answers} readings={row.original.readings} />
+                ) : null}
               </li>
             );
           })}
         </ul>
     </div>
+    </ShowPinyin>
   );
 }
 
@@ -1304,7 +1393,7 @@ function ViewRow({
         if (id === NAME_COLUMN) {
           const name = sheetName(names);
           return (
-            <td key={cell.id} className={cellClasses}>
+            <td key={cell.id} className={`${cellClasses} has-[ruby]:py-1`}>
               <span className="flex min-w-0 items-center gap-1.5">
                 {name.split ? null : <UnsplitDot />}
                 <Link
@@ -1312,7 +1401,7 @@ function ViewRow({
                   tabIndex={-1}
                   className="truncate font-medium text-foreground underline-offset-2 hover:underline"
                 >
-                  {name.line}
+                  <SheetName text={name.line} readings={row.original.readings} />
                 </Link>
                 {name.kids ? (
                   <span className="shrink-0 text-muted-foreground">
@@ -1590,7 +1679,7 @@ function answerLabels(answers: TwoAnswers) {
   };
 }
 
-function AnswerLines({ side }: { side: AnswerSide }) {
+function AnswerLines({ side, readings }: { side: AnswerSide; readings: Readings }) {
   return (
     <>
       {side.lines.map((line, i) => (
@@ -1605,8 +1694,14 @@ function AnswerLines({ side }: { side: AnswerSide }) {
               <Fragment key={j}>
                 {part.changed ? (
                   <mark className="rounded bg-amber-100 px-0.5 text-foreground dark:bg-amber-900/60">
-                    {part.text}
+                    {line.label && NAME_LINE_LABELS.has(line.label) ? (
+                      <SheetName text={part.text} readings={readings} />
+                    ) : (
+                      part.text
+                    )}
                   </mark>
+                ) : line.label && NAME_LINE_LABELS.has(line.label) ? (
+                  <SheetName text={part.text} readings={readings} />
                 ) : (
                   part.text
                 )}
@@ -1623,11 +1718,13 @@ const resolveErrorClasses = "text-sm text-red-700 dark:text-red-300";
 
 function AnswersRow({
   answers,
+  readings,
   name,
   colSpan,
   onClose,
 }: {
   answers: TwoAnswers;
+  readings: Readings;
   name: string;
   colSpan: number;
   onClose: () => void;
@@ -1660,10 +1757,10 @@ function AnswersRow({
           <div className="grid grid-cols-2 gap-3.5">
             <div className="flex flex-col gap-2 rounded-xl border-2 border-primary bg-card p-3.5">
               <span className="text-xs font-semibold tracking-wide text-primary uppercase">
-                {labels.savedHeading}
+                <SheetName text={labels.savedHeading} readings={readings} />
               </span>
               <span className="font-serif text-[15px] leading-snug text-foreground">
-                <AnswerLines side={answers.saved} />
+                <AnswerLines side={answers.saved} readings={readings} />
               </span>
               <button
                 type="button"
@@ -1676,10 +1773,10 @@ function AnswersRow({
             </div>
             <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5">
               <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                {labels.incomingHeading}
+                <SheetName text={labels.incomingHeading} readings={readings} />
               </span>
               <span className="font-serif text-[15px] leading-snug text-foreground">
-                <AnswerLines side={answers.incoming} />
+                <AnswerLines side={answers.incoming} readings={readings} />
               </span>
               <button
                 type="button"
@@ -1702,7 +1799,7 @@ function AnswersRow({
   );
 }
 
-function PhoneAnswers({ answers }: { answers: TwoAnswers }) {
+function PhoneAnswers({ answers, readings }: { answers: TwoAnswers; readings: Readings }) {
   const { isResolving, error, choose } = useResolveAnswer(
     answers.submissionId,
     () => {},
@@ -1722,11 +1819,16 @@ function PhoneAnswers({ answers }: { answers: TwoAnswers }) {
         >
           <span>
             <strong className="font-semibold">
-              {choice === "keep"
-                ? `${answers.saved.name ?? "Saved"} (saved):`
-                : `${answers.incoming.name ?? "New answer"}:`}
+              <SheetName
+                text={
+                  choice === "keep"
+                    ? `${answers.saved.name ?? "Saved"} (saved):`
+                    : `${answers.incoming.name ?? "New answer"}:`
+                }
+                readings={readings}
+              />
             </strong>{" "}
-            <AnswerLines side={side} />
+            <AnswerLines side={side} readings={readings} />
           </span>
           <button
             type="button"

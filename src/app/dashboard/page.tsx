@@ -6,7 +6,12 @@ import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
 import { listPendingReplies } from "@/lib/queries/submissions";
 import { toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
-import { parseSubmissionForDisplay } from "@/lib/validation/submission";
+import { readingsForContact } from "@/lib/pinyin";
+import {
+  parseSubmissionForDisplay,
+  submittedPeople,
+  type SubmittedPerson,
+} from "@/lib/validation/submission";
 import { ContactsTable } from "./contacts-table";
 
 // Covers requestAddresses: its Resend time budget plus bookkeeping.
@@ -32,9 +37,11 @@ export default async function DashboardPage({
   ]);
 
   const answers = new Map<string, PendingAnswer>();
+  const answerPeople = new Map<string, SubmittedPerson[]>();
   for (const reply of replies) {
     const display = parseSubmissionForDisplay(reply.payload, book.enabledFields);
     if (display === null) continue;
+    answerPeople.set(reply.contactId, submittedPeople(reply.payload, book.enabledFields));
     answers.set(reply.contactId, {
       submissionId: reply.id,
       display,
@@ -43,16 +50,23 @@ export default async function DashboardPage({
     });
   }
 
-  const rows = contacts.map((contact) =>
-    toSheetRow(
-      contact,
-      (date) =>
-        date.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
-      { answer: answers.get(contact.id) },
+  const rows = await Promise.all(
+    contacts.map(async (contact) =>
+      toSheetRow(
+        contact,
+        (date) =>
+          date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }),
+        {
+          answer: answers.get(contact.id),
+          readings: await readingsForContact(contact, {
+            extra: answerPeople.get(contact.id) ?? [],
+          }),
+        },
+      ),
     ),
   );
 

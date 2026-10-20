@@ -11,6 +11,7 @@ import {
 import { addressLines } from "@/lib/address";
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
+import type { Readings } from "@/lib/readings";
 import type { Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
 import {
@@ -51,6 +52,7 @@ export interface SheetRow {
   needsAttention: boolean;
   attention: { recipient: Recipient; status: SendStatus }[];
   answers: TwoAnswers | null;
+  readings: Readings;
   updatedAtIso: string;
   updatedAtLabel: string;
 }
@@ -65,7 +67,7 @@ export type PendingAnswer = {
 export function toSheetRow(
   row: ContactListRow,
   formatDate: (date: Date) => string,
-  { answer }: { answer?: PendingAnswer } = {},
+  { answer, readings = {} }: { answer?: PendingAnswer; readings?: Readings } = {},
 ): SheetRow {
   const values: SheetValues = {
     email: row.email ?? "",
@@ -76,21 +78,7 @@ export function toSheetRow(
     postal_code: row.postalCode ?? "",
     country: row.country ?? "",
   };
-  // A person whose email was removed no longer counts: their old bounce
-  // can't be resent, so it must not hold the row in Needs attention.
-  const emailed = (["primary", "partner"] as const).filter(
-    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
-  );
-  const sendOf = (recipient: Recipient): RecipientSend =>
-    emailed.includes(recipient)
-      ? row.sendStatuses[recipient]
-      : { status: "none", failureReason: null };
-  const combined = combineSends(sendOf("primary"), sendOf("partner"));
-  const attention = row.updatedAfterSend
-    ? []
-    : emailed
-        .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
-        .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status }));
+  const { emailed, status, failureReason, attention } = effectiveSends(row);
   return {
     id: row.id,
     names: {
@@ -104,8 +92,8 @@ export function toSheetRow(
       kids: row.kids,
     },
     values,
-    status: row.updatedAfterSend ? "updated" : combined.status,
-    failureReason: combined.failureReason,
+    status,
+    failureReason,
     people:
       emailed.length === 2
         ? emailed.map((recipient) => ({
@@ -116,8 +104,41 @@ export function toSheetRow(
     needsAttention: attention.length > 0,
     attention,
     answers: answer ? twoAnswers(row, answer) : null,
+    readings,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
+  };
+}
+
+export type EffectiveSends = {
+  emailed: Recipient[];
+  status: StatusKey;
+  failureReason: FailureReason | null;
+  attention: { recipient: Recipient; status: SendStatus }[];
+};
+
+export function effectiveSends(
+  row: Pick<ContactListRow, "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend">,
+): EffectiveSends {
+  // A person whose email was removed no longer counts: their old bounce
+  // can't be resent, so it must not hold the row in Needs attention.
+  const emailed = (["primary", "partner"] as const).filter(
+    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
+  );
+  const sendOf = (recipient: Recipient): RecipientSend =>
+    emailed.includes(recipient)
+      ? row.sendStatuses[recipient]
+      : { status: "none", failureReason: null };
+  const combined = combineSends(sendOf("primary"), sendOf("partner"));
+  return {
+    emailed,
+    status: row.updatedAfterSend ? "updated" : combined.status,
+    failureReason: combined.failureReason,
+    attention: row.updatedAfterSend
+      ? []
+      : emailed
+          .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
+          .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status })),
   };
 }
 
@@ -244,6 +265,8 @@ const MARK_START = "\u0001";
 const MARK_END = "\u0002";
 // split() with a capture group alternates plain and marked text.
 const MARKED = /\u0001(.*?)\u0002/;
+
+export const NAME_LINE_LABELS: ReadonlySet<string> = new Set(["Name", "Partner"]);
 
 const OTHER_FIELDS = [
   ["full_name", "Name"],

@@ -231,6 +231,17 @@ export async function seedPendingReply(opts: {
   return rows[0].id as string;
 }
 
+export async function seedPermalinkSubmission(opts: {
+  bookId: string;
+  payload: Record<string, unknown>;
+}): Promise<string> {
+  const rows = await db`
+    insert into public.submissions (book_id, payload)
+    values (${opts.bookId}, ${db.json(opts.payload as never)})
+    returning id`;
+  return rows[0].id as string;
+}
+
 export async function getSubmissionStatus(id: string): Promise<string> {
   const rows = await db`select status from public.submissions where id = ${id}`;
   return rows[0].status as string;
