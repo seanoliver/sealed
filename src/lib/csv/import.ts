@@ -217,6 +217,15 @@ function resolveCountry(
     };
   }
   const code = fromCode ?? fromName;
+  const badCode = codeColumn.trim();
+  if (badCode !== "" && fromCode === null) {
+    const used = code ? `saved ${code} from the country column` : "it's saved as typed for you to fix";
+    return {
+      code,
+      text,
+      warning: `country_code "${badCode.slice(0, 60)}" isn't a country we know; ${used}.`,
+    };
+  }
   if (code === null && text !== "") {
     return {
       code,

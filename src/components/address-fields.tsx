@@ -196,6 +196,7 @@ export function AddressFields({
     country_code:
       initial.current.country_code || (unrecognized || !prefillCountry ? "" : senderCountry),
   }));
+  const startCode = useRef(values.country_code);
   const [stash, setStash] = useState<Partial<AddressValues>>({});
   const [showLine2, setShowLine2] = useState(initial.current.address_line2 !== "");
   // Until the country changes, fields the layout hides aren't posted, so a save leaves them alone.
@@ -266,15 +267,20 @@ export function AddressFields({
       if (nextLayout.fields.has(field) && listed) kept[field] = state;
       else if (value !== "") dropped[field] = value;
     }
+    const backToStart = code === startCode.current;
+    const pool = { ...stash, ...dropped };
     const restored = Object.fromEntries(
       ADDRESS_FIELDS.filter(
-        (field) => nextLayout.fields.has(field) && !kept[field] && stash[field],
-      ).map((field) => [field, stash[field]]),
+        (field) =>
+          (nextLayout.fields.has(field) || (backToStart && extraFields.includes(field))) &&
+          !kept[field] &&
+          pool[field],
+      ).map((field) => [field, pool[field]]),
     );
     const next = { ...BLANK_ADDRESS, ...kept, ...restored, country_code: code } as AddressValues;
-    setStash({ ...stash, ...dropped });
+    setStash(pool);
     setValues(next);
-    setCountryChanged(true);
+    setCountryChanged(!backToStart);
     if (nextLayout.line2OnlyWhenFilled) setShowLine2(next.address_line2 !== "");
     clientError(postcodeError ? problem(next) : null);
   }

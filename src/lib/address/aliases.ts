@@ -90,6 +90,19 @@ export const COUNTRY_ALIASES: Record<string, string> = {
   "kyrgyz republic": "KG",
   "the gambia": "GM",
   "the bahamas": "BS",
+  "saint vincent and the grenadines": "VC",
+  "saint vincent": "VC",
+  "saint kitts": "KN",
+  "saint helena ascension and tristan da cunha": "SH",
+  "saint martin french part": "MF",
+  "sint maarten dutch part": "SX",
+  "saint pierre": "PM",
+  "south georgia": "GS",
+  "antigua": "AG",
+  "trinidad": "TT",
+  "sao tome": "ST",
+  "turks and caicos": "TC",
+  "heard and mcdonald islands": "HM",
 };
 
 /** private.country_code_for repeats this normalization in SQL; change both, or they disagree on which text names a country. */

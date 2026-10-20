@@ -354,6 +354,20 @@ describe("countries and postcodes", () => {
     ]);
   });
 
+  it("flags a country_code that matches no country", () => {
+    const { valid, warnings } = parseContactsCsv(
+      ["name,country_code,country", "Ada,XX,France", "Bea,XX,"].join("\n"),
+    );
+    expect(valid).toEqual([
+      { full_name: "Ada", country_code: "FR" },
+      { full_name: "Bea", country: "XX" },
+    ]);
+    expect(warnings).toEqual([
+      { row: 1, message: 'country_code "XX" isn\'t a country we know; saved FR from the country column.' },
+      { row: 2, message: 'country_code "XX" isn\'t a country we know; it\'s saved as typed for you to fix.' },
+    ]);
+  });
+
   it("puts back a US ZIP's leading zero that a spreadsheet dropped", () => {
     const { valid, errors } = parseContactsCsv(
       ["name,country,zip", "Ada,US,2110", "Bea,US,501-1234", "Cai,DE,2110"].join("\n"),

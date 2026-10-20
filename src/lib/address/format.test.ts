@@ -272,7 +272,7 @@ describe("envelopeLines", () => {
         { ...blank, addressLine1: "12 Sheikh Zayed Road", city: "Dubai", stateRegion: "Dubai", countryCode: "AE" },
         US,
       ),
-    ).toEqual(["12 Sheikh Zayed Road, Dubai", "Dubai", "UNITED ARAB EMIRATES"]);
+    ).toEqual(["12 Sheikh Zayed Road", "Dubai", "UNITED ARAB EMIRATES"]);
     expect(
       envelopeLines(
         { ...blank, addressLine1: "5 Main St", city: "George Town", stateRegion: "Grand Cayman", postalCode: "KY1-1001", countryCode: "KY" },
@@ -285,6 +285,21 @@ describe("envelopeLines", () => {
         US,
       ),
     ).toEqual(["Civic Centre, Yaren", "Yaren District", "NAURU"]);
+  });
+
+  it("prints a slotless value once, and not when it names the country", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "Rua de São Paulo 12", city: "Macau", stateRegion: "Macau", countryCode: "MO" },
+        US,
+      ),
+    ).toEqual(["Rua de São Paulo 12", "MACAO"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "5 Main St", city: "george town", district: "George Town", stateRegion: "Grand Cayman", countryCode: "KY" },
+        US,
+      ),
+    ).toEqual(["5 Main St, George Town", "Grand Cayman", "CAYMAN ISLANDS"]);
   });
 
   it("adds the country line even when an address line mentions the country", () => {

@@ -100,10 +100,11 @@ export function CountryPicker({
   }
 
   function settle() {
+    if (query !== null && query.trim() === "") return commit("");
+    if (activeOption) return commit(activeOption.code);
     setOpen(false);
     if (query === null) return;
-    if (query.trim() === "") return commit("");
-    const pick = countryCodeFor(query) ?? (options[active] ?? options[0])?.code;
+    const pick = countryCodeFor(query) ?? options[0]?.code;
     if (pick) commit(pick);
     else setUnmatched(query.trim());
   }

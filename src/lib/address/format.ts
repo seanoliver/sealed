@@ -1,4 +1,4 @@
-import { getCountry, type Country, type FormatField } from "./countries";
+import { countryCodeFor, getCountry, type Country, type FormatField } from "./countries";
 
 export type PostalAddress = {
   addressLine1: string | null;
@@ -161,13 +161,20 @@ export function formatEnvelope(
   };
   // A stored value the format has no place for still prints, next to the street.
   const countryLine = (known?.name ?? legacy).toUpperCase();
-  const slotless = (["D", "C", "S", "Z"] as const).filter(
-    (field) =>
-      values[field] !== "" &&
-      !fmt.includes(`%${field}`) &&
-      values[field].toUpperCase() !== countryLine,
+  const seen = new Set(
+    (["D", "C", "S", "Z"] as const)
+      .filter((field) => fmt.includes(`%${field}`) && values[field] !== "")
+      .map((field) => values[field].toLowerCase()),
   );
-  const extra = slotless.map((field) => values[field]);
+  const extra: string[] = [];
+  for (const field of ["D", "C", "S", "Z"] as const) {
+    const value = values[field];
+    if (value === "" || fmt.includes(`%${field}`) || seen.has(value.toLowerCase())) continue;
+    if (value.toUpperCase() === countryLine) continue;
+    if (country !== null && countryCodeFor(value) === country.code) continue;
+    seen.add(value.toLowerCase());
+    extra.push(value);
+  }
   values.A = (local ? [...extra, ...street] : [...street, ...extra])
     .filter(Boolean)
     .join(local ? "\n" : ", ");

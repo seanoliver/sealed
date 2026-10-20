@@ -235,9 +235,16 @@ test("a stored value the country has no field for stays, and the picker settles 
   await expect(picker).toBeFocused();
   await expect(page).toHaveURL(new RegExp(`/u/${beaToken}$`));
 
+  await picker.fill("Niger");
+  await picker.press("ArrowDown");
+  await picker.press("Tab");
+  await expect(picker).toHaveValue("Nigeria");
+  await expect(page.getByLabel("County")).toHaveCount(0);
+
   await picker.fill("united k");
   await page.getByLabel("Street address").click();
   await expect(picker).toHaveValue("United Kingdom");
+  await expect(page.getByLabel("County")).toHaveValue("Somerset");
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(/\/u\/thanks$/);
   await context.close();
