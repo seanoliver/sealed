@@ -32,7 +32,6 @@ function syllables(pinyin: PinyinFn, run: string, { surname }: { surname: boolea
       });
 }
 
-/** One run holding a whole name, surname first: 曾雨桐 → Zēng Yǔ tóng. */
 function surnameFirstRun(pinyin: PinyinFn, run: string): string[] {
   const parts = syllables(pinyin, run, { surname: true });
   const surname = COMPOUND_SURNAMES.has(Array.from(run).slice(0, 2).join("")) ? 2 : 1;
@@ -88,10 +87,6 @@ function addPerson(pinyin: PinyinFn, readings: Readings, person: Person) {
 const personHasHan = (person: Person) =>
   hasHan(person.full) || hasHan(person.first) || hasHan(person.last);
 
-/**
- * Readings for every Han run in these people's names. Owner overrides win;
- * the rest is generated.
- */
 export async function contactReadings({
   people,
   extra = [],

@@ -120,7 +120,6 @@ describe("owner edits of the partner's email", () => {
 });
 
 describe("owner readings for names in Chinese characters", () => {
-  // Posts the stored household unchanged, so the form takes the untouched-names branch.
   const readingForm = (fields: Record<string, string>) =>
     editForm({
       first_name: "雨桐",

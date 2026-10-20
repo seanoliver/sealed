@@ -192,7 +192,6 @@ export function parseSubmissionForDisplay(
 
 export type SubmittedPerson = { full: string | null; first: string | null; last: string | null };
 
-/** The people a submission names, with their first and last names when it has them. */
 export function submittedPeople(payload: unknown, enabled: EnabledFields): SubmittedPerson[] {
   const parsed = submissionDisplaySchema.safeParse(payload);
   if (!parsed.success) return [];

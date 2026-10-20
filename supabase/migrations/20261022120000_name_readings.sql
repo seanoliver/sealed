@@ -8,9 +8,8 @@ alter table public.contacts
     constraint contacts_partner_name_reading_check
     check (char_length(partner_name_reading) between 1 and 200);
 
--- A reading belongs to the name it was written for. Every rename path (owner
--- form, sheet, token reply, approved merge) drops it unless the same update
--- writes a new one. Named to fire after contacts_sync_names rebuilds the names.
+-- Every rename path drops the reading unless the same update writes a new one.
+-- Named to fire after contacts_sync_names, which rebuilds the names first.
 create function private.sync_contact_readings()
 returns trigger language plpgsql set search_path = '' as $$
 begin

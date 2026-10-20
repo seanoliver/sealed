@@ -126,7 +126,6 @@ function assignReading(reading: string, runs: string[]): Readings | null {
     : null;
 }
 
-/** How many syllables match the generated reading, ignoring tones and case. */
 function agreement(candidate: Readings, generated: Readings): number {
   let score = 0;
   for (const [run, value] of Object.entries(candidate)) {
@@ -217,7 +216,6 @@ export function matchesReading({
     const runs = hanRuns(name);
     const read = (run: Run) =>
       run.han ? (lookupRun(readings, run.text) ?? []).join("") : run.text;
-    // Either order: "zhang wei" finds 张伟 stored given name first as "伟 张".
     const surnameFirst = runs.filter((run) => run.han).reverse();
     return [runs, surnameFirst].some((order) =>
       pinyinKey(order.map(read).join(" ")).includes(want),
