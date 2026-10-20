@@ -75,9 +75,9 @@ export function countryName(code: string): string {
   return getCountry(code)?.name ?? code;
 }
 
-export const COUNTRY_OPTIONS: readonly (readonly [string, string])[] = Object.entries(RECORDS).map(
-  ([code, record]) => [code, record.n] as const,
-);
+export const COUNTRY_OPTIONS: readonly (readonly [string, string])[] = Object.entries(RECORDS)
+  .map(([code, record]) => [code, record.n] as const)
+  .sort((a, b) => a[1].localeCompare(b[1], "en"));
 
 export function countryKeyEntries(
   records: Record<string, { n: string }> = RECORDS,
@@ -109,8 +109,3 @@ export function countryCodeFor(text: string | null | undefined): string | null {
   return key === "" ? null : (lookupTable().get(key) ?? null);
 }
 
-export function aliasesFor(code: string): string[] {
-  return Object.entries(COUNTRY_ALIASES)
-    .filter(([, target]) => target === code)
-    .map(([alias]) => alias);
-}

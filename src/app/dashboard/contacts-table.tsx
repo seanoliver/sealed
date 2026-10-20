@@ -1633,7 +1633,7 @@ function EditingRow({
                 onKeyDown={onSelectKeyDown}
                 className={cellInputClasses}
               >
-                <option value="">{row.original.legacyCountry ? `${row.original.legacyCountry} (pick one)` : "—"}</option>
+                <option value="">Choose a country</option>
                 {COUNTRY_OPTIONS.map(([optionCode, optionName]) => (
                   <option key={optionCode} value={optionCode}>
                     {optionName}

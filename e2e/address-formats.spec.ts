@@ -26,12 +26,10 @@ let beaId: string;
 let blankId: string;
 let beaToken: string;
 
-const pickCountry = async (page: Page, typed: string, name: string) => {
-  const picker = page.getByRole("combobox", { name: "Country" });
-  await picker.click();
-  await picker.fill(typed);
-  await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
-  await expect(picker).toHaveValue(name);
+const pickCountry = async (page: Page, code: string) => {
+  const country = page.getByRole("combobox", { name: "Country", exact: true });
+  await country.selectOption(code);
+  await expect(country).toHaveValue(code);
 };
 
 test.beforeAll(async ({ browser }) => {
@@ -90,7 +88,7 @@ test.beforeAll(async ({ browser }) => {
     countryCode: "GB",
   });
   beaToken = await seedUpdateToken(beaId);
-  blankId = await seedContact({ bookId, fullName: "Cal Blank", addressLine1: "1 Main St" });
+  blankId = await seedContact({ bookId, fullName: "Cal Blank", addressLine1: "1 Main St", country: "Lemuria" });
   unknownId = await seedContact({
     bookId,
     fullName: "Nemo Diver",
@@ -113,7 +111,7 @@ test("the recipient form follows the country, checks the postcode and previews t
   await page.goto(`/u/${adaToken}`);
 
   const preview = page.getByRole("region", { name: "Envelope preview" });
-  await expect(page.getByRole("combobox", { name: "Country" })).toHaveValue("United States");
+  await expect(page.getByRole("combobox", { name: "Country", exact: true })).toHaveValue("US");
   await expect(page.getByLabel("State")).toHaveValue("OR");
   await expect(page.getByLabel("ZIP code")).toHaveValue("97214");
   await expect(preview).toContainText("Ada Lovelace");
@@ -127,7 +125,7 @@ test("the recipient form follows the country, checks the postcode and previews t
   await page.locator("#first_name").fill("Augusta");
   await expect(preview).toContainText("Augusta Lovelace");
 
-  await pickCountry(page, "uk", "United Kingdom");
+  await pickCountry(page, "GB");
   await expect(page.getByLabel("Post town")).toHaveValue("Portland");
   await expect(page.getByLabel("Postcode")).toHaveValue("97214");
   await expect(page.getByLabel("State")).toHaveCount(0);
@@ -139,10 +137,10 @@ test("the recipient form follows the country, checks the postcode and previews t
   await expect(preview).toContainText("UNITED KINGDOM");
   await expect(preview).toContainText("print in capitals, as Royal Mail asks.");
 
-  await pickCountry(page, "usa", "United States");
+  await pickCountry(page, "US");
   await expect(page.getByLabel("State")).toHaveValue("OR");
 
-  await pickCountry(page, "neth", "Netherlands");
+  await pickCountry(page, "NL");
   await expect(page.getByLabel("Street and house number")).toHaveValue("1427 Linden Avenue");
   await page.getByLabel("Street and house number").fill("Keizersgracht 212");
   await page.getByLabel("City").fill("Amsterdam");
@@ -183,7 +181,7 @@ test("a China address in Chinese prints postcode first and name last, and saves 
   await stubTurnstile(page);
   await page.goto(`/u/${wangTokens[0]}`);
 
-  await expect(page.getByRole("combobox", { name: "Country" })).toHaveValue("China");
+  await expect(page.getByRole("combobox", { name: "Country", exact: true })).toHaveValue("CN");
   await expect(page.getByLabel("Province")).toBeVisible();
   await expect(page.getByLabel("District")).toBeVisible();
   const preview = page.getByRole("region", { name: "Envelope preview" });
@@ -218,7 +216,7 @@ test("a China address in Chinese prints postcode first and name last, and saves 
   });
 });
 
-test("a stored value the country has no field for stays, and the picker settles on blur", async ({
+test("a stored value the country has no field for stays, and comes back after switching countries", async ({
   browser,
 }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -228,34 +226,19 @@ test("a stored value the country has no field for stays, and the picker settles 
   await expect(page.getByLabel("County")).toHaveValue("Somerset");
   await expect(page.getByRole("region", { name: "Envelope preview" })).toContainText("Somerset");
 
-  const picker = page.getByRole("combobox", { name: "Country" });
-  await picker.fill("xyzzy");
-  await page.getByLabel("Street address").click();
-  await expect(picker).toHaveValue("xyzzy");
-  await expect(page.getByText("No country matches “xyzzy”. Pick one from the list.")).toBeVisible();
-  await page.getByRole("button", { name: "Update my details" }).click();
-  await expect(picker).toBeFocused();
-  await expect(page).toHaveURL(new RegExp(`/u/${beaToken}$`));
-
-  await picker.fill("Niger");
-  await picker.press("ArrowDown");
-  await picker.press("Tab");
-  await expect(picker).toHaveValue("Nigeria");
+  await pickCountry(page, "NG");
   await expect(page.getByLabel("County")).toHaveCount(0);
-
-  await picker.fill("united k");
-  await page.getByLabel("Street address").click();
-  await expect(picker).toHaveValue("United Kingdom");
+  await pickCountry(page, "GB");
   await expect(page.getByLabel("County")).toHaveValue("Somerset");
 
-  await pickCountry(page, "canada", "Canada");
+  await pickCountry(page, "CA");
   await expect(page.getByLabel("Province")).toHaveValue("Somerset");
   await page.getByLabel("Province").fill("Ontario");
-  await pickCountry(page, "united k", "United Kingdom");
+  await pickCountry(page, "GB");
   await expect(page.getByLabel("County")).toHaveValue("Somerset");
-  await pickCountry(page, "usa", "United States");
+  await pickCountry(page, "US");
   await expect(page.getByLabel("State")).toHaveValue("");
-  await pickCountry(page, "united k", "United Kingdom");
+  await pickCountry(page, "GB");
   await expect(page.getByLabel("County")).toHaveValue("Somerset");
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(/\/u\/thanks$/);
@@ -263,28 +246,28 @@ test("a stored value the country has no field for stays, and the picker settles 
   expect(await getContactAddress(beaId)).toMatchObject({ state_region: "Somerset", country_code: "GB" });
 });
 
-test("the picker keeps its value unless the person types or arrows to another", async () => {
+test("unrecognized country text stays when the owner saves without picking a country", async () => {
   await ownerPage.setViewportSize({ width: 1280, height: 900 });
   await ownerPage.goto(`/dashboard/contacts/${blankId}`);
-  const picker = ownerPage.getByRole("combobox", { name: "Country" });
-  await expect(picker).toHaveValue("");
-  await picker.click();
-  await expect(ownerPage.getByRole("listbox", { name: "Countries" })).toBeVisible();
-  await ownerPage.getByRole("heading", { name: "Cal Blank" }).click();
-  await expect(picker).toHaveValue("");
-
-  await pickCountry(ownerPage, "germ", "Germany");
-  await picker.click();
-  await ownerPage.getByRole("option", { name: /^France/ }).hover();
-  await ownerPage.getByRole("heading", { name: "Cal Blank" }).click();
-  await expect(picker).toHaveValue("Germany");
+  await expect(ownerPage.getByText("Saved as “Lemuria”, which isn't on the list.")).toBeVisible();
+  const country = ownerPage.getByRole("combobox", { name: "Country", exact: true });
+  await expect(country).toHaveValue("");
+  await expect(country.locator("option").first()).toHaveText("Choose a country");
+  await ownerPage.getByLabel("City").fill("Sunken City");
+  await ownerPage.getByRole("button", { name: "Save changes" }).click();
+  await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
+  expect(await getContactAddress(blankId)).toMatchObject({
+    city: "Sunken City",
+    country_code: null,
+    country: "Lemuria",
+  });
 });
 
 test("the owner's contact page edits the address with the envelope beside it", async () => {
   await ownerPage.setViewportSize({ width: 1280, height: 900 });
   await ownerPage.goto(`/dashboard/contacts/${ukId}`);
   const preview = ownerPage.getByRole("region", { name: "On the envelope" });
-  await expect(ownerPage.getByRole("combobox", { name: "Country" })).toHaveValue("United Kingdom");
+  await expect(ownerPage.getByRole("combobox", { name: "Country", exact: true })).toHaveValue("GB");
   await expect(preview).toContainText("Priya Raman & Daniel Okafor");
   await expect(preview).toContainText("Flat 2, 14 Kestrel Lane");
   await expect(preview).toContainText("UNITED KINGDOM");
@@ -305,7 +288,7 @@ test("the owner's contact page edits the address with the envelope beside it", a
   await expect(ownerPage.getByRole("region", { name: "On the envelope" })).toContainText(
     "ATLANTIS",
   );
-  await pickCountry(ownerPage, "gr", "Greece");
+  await pickCountry(ownerPage, "GR");
   await ownerPage.getByRole("button", { name: "Save changes" }).click();
   await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
   expect(await getContactAddress(unknownId)).toMatchObject({ country_code: "GR", country: null });
@@ -313,12 +296,10 @@ test("the owner's contact page edits the address with the envelope beside it", a
 
 test("Settings sets the country the owner mails from", async () => {
   await ownerPage.goto("/dashboard/settings");
-  const picker = ownerPage.getByRole("combobox", { name: "I mail from" });
-  await expect(picker).toHaveValue("United States");
-  await picker.click();
-  await picker.fill("United King");
-  await ownerPage.keyboard.press("Enter");
-  await expect(picker).toHaveValue("United Kingdom");
+  const sender = ownerPage.getByRole("combobox", { name: "I mail from" });
+  await expect(sender).toHaveValue("US");
+  await expect(sender.locator("option[value='']")).toHaveCount(0);
+  await sender.selectOption("GB");
   await ownerPage.getByRole("button", { name: "Save" }).click();
   await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
   expect(await getSenderCountry(bookId)).toBe("GB");

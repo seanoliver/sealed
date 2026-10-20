@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
-import { CountryPicker } from "@/components/country-picker";
+import {
+  CountrySelect,
+  SELECT_CHEVRON_CLASSES,
+  SELECT_CHEVRON_STYLE,
+} from "@/components/country-select";
 import { Envelope } from "@/components/envelope";
 import { getCountry, type Country } from "@/lib/address/countries";
 import {
@@ -201,7 +205,6 @@ export function AddressFields({
   const [showLine2, setShowLine2] = useState(initial.current.address_line2 !== "");
   // Until the country changes, fields the layout hides aren't posted, so a save leaves them alone.
   const [countryChanged, setCountryChanged] = useState(false);
-  const [unmatchedCountry, setUnmatchedCountry] = useState<string | null>(null);
   const [postcodeError, setPostcodeError] = useState<{ text: string; fromServer: boolean } | null>(
     errors?.postal_code ? { text: errors.postal_code, fromServer: true } : null,
   );
@@ -234,10 +237,6 @@ export function AddressFields({
 
   useImperativeHandle(handleRef, () => ({
     validate() {
-      if (unmatchedCountry !== null) {
-        document.getElementById("country_code")?.focus();
-        return false;
-      }
       const found = problem();
       clientError(found);
       if (found) {
@@ -368,8 +367,8 @@ export function AddressFields({
           {...common}
           value={value}
           onChange={(event) => setField(spec.name, event.target.value)}
-          className={`${common.className} appearance-none bg-[length:1rem] bg-[right_0.75rem_center] bg-no-repeat pr-9`}
-          style={{ backgroundImage: CHEVRON }}
+          className={`${common.className} ${SELECT_CHEVRON_CLASSES}`}
+          style={SELECT_CHEVRON_STYLE}
         >
           <option value="">Select…</option>
           {listed ? null : <option value={value}>{value}</option>}
@@ -405,12 +404,13 @@ export function AddressFields({
         <label htmlFor="country_code" className={styles.label}>
           Country
         </label>
-        <CountryPicker
+        <CountrySelect
           id="country_code"
           name="country_code"
           value={values.country_code}
           onChange={changeCountry}
           className={styles.input}
+          allowBlank={startCode.current === ""}
           invalid={Boolean(errors?.country_code)}
           describedBy={
             [
@@ -420,7 +420,6 @@ export function AddressFields({
               .filter(Boolean)
               .join(" ") || undefined
           }
-          onUnmatchedChange={setUnmatchedCountry}
         />
         {unrecognized && !values.country_code ? (
           <p id="country_code-hint" className="text-xs text-amber-700 dark:text-amber-300">
@@ -516,6 +515,3 @@ export function AddressFields({
     </>
   );
 }
-
-const CHEVRON =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23857a6e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";

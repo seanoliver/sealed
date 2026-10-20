@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { CountryPicker } from "@/components/country-picker";
+import { CountrySelect } from "@/components/country-select";
 import { InvitePageConfigurator } from "@/components/invite-page-configurator";
 import { type EnabledFields } from "@/components/recipient-fields";
 import { saveBook, type BookFormValues, type SaveBookState } from "./actions";
@@ -22,7 +22,6 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
   const [displayName, setDisplayName] = useState(defaults.display_name);
   const [slugValue, setSlugValue] = useState(defaults.slug);
   const [senderCountry, setSenderCountry] = useState(defaults.sender_country);
-  const [unmatchedSender, setUnmatchedSender] = useState<string | null>(null);
   const [enabledFields, setEnabledFields] = useState<EnabledFields>({
     partner_name: defaults.partner_name,
     kids_names: defaults.kids_names,
@@ -120,14 +119,13 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
           <label htmlFor="sender_country" className="text-sm font-medium text-foreground">
             I mail from
           </label>
-          <CountryPicker
+          <CountrySelect
             id="sender_country"
             name="sender_country"
             value={senderCountry}
-            onChange={(code) => code && setSenderCountry(code)}
+            onChange={setSenderCountry}
             className={inputClasses}
             describedBy="sender_country-hint"
-            onUnmatchedChange={setUnmatchedSender}
           />
           <p id="sender_country-hint" className="text-xs text-muted-foreground">
             Envelopes to this country leave the country line off.
@@ -186,7 +184,7 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
 
       <button
         type="submit"
-        disabled={pending || (slugChanged && !slugChangeAcked) || unmatchedSender !== null}
+        disabled={pending || (slugChanged && !slugChangeAcked)}
         className="h-10 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50  sm:self-end"
       >
         {pending ? "Saving…" : "Save"}
