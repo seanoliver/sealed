@@ -67,10 +67,14 @@ async function requestEmail(id: string, email: string) {
   return result.pending_email_change!.request_id;
 }
 
-async function duringConcurrentEdit<T>(contactId: string, act: () => Promise<T>): Promise<T> {
+async function duringConcurrentEdit<T>(
+  contactId: string,
+  act: () => Promise<T>,
+  edit: Partial<typeof contacts.$inferInsert> = { notes: "edited meanwhile" },
+): Promise<T> {
   let running: Promise<T> | undefined;
   await dbAdmin.transaction(async (tx) => {
-    await tx.update(contacts).set({ notes: "edited meanwhile" }).where(eq(contacts.id, contactId));
+    await tx.update(contacts).set(edit).where(eq(contacts.id, contactId));
     running = act();
     await new Promise((resolve) => setTimeout(resolve, 300));
   });
@@ -210,21 +214,52 @@ describe("agent write tools", () => {
       expect((await stored(ANA)).email).toBe("ana@wt.test");
     });
 
-    it("refuses an approval, by name, when the contact changed since", async () => {
+    it("refuses an approval, by name, when the email changed since", async () => {
       const requestId = await requestEmail(ANA, "ana.new@wt.test");
-      await dbAdmin.update(contacts).set({ city: "Bend" }).where(eq(contacts.id, ANA));
+      await dbAdmin.update(contacts).set({ email: "ana.other@wt.test" }).where(eq(contacts.id, ANA));
       expect(await approveRequest(ctx.claims, requestId)).toEqual({
         ok: false,
         error: "Ana Reyes changed since the agent asked. Discard this request and ask the agent again.",
       });
-      expect((await stored(ANA)).email).toBe("ana@wt.test");
+      expect((await stored(ANA)).email).toBe("ana.other@wt.test");
     });
 
-    it("locks the contact while approving, so an edit committed meanwhile refuses it", async () => {
+    it("still applies after other fields of the contact changed", async () => {
       const requestId = await requestEmail(ANA, "ana.new@wt.test");
-      const result = await duringConcurrentEdit(ANA, () => approveRequest(ctx.claims, requestId));
-      expect(result).toMatchObject({ ok: false });
+      await update({ id: ANA, fields: { notes: "met at the reunion" } });
+      await dbAdmin.update(contacts).set({ city: "Bend" }).where(eq(contacts.id, ANA));
+      expect(await approveRequest(ctx.claims, requestId)).toMatchObject({ ok: true });
+      expect(await stored(ANA)).toMatchObject({ email: "ana.new@wt.test", notes: "met at the reunion", city: "Bend" });
+    });
+
+    it("keeps one open request per contact and token when the agent retries", async () => {
+      const first = await requestEmail(ANA, "ana.new@wt.test");
+      const second = await requestEmail(ANA, "ana.new@wt.test");
+      const pending = await listPendingRequests(ctx.claims);
+      expect(pending.map((request) => request.previewId)).toEqual([second]);
+      expect(await approveRequest(ctx.claims, first)).toEqual({ ok: false, error: REQUEST_FINISHED });
+    });
+
+    it("can clear an email, with a history row once approved", async () => {
+      const requestId = (await update({ id: ANA, fields: { email: null } })).pending_email_change!.request_id;
       expect((await stored(ANA)).email).toBe("ana@wt.test");
+      expect(await approveRequest(ctx.claims, requestId)).toMatchObject({ ok: true });
+      expect((await stored(ANA)).email).toBeNull();
+      const [event] = await eventsOf(ANA);
+      expect(event).toMatchObject({
+        source: "agent",
+        agentPreviewId: requestId,
+        diff: { before: { email: "ana@wt.test" }, after: { email: null } },
+      });
+    });
+
+    it("locks the contact while approving, so an email change committed meanwhile refuses it", async () => {
+      const requestId = await requestEmail(ANA, "ana.new@wt.test");
+      const result = await duringConcurrentEdit(ANA, () => approveRequest(ctx.claims, requestId), {
+        email: "ana.meanwhile@wt.test",
+      });
+      expect(result).toMatchObject({ ok: false });
+      expect((await stored(ANA)).email).toBe("ana.meanwhile@wt.test");
     });
 
     it("refuses an email another contact holds before queuing it", async () => {
@@ -375,6 +410,25 @@ describe("agent write tools", () => {
       const requestId = await requestDeletion([CARA]);
       expect(await approveRequest({ sub: OTHER }, requestId)).toEqual({ ok: false, error: REQUEST_NOT_FOUND });
       expect(await stored(CARA)).toBeDefined();
+    });
+
+    it("binds a preview to the token that made it", async () => {
+      const { summary } = await mintAgentToken(U, { name: "Second agent", scopes: ["write"] });
+      const second = { claims: { sub: U }, tokenId: summary.id };
+      const preview = await previewDeleteContacts(ctx, [CARA]);
+      expect(await requestDeleteContacts(second, preview.preview_id!)).toEqual({
+        ok: false,
+        error: "Preview not found. Make a new preview.",
+      });
+    });
+
+    it("gives a request 7 days from when it was asked", async () => {
+      const requestId = await requestDeletion([CARA]);
+      const [row] = await dbAdmin
+        .select({ seconds: sql<number>`extract(epoch from ${agentPreviews.expiresAt} - ${agentPreviews.requestedAt})::int` })
+        .from(agentPreviews)
+        .where(eq(agentPreviews.id, requestId));
+      expect(row.seconds).toBe(7 * 24 * 60 * 60);
     });
 
     it("refuses to request an unrequested preview that expired", async () => {

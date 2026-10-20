@@ -227,8 +227,13 @@ test("an agent's delete waits for the owner, who can discard or approve it", asy
   await requestDeletion([priyaId]);
   await page.reload();
   const pending = waiting().getByRole("listitem").filter({ hasText: "Pending deletion" });
-  await pending.getByRole("button", { name: "Delete 1 contact" }).click();
+  const trigger = pending.getByRole("button", { name: "Delete 1 contact" });
+  await trigger.click();
   await expect(pending).toContainText("Delete 1 contact for good?");
+  await expect(pending.getByRole("button", { name: "Yes, delete" })).toBeFocused();
+  await pending.getByRole("button", { name: "Cancel" }).click();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
   await pending.getByRole("button", { name: "Yes, delete" }).click();
   await expect(page.getByText("Pending deletion")).toHaveCount(0);
   await expect(page.getByText("Deleted 1 contact")).toBeVisible();
@@ -236,8 +241,13 @@ test("an agent's delete waits for the owner, who can discard or approve it", asy
 });
 
 test("revokes a token after a confirm, and the agent loses access", async () => {
-  await page.getByRole("button", { name: "Revoke Claude Code on MacBook" }).click();
+  const revoke = page.getByRole("button", { name: "Revoke Claude Code on MacBook" });
+  await revoke.click();
   await expect(page.getByText("Revoke Claude Code on MacBook?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Revoke", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(revoke).toBeFocused();
+  await revoke.click();
   await page.getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(page.getByText("No agents connected yet.")).toBeVisible();
   expect((await callTool("book_summary", {})).status).toBe(401);
