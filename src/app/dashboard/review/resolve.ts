@@ -22,8 +22,7 @@ import {
 } from "./merge";
 
 /**
- * Review-queue resolution, shared by the dashboard's actions and the agent's
- * resolve_review_item. `submissions.payload` is ATTACKER-CONTROLLED jsonb
+ * `submissions.payload` is ATTACKER-CONTROLLED jsonb
  * (public permalink submissions; submit_to_book does not gate enabled_fields
  * and stores whatever object it was handed). Every approval therefore:
  *   1. re-validates the payload through the STRICT parseSubmissionPayload
@@ -48,7 +47,6 @@ export type ResolveResult =
   | { ok: true; contactId?: string; eventId?: string }
   | { ok: false; error: string };
 
-/** The approver's event: an owner's approval keeps the "submission" label. */
 const approvalActor = (actor: Actor): Actor =>
   actor.source === "owner" ? { source: "submission" } : actor;
 
@@ -204,7 +202,6 @@ export async function approveMergeAs(
       const { book, submission } = loaded;
       if (!submission.matchedContactId) return { kind: "no_match" };
 
-      // Same strict-parse + gate as approveNewAs (see module doc).
       const token = submission.source === "token";
       const payload = token ? withoutBlanks(submission.payload) : submission.payload;
       const parsed = parseSubmissionPayload(payload, book.enabledFields);

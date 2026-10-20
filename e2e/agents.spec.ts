@@ -12,7 +12,6 @@ import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 test.describe.configure({ mode: "serial" });
 
 const ownerEmail = uniqueEmail("agents-owner");
-// Set to save the design-comparison screenshots (1280 and 390, light and dark).
 const screenshotDir = process.env.AGENTS_SCREENSHOT_DIR;
 
 let page: Page;
@@ -155,7 +154,6 @@ test("shows agent edits in the feed and undoes one", async () => {
   await feed.getByText("See all").click();
   await expect(feed.getByText("Country United Kingdom → GB")).toBeVisible();
 
-  // Ada's bulk edit is still current; Priya's partner email too.
   await expect(
     feed.getByRole("button", { name: "Undo Country United Kingdom → GB for Ada Lovelace" }),
   ).toBeEnabled();

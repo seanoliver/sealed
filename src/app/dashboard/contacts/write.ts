@@ -20,9 +20,8 @@ import {
 import { householdSchema, type HouseholdInput } from "@/lib/validation/household";
 
 /**
- * Contact writes shared by the dashboard's server actions and the agent tools.
- * Never import this from a "use server" module's exports: every function here
- * trusts the `claims` it is handed.
+ * Never re-export these from a "use server" module: they trust the `claims`
+ * they are handed, so a client could call them with forged ones.
  */
 
 export const NAME_FIELDS = [
@@ -69,7 +68,6 @@ export function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
   ) as Snapshot;
 }
 
-/** Stored snapshot values back to column values; unknown keys are dropped. */
 export function snapshotToRow(snap: Partial<Record<string, unknown>>): Partial<Row> {
   const row: Record<string, unknown> = {};
   for (const field of SNAPSHOT_FIELDS) {
@@ -148,7 +146,6 @@ function rowToDetailValues(row: ContactRow): Record<DetailField, string> {
 const NAMES_CHANGED =
   "This contact's names changed since you opened them. Reload to see the new names.";
 
-/** Name fields to change on top of the stored ones; null clears a field. */
 export type NamePatch = Partial<{
   first_name: string;
   last_name: string | null;
@@ -159,7 +156,6 @@ export type NamePatch = Partial<{
 
 export type PatchRequest = {
   values?: Partial<Record<DetailField, string>>;
-  /** The whole household, as the sheet's name editor submits it. */
   household?: HouseholdInput;
   /** The names the sheet's editor started from; a mismatch refuses the save. */
   namesBase?: unknown;
@@ -190,7 +186,6 @@ export type PatchPlan =
   | { kind: "invalid"; error: string }
   | { kind: "ok"; row: Partial<Row>; before: Snapshot; after: Snapshot; diff?: ContactDiff };
 
-/** Validate a patch against the stored row, the same rules for every caller. */
 export function planPatch(existing: ContactRow, request: PatchRequest): PatchPlan {
   let household = request.household;
   if (household && !sameJsonb(storedNames(existing), request.namesBase)) {
@@ -214,7 +209,6 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
   return { kind: "ok", row, before, after, diff: changedFields(before, after) };
 }
 
-/** Who made a change. `submission` is the owner approving a reply in the review queue. */
 export type Actor =
   | { source: "owner" | "submission" }
   | { source: "agent"; tokenId: string; previewId?: string };
@@ -222,15 +216,12 @@ export type Actor =
 export type EventInput = {
   contactId: string;
   diff: Record<string, unknown>;
-  /** updated_at as Postgres text (microseconds intact); kept for agent undo. */
   contactUpdatedAt?: string;
 };
 
 /**
- * Audit append. contact_events is client-unwritable by design (no insert
- * grant for `authenticated`), so rows go through the admin connection after
- * the RLS-scoped write commits. Best-effort: a failure is logged, never
- * surfaced as an error for a write that committed.
+ * Never throws: the contact write already committed, so an error here would
+ * report a saved change as failed. Failures are logged instead.
  */
 export async function recordContactEvents(
   events: EventInput[],

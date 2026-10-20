@@ -124,10 +124,6 @@ type Tool<S extends z.ZodObject> = {
   run: (ctx: AgentContext, input: z.output<S>) => Promise<unknown>;
 };
 
-/**
- * Every tool registers through here: the SDK's scope challenge answers 403
- * before the call, and agentContext checks the scope again before `run`.
- */
 function registerTool<S extends z.ZodObject>(
   server: McpServer,
   scope: AgentScope,

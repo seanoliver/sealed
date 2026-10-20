@@ -22,10 +22,8 @@ export type AgentContext = { claims: SessionClaims; tokenId: string };
 
 export const agentActor = (ctx: AgentContext): Actor => ({ source: "agent", tokenId: ctx.tokenId });
 
-/** A tool-level refusal the agent should read and act on (not a server fault). */
 export class ToolError extends Error {}
 
-// Loose shapes only: the shared contact schemas do the real validation.
 const text = z.string().max(2000);
 const clearable = (description: string) =>
   text.nullable().optional().describe(`${description} null or "" clears it.`);

@@ -24,7 +24,6 @@ export const PREVIEW_TTL_MINUTES = 30;
 type UpdateItem = {
   id: string;
   name: string;
-  /** Postgres text, so the stale check compares microseconds. */
   updatedAt: string;
   row: Partial<Row>;
   diff: ContactDiff;
@@ -60,7 +59,6 @@ async function loadOwnContacts(ctx: AgentContext, ids: string[]) {
   });
 }
 
-// userId comes from the verified token, never from tool input.
 async function storePreview(ctx: AgentContext, kind: "update" | "delete", items: unknown[]) {
   await dbAdmin
     .delete(agentPreviews)
@@ -239,7 +237,6 @@ function staleMessage(ids: string[]): string {
   return `Nothing was changed: ${ids.length} contact(s) changed or were deleted after the preview (${ids.join(", ")}). Make a new preview.`;
 }
 
-/** Lock the rows and refuse if any moved since the preview. Runs inside the apply tx. */
 async function lockUnchanged(
   tx: RlsTx,
   items: { id: string; updatedAt: string }[],

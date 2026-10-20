@@ -43,14 +43,11 @@ const eslintConfig = defineConfig([
       "src/lib/queries/public-book.ts",
       // ... and its integration test, which seeds fixtures as admin.
       "src/lib/queries/public-book.test.ts",
-      // Sanctioned: contact writes (dashboard and agent) go through withRls;
-      // dbAdmin is used ONLY to append contact_events audit rows after a
-      // successful RLS write (contact_events is client-unwritable by design —
-      // no insert policy or grant for `authenticated`).
+      // Sanctioned for contact_events audit appends only. Contact writes in
+      // this file must stay on withRls; lint no longer checks them here.
       "src/app/dashboard/contacts/write.ts",
-      // Sanctioned: agent previews are server-written (no client grant);
-      // user_id and token id come from the verified bearer token. The
-      // contact writes they lead to still run through withRls.
+      // Sanctioned for agent_previews only, scoped by the token's user. Contact
+      // writes in this file must stay on withRls; lint no longer checks them here.
       "src/lib/agent/bulk.ts",
       // ... and the concurrency guardrail test, which seeds fixtures and
       // asserts post-conditions as admin (the replayed approve transactions

@@ -219,7 +219,6 @@ export async function listContacts(
 
 export type ContactDetail = {
   contact: typeof contacts.$inferSelect;
-  /** agentName: the token's name for source 'agent' (null once the token is gone). */
   events: (typeof contactEvents.$inferSelect & { agentName: string | null })[];
 };
 

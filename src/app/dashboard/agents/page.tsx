@@ -5,7 +5,6 @@ import { AgentsView, type FeedItem, type TokenItem } from "./agents-view";
 
 export const metadata = { title: "Agents" };
 
-/** "3 min ago", "in 89 days". */
 function timeFrom(date: Date, now: number): string {
   const seconds = Math.round((date.getTime() - now) / 1000);
   const abs = Math.abs(seconds);

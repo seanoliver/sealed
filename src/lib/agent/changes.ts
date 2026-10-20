@@ -38,7 +38,6 @@ const FIELD_LABELS: Record<SnapshotField, string> = {
   kids: "Kids",
 };
 
-// The display strings repeat the structured names, so show only one of each.
 const DERIVED: Partial<Record<SnapshotField, SnapshotField[]>> = {
   full_name: ["first_name", "last_name"],
   partner_name: ["partner_first_name", "partner_last_name"],
@@ -63,7 +62,6 @@ function asDiff(value: unknown): Diff {
   return value !== null && typeof value === "object" ? (value as Diff) : {};
 }
 
-/** "Postal code 97211 → 97211-3417", or a few of those joined, for one change. */
 export function summarizeDiff(raw: unknown): string {
   const diff = asDiff(raw);
   const after = diff.after ?? {};
@@ -109,7 +107,6 @@ function undoState(row: { hasBefore: boolean; current: boolean; undone: boolean 
   return { canUndo: true };
 }
 
-/** Agent changes in the owner's book, newest first; a bulk apply is one entry. */
 export async function listAgentChanges(
   claims: SessionClaims,
   { limit = 100 }: { limit?: number } = {},
@@ -203,10 +200,6 @@ export async function listAgentChanges(
   return feed.sort((a, b) => b.at.getTime() - a.at.getTime());
 }
 
-/**
- * Put back the values an agent change replaced, as one new change by `actor`.
- * Refused once the contact has changed since (its updated_at moved).
- */
 export async function undoAgentChange(
   claims: SessionClaims,
   eventId: string,

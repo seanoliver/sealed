@@ -5,8 +5,6 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { approveMergeAs, approveNewAs, NOT_FOUND, rejectAs } from "./resolve";
 
-/** Review-queue actions; the validation and concurrency rules live in ./resolve. */
-
 export type ReviewActionState = { error?: string };
 
 const uuidSchema = z.uuid();

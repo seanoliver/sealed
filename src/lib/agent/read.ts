@@ -242,7 +242,6 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
 
 const MAX_DIFF_CHARS = 2000;
 
-/** History diffs carry recipient-typed text: cap them and mark them as data. */
 export function fenceUntrusted(value: unknown): string {
   const json = JSON.stringify(value) ?? "null";
   const capped =

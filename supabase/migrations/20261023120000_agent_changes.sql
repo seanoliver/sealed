@@ -1,7 +1,5 @@
 set lock_timeout = '5s';
 
--- Bulk update and delete previews: apply commits exactly the stored items, and
--- only for the token that made the preview. Written only by the server.
 create table public.agent_previews (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -32,7 +30,6 @@ alter table public.contact_events
   -- and a set-null update on a doomed event fails its contact foreign key.
   add column agent_token_id uuid references public.agent_tokens (id) on delete cascade,
   add column agent_preview_id uuid references public.agent_previews (id) on delete cascade,
-  -- The contact's updated_at right after this write: undo is refused once it moves.
   add column contact_updated_at timestamptz,
   add constraint contact_events_agent_check check (
     source = 'agent'
