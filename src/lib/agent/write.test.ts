@@ -578,6 +578,15 @@ describe("agent write tools", () => {
       expect(await stored(ANA)).toMatchObject({ countryCode: "US", legacyCountry: "USA" });
     });
 
+    it("records no country change for a city edit on a contact whose country text became a code", async () => {
+      await dbAdmin.execute(sql`update public.contacts set country = 'USA' where id = ${ANA}`);
+      const result = await update({ id: ANA, fields: { city: "Bend" } });
+      expect(result).toEqual(expect.objectContaining({ before: { city: "Portland" }, after: { city: "Bend" } }));
+      expect(summarizeDiff({ before: { city: "A", country: "USA" }, after: { city: "B", country: null } })).toBe(
+        "City A → B",
+      );
+    });
+
     it("undoes history recorded before country codes", async () => {
       const result = await update({ id: ANA, fields: { city: "Bend" } });
       await dbAdmin.execute(sql`
@@ -585,7 +594,7 @@ describe("agent write tools", () => {
         set diff = '{"before": {"city": "Portland", "country": "United Kingdom"}, "after": {"city": "Bend", "country": null}}'
         where id = ${result.event_id}`);
       await undoAgentChange(ctx.claims, result.event_id!, agentActor(ctx));
-      expect(await stored(ANA)).toMatchObject({ city: "Portland", legacyCountry: "United Kingdom", countryCode: "GB" });
+      expect(await stored(ANA)).toMatchObject({ city: "Portland", legacyCountry: null, countryCode: "GB" });
     });
 
     it("locks the contact, so an edit committed meanwhile refuses the undo", async () => {

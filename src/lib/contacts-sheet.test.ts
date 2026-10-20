@@ -238,6 +238,19 @@ describe("twoAnswers", () => {
     expect(answers.incoming.lines[0]?.parts.at(-1)).toEqual({ text: "CANADA", changed: true });
   });
 
+  it("shows a reply's unrecognized country text without touching the stored country", () => {
+    const answers = twoAnswers(couple, {
+      submissionId: "s1",
+      from: "partner",
+      savedBy: "primary",
+      display: { country: "Atlantis" },
+    });
+    expect(answers.incoming.lines).toEqual([
+      { label: null, parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103", changed: false }] },
+      { label: "Country", parts: [{ text: "Atlantis (not on the list)", changed: true }] },
+    ]);
+  });
+
   it("names each side from the stored sender, whatever the payload holds", () => {
     const answers = twoAnswers(couple, {
       submissionId: "s1",

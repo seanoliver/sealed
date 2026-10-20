@@ -154,9 +154,6 @@ function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
   if (isHouseholdPayload(payload) && payload.partner_first_name !== undefined) {
     patch.partner_last_name = payload.partner_last_name ?? null;
   }
-  if (payload.country !== undefined && payload.country_code === undefined) {
-    patch.country_code = null;
-  }
   return patch as Partial<Snapshot>;
 }
 
@@ -190,7 +187,16 @@ export function mergeUpdate(
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
     patch.partner_email = partnerEmail;
   }
-  if ("country_code" in patch && !("country" in patch)) patch.country = null;
+  // Unmatched text from an old reply stands in for a missing code, never a stored one.
+  if ("country" in patch) {
+    if (before.country_code !== null) delete patch.country;
+    else if (!("country_code" in patch)) patch.country_code = null;
+  } else if (
+    "country_code" in patch &&
+    (patch.country_code != null || before.country_code !== null)
+  ) {
+    patch.country = null;
+  }
   const set: Partial<Record<string, unknown>> = {};
   for (const field of SNAPSHOT_FIELDS) {
     if (field in patch && !sameJsonb(before[field], patch[field])) {

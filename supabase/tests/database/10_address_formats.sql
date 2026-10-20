@@ -44,8 +44,8 @@ select results_eq(
   $$ select country, country_code from public.contacts
      where id in ('20000000-0000-4000-8000-000000099001', '20000000-0000-4000-8000-000000099002',
                   '20000000-0000-4000-8000-000000099003') order by id $$,
-  $$ values ('United Kingdom', 'GB'), ('Atlantis', null), (null::text, null::text) $$,
-  'an old-style insert gets its code; unknown text stays visible with no code');
+  $$ values (null::text, 'GB'), ('Atlantis', null), (null::text, null::text) $$,
+  'an old-style insert gets its code in place of the text; unknown text stays visible with no code');
 
 update public.contacts set country = 'holland' where id = '20000000-0000-4000-8000-000000099001';
 select is((select country_code from public.contacts where id = '20000000-0000-4000-8000-000000099001'), 'NL',
@@ -104,8 +104,8 @@ select is(private.apply_token_reply('af2', '{"country": "Germany"}'), 'applied',
   'a reply from the old form, with country text, applies');
 select results_eq(
   $$ select country_code, country from public.contacts where id = '20000000-0000-4000-8000-000000099003' $$,
-  $$ values ('DE', 'Germany') $$,
-  'the old form''s country text sets the code');
+  $$ values ('DE', null::text) $$,
+  'the old form''s country text becomes the code');
 
 select is(private.apply_token_reply('af3', '{"country_code": "usa"}'), null,
   'a malformed code is a bad payload');

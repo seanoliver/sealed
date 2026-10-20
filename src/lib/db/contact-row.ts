@@ -39,7 +39,7 @@ export function legacyCountryAfter(
   existing: { countryCode: string | null; legacyCountry: string | null },
   countryCode: string | null,
 ): string | null {
-  return countryCode === null && existing.countryCode === null ? existing.legacyCountry : null;
+  return countryCode === existing.countryCode ? existing.legacyCountry : null;
 }
 
 export function contactDetailsToRow(d: ContactDetailsInput) {

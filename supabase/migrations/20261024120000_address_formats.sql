@@ -34,6 +34,7 @@ returns text language sql immutable set search_path = '' as $$
     ('angola', 'AO'),
     ('anguilla', 'AI'),
     ('antarctica', 'AQ'),
+    ('antigua', 'AG'),
     ('antigua and barbuda', 'AG'),
     ('ao', 'AO'),
     ('aq', 'AQ'),
@@ -230,6 +231,7 @@ returns text language sql immutable set search_path = '' as $$
     ('gw', 'GW'),
     ('gy', 'GY'),
     ('haiti', 'HT'),
+    ('heard and mcdonald islands', 'HM'),
     ('heard island and mcdonald islands', 'HM'),
     ('hk', 'HK'),
     ('hm', 'HM'),
@@ -452,13 +454,20 @@ returns text language sql immutable set search_path = '' as $$
     ('sa', 'SA'),
     ('saint barthelemy', 'BL'),
     ('saint helena', 'SH'),
+    ('saint helena ascension and tristan da cunha', 'SH'),
+    ('saint kitts', 'KN'),
     ('saint kitts and nevis', 'KN'),
     ('saint lucia', 'LC'),
     ('saint martin', 'MF'),
+    ('saint martin french part', 'MF'),
+    ('saint pierre', 'PM'),
     ('saint pierre and miquelon', 'PM'),
+    ('saint vincent', 'VC'),
     ('saint vincent and grenadines', 'VC'),
+    ('saint vincent and the grenadines', 'VC'),
     ('samoa', 'WS'),
     ('san marino', 'SM'),
+    ('sao tome', 'ST'),
     ('sao tome and principe', 'ST'),
     ('saudi arabia', 'SA'),
     ('sb', 'SB'),
@@ -475,6 +484,7 @@ returns text language sql immutable set search_path = '' as $$
     ('sierra leone', 'SL'),
     ('singapore', 'SG'),
     ('sint maarten', 'SX'),
+    ('sint maarten dutch part', 'SX'),
     ('sj', 'SJ'),
     ('sk', 'SK'),
     ('sl', 'SL'),
@@ -487,6 +497,7 @@ returns text language sql immutable set search_path = '' as $$
     ('solomon islands', 'SB'),
     ('somalia', 'SO'),
     ('south africa', 'ZA'),
+    ('south georgia', 'GS'),
     ('south georgia and the south sandwich islands', 'GS'),
     ('south korea', 'KR'),
     ('south sudan', 'SS'),
@@ -497,11 +508,17 @@ returns text language sql immutable set search_path = '' as $$
     ('st', 'ST'),
     ('st barthelemy', 'BL'),
     ('st helena', 'SH'),
+    ('st helena ascension and tristan da cunha', 'SH'),
+    ('st kitts', 'KN'),
     ('st kitts and nevis', 'KN'),
     ('st lucia', 'LC'),
     ('st martin', 'MF'),
+    ('st martin french part', 'MF'),
+    ('st pierre', 'PM'),
     ('st pierre and miquelon', 'PM'),
+    ('st vincent', 'VC'),
     ('st vincent and grenadines', 'VC'),
+    ('st vincent and the grenadines', 'VC'),
     ('sudan', 'SD'),
     ('suriname', 'SR'),
     ('sv', 'SV'),
@@ -538,6 +555,7 @@ returns text language sql immutable set search_path = '' as $$
     ('tokelau', 'TK'),
     ('tonga', 'TO'),
     ('tr', 'TR'),
+    ('trinidad', 'TT'),
     ('trinidad and tobago', 'TT'),
     ('tristan da cunha', 'TA'),
     ('tt', 'TT'),
@@ -545,6 +563,7 @@ returns text language sql immutable set search_path = '' as $$
     ('turkey', 'TR'),
     ('turkiye', 'TR'),
     ('turkmenistan', 'TM'),
+    ('turks and caicos', 'TC'),
     ('turks and caicos islands', 'TC'),
     ('tuvalu', 'TV'),
     ('tv', 'TV'),
@@ -624,7 +643,8 @@ revoke all on function private.country_code_for(text) from public, anon, authent
 alter table public.contacts disable trigger contacts_touch;
 alter table public.contacts disable trigger contacts_sync_names;
 update public.contacts
-set country_code = private.country_code_for(country)
+set country_code = private.country_code_for(country),
+    country = case when private.country_code_for(country) is null then country end
 where country is not null and country_code is null;
 alter table public.contacts enable trigger contacts_touch;
 alter table public.contacts enable trigger contacts_sync_names;
@@ -639,6 +659,9 @@ begin
           or tg_op = 'UPDATE' and new.country is distinct from old.country
              and new.country_code is not distinct from old.country_code) then
     new.country_code := private.country_code_for(new.country);
+    if new.country_code is not null then
+      new.country := null;
+    end if;
   end if;
   return new;
 end $$;

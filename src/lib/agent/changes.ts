@@ -75,7 +75,7 @@ export function summarizeDiff(raw: unknown): string {
   const fields = (Object.keys(FIELD_LABELS) as (keyof typeof FIELD_LABELS)[]).filter(
     (field) =>
       field in after &&
-      !(field === "country" && "country_code" in after) &&
+      !(field === "country" && ("country_code" in after || blank(after.country))) &&
       !(DERIVED[field as SnapshotField] ?? []).some((name) => name in after),
   );
   const parts = fields.map((field) => {

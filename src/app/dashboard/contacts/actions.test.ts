@@ -99,6 +99,18 @@ describe("owner edits of the partner's email", () => {
     expect((await stored()).city).toBe("Bergen");
   });
 
+  it("doesn't write a save that changes nothing on a contact whose country text became a code", async () => {
+    await dbAdmin.execute(sql`update public.contacts set country = 'USA' where id = ${C}`);
+    expect(await stored()).toMatchObject({ countryCode: "US", legacyCountry: null });
+    const before = await version();
+    const events = async () =>
+      (await dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`))[0].n;
+    const eventsBefore = await events();
+    await expect(updateContact({}, await editForm({ country_code: "US" }))).resolves.toMatchObject({ saved: true });
+    expect(await version()).toBe(before);
+    expect(await events()).toBe(eventsBefore);
+  });
+
   it("doesn't write a save that changes nothing", async () => {
     const before = await version();
     await expect(updateContact({}, await editForm({}))).resolves.toMatchObject({ saved: true });
