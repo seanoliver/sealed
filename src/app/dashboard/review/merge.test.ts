@@ -52,6 +52,37 @@ async function merge(
   return { set, row, diff: changedFields(before, rowToSnapshot(row)) };
 }
 
+describe("country text on approval", () => {
+  const blank = rowToSnapshot({
+    fullName: "X", partnerName: null, kidsNames: null, email: null, partnerEmail: null, birthday: null,
+    addressLine1: null, addressLine2: null, district: null, city: null, stateRegion: null, postalCode: null,
+    countryCode: "US", legacyCountry: "USA", firstName: null, lastName: null, partnerFirstName: null,
+    partnerLastName: null, kids: null,
+  } as Parameters<typeof rowToSnapshot>[0]);
+
+  it("clears old country text when a reply sets or clears the code", () => {
+    expect(mergeUpdate(blank, gate({ full_name: "X", country_code: "GB" }))).toMatchObject({
+      countryCode: "GB",
+      legacyCountry: null,
+    });
+    expect(mergeUpdate(blank, gate({ full_name: "X" }), { clear: ["country_code"] })).toMatchObject({
+      countryCode: null,
+      legacyCountry: null,
+    });
+  });
+
+  it("keeps a pre-deploy reply's unmatched country text", () => {
+    expect(mergeUpdate(blank, gate({ full_name: "X", country: "Atlantis" }))).toMatchObject({
+      countryCode: null,
+      legacyCountry: "Atlantis",
+    });
+    expect(toInsertRow(gate({ full_name: "X", country: "Atlantis" }))).toMatchObject({
+      countryCode: null,
+      legacyCountry: "Atlantis",
+    });
+  });
+});
+
 describe("approving a household submission", () => {
   beforeAll(async () => {
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);

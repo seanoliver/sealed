@@ -567,6 +567,27 @@ describe("agent write tools", () => {
       });
     });
 
+    it("clears old country text with the country, and brings both back on undo", async () => {
+      await dbAdmin.execute(
+        sql`update public.contacts set country = 'USA', country_code = 'US' where id = ${ANA}`,
+      );
+      const result = await update({ id: ANA, fields: { country: null } });
+      expect(result).toMatchObject({ after: { country_code: null, country: null } });
+      expect(await stored(ANA)).toMatchObject({ countryCode: null, legacyCountry: null });
+      await undoAgentChange(ctx.claims, result.event_id!, agentActor(ctx));
+      expect(await stored(ANA)).toMatchObject({ countryCode: "US", legacyCountry: "USA" });
+    });
+
+    it("undoes history recorded before country codes", async () => {
+      const result = await update({ id: ANA, fields: { city: "Bend" } });
+      await dbAdmin.execute(sql`
+        update public.contact_events
+        set diff = '{"before": {"city": "Portland", "country": "United Kingdom"}, "after": {"city": "Bend", "country": null}}'
+        where id = ${result.event_id}`);
+      await undoAgentChange(ctx.claims, result.event_id!, agentActor(ctx));
+      expect(await stored(ANA)).toMatchObject({ city: "Portland", legacyCountry: "United Kingdom", countryCode: "GB" });
+    });
+
     it("locks the contact, so an edit committed meanwhile refuses the undo", async () => {
       const result = await update({ id: ANA, fields: { postal_code: "97211-3417" } });
       const undone = await duringConcurrentEdit(ANA, () =>

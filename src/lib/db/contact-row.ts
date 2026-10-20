@@ -34,6 +34,14 @@ export function householdToRow(h: HouseholdInput) {
   };
 }
 
+/** Country text no code matched survives only while the country stays blank. */
+export function legacyCountryAfter(
+  existing: { countryCode: string | null; legacyCountry: string | null },
+  countryCode: string | null,
+): string | null {
+  return countryCode === null && existing.countryCode === null ? existing.legacyCountry : null;
+}
+
 export function contactDetailsToRow(d: ContactDetailsInput) {
   return {
     email: d.email ?? null,
@@ -47,7 +55,7 @@ export function contactDetailsToRow(d: ContactDetailsInput) {
     postalCode: d.postal_code ?? null,
     countryCode: d.country_code ?? null,
     // A picked country settles text no code matched; without one the text stays visible.
-    ...(d.country_code ? { legacyCountry: null } : {}),
+    legacyCountry: null as string | null,
     notes: d.notes ?? null,
   };
 }

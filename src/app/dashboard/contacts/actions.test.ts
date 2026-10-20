@@ -105,6 +105,33 @@ describe("owner edits of the partner's email", () => {
     expect(await version()).toBe(before);
   });
 
+  it("clears old country text when the form clears the country, and keeps fields it doesn't post", async () => {
+    await dbAdmin.execute(sql`
+      update public.contacts set country = 'USA', country_code = 'US', state_region = 'Avon', city = 'Bath'
+      where id = ${C}`);
+    const form = await editForm({ country_code: "", city: "Bath" });
+    expect(await updateContact({}, form)).toMatchObject({ saved: true });
+    expect(await stored()).toMatchObject({ countryCode: null, legacyCountry: null, stateRegion: "Avon" });
+  });
+
+  it("keeps unrecognized country text while the country stays blank", async () => {
+    await dbAdmin.execute(sql`update public.contacts set country = 'Atlantis', country_code = null where id = ${C}`);
+    expect(await updateContact({}, await editForm({ country_code: "", city: "Port Royal" }))).toMatchObject({
+      saved: true,
+    });
+    expect(await stored()).toMatchObject({ countryCode: null, legacyCountry: "Atlantis", city: "Port Royal" });
+  });
+
+  it("re-checks a stored postcode only once it changes, comparing it as saved", async () => {
+    await dbAdmin.execute(sql`update public.contacts set postal_code = 'nope', country_code = 'GB' where id = ${C}`);
+    expect(await updateContact({}, await editForm({ country_code: "GB", postal_code: "NOPE" }))).toMatchObject({
+      saved: true,
+    });
+    expect(await updateContact({}, await editForm({ country_code: "GB", postal_code: "BS6" }))).toMatchObject({
+      fieldErrors: { postal_code: "A UK postcode looks like EC1Y 8SY." },
+    });
+  });
+
   it("keeps the stored partner email when the edit form doesn't post one", async () => {
     await expect(updateContact({}, await editForm({ city: "Oslo" }))).resolves.toMatchObject({
       saved: true,

@@ -23,13 +23,19 @@ export type EnabledFields = {
 
 // Household name keys win over legacy name keys. parseSubmissionForDisplay
 // must use the same precedence, or the review card shows another name.
+// Country text from before codes that no code matches, kept for the owner to see.
+const unmatchedCountry = { country: z.string().trim().min(1).max(120).optional() };
+
 export const householdPayloadSchema = tokenUpdateSchema
   .omit({ full_name: true, partner_name: true, kids_names: true })
   .extend(householdShape({ ownerName: "the owner" }))
+  .extend(unmatchedCountry)
   .superRefine(requirePartnerFirstName);
 
+const legacyPayloadSchema = tokenUpdateSchema.extend(unmatchedCountry);
+
 export type HouseholdPayload = z.infer<typeof householdPayloadSchema>;
-export type LegacyPayload = z.infer<typeof tokenUpdateSchema>;
+export type LegacyPayload = z.infer<typeof legacyPayloadSchema>;
 export type SubmissionPayload = HouseholdPayload | LegacyPayload;
 
 const hasHouseholdNames = (payload: unknown) =>
@@ -44,7 +50,7 @@ export function withCountryCode(payload: unknown): unknown {
   if (typeof country !== "string") return rest;
   if (country.trim() === "") return { ...rest, country_code: "" };
   const code = countryCodeFor(country);
-  return code === null ? rest : { ...rest, country_code: code };
+  return code === null ? { ...rest, country } : { ...rest, country_code: code };
 }
 
 export function parseSubmissionPayload(
@@ -54,7 +60,7 @@ export function parseSubmissionPayload(
   const payload = withCountryCode(raw);
   const parsed = hasHouseholdNames(payload)
     ? householdPayloadSchema.safeParse(payload)
-    : tokenUpdateSchema.safeParse(payload);
+    : legacyPayloadSchema.safeParse(payload);
   return parsed.success
     ? { success: true, data: dropDisabledFields<SubmissionPayload>(parsed.data, enabled) }
     : { success: false };

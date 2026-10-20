@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { isCountryCode } from "@/lib/address/countries";
-import { normalizeAddress, postcodeProblem, type AddressInput } from "@/lib/address/rules";
+import {
+  normalizeAddress,
+  normalizePostcode,
+  postcodeProblem,
+  type AddressInput,
+} from "@/lib/address/rules";
 import "./zod-locale";
 
 /**
@@ -73,7 +78,8 @@ export function checkAddress<T extends AddressInput>(
   const normalized = normalizeAddress(data);
   const unchanged =
     stored !== undefined &&
-    (stored.postal_code ?? undefined) === normalized.postal_code &&
+    (normalizePostcode(stored.country_code, stored.postal_code ?? "") || undefined) ===
+      normalized.postal_code &&
     (stored.country_code ?? undefined) === normalized.country_code;
   const problem = unchanged ? null : postcodeProblem(normalized.country_code, normalized.postal_code);
   return problem ? { ok: false, field: "postal_code", error: problem } : { ok: true, data: normalized };

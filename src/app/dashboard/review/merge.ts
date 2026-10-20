@@ -25,6 +25,7 @@ export const SNAPSHOT_FIELDS = [
   ...TOKEN_UPDATE_FIELDS,
   "partner_email",
   ...NAME_FIELDS,
+  "country",
 ] as const;
 type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 
@@ -36,6 +37,8 @@ export type Snapshot = Record<TokenUpdateField, string | null> & {
   partner_first_name: string | null;
   partner_last_name: string | null;
   kids: Kid[] | null;
+  /** Country text no code matched. */
+  country: string | null;
 };
 
 export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
@@ -58,6 +61,7 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     partner_first_name: row.partnerFirstName,
     partner_last_name: row.partnerLastName,
     kids: row.kids,
+    country: row.legacyCountry,
   };
 }
 
@@ -110,16 +114,21 @@ const FIELD_TO_COLUMN = {
   partner_first_name: "partnerFirstName",
   partner_last_name: "partnerLastName",
   kids: "kids",
+  country: "legacyCountry",
 } as const satisfies Record<SnapshotField, keyof typeof contacts.$inferInsert>;
 
 export function toInsertRow(payload: SubmissionPayload) {
-  if (!isHouseholdPayload(payload)) return toRow(payload);
+  if (!isHouseholdPayload(payload)) {
+    const { country, ...rest } = payload;
+    return { ...toRow(rest), legacyCountry: rest.country_code ? null : (country ?? null) };
+  }
   const {
     first_name,
     last_name,
     partner_first_name,
     partner_last_name,
     kids,
+    country,
     ...rest
   } = payload;
   return {
@@ -127,6 +136,7 @@ export function toInsertRow(payload: SubmissionPayload) {
       ...rest,
       full_name: formatPerson({ first: first_name, last: last_name }) ?? "",
     }),
+    legacyCountry: rest.country_code ? null : (country ?? null),
     firstName: first_name,
     lastName: last_name,
     partnerFirstName: partner_first_name ?? null,
@@ -144,6 +154,9 @@ function mergePatch(payload: SubmissionPayload): Partial<Snapshot> {
   }
   if (isHouseholdPayload(payload) && payload.partner_first_name !== undefined) {
     patch.partner_last_name = payload.partner_last_name ?? null;
+  }
+  if (payload.country !== undefined && payload.country_code === undefined) {
+    patch.country_code = null;
   }
   return patch as Partial<Snapshot>;
 }
@@ -178,6 +191,7 @@ export function mergeUpdate(
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
     patch.partner_email = partnerEmail;
   }
+  if ("country_code" in patch && !("country" in patch)) patch.country = null;
   const set: Partial<Record<string, unknown>> = {};
   for (const field of SNAPSHOT_FIELDS) {
     if (field in patch && !sameJsonb(before[field], patch[field])) {
@@ -185,6 +199,5 @@ export function mergeUpdate(
     }
   }
   if (Object.keys(set).length === 0) return undefined;
-  if (set.countryCode) set.legacyCountry = null;
   return set as Partial<typeof contacts.$inferInsert>;
 }

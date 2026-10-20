@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  clearedFields,
   DISPLAY_VALUE_MAX,
   dropDisabledFields,
   parseSubmissionForDisplay,
@@ -311,9 +312,18 @@ describe("country text from before codes", () => {
     expect(parsed).toEqual({ success: true, data: { full_name: "Ada", country_code: "GB" } });
   });
 
-  it("drops text no code matches rather than refusing the reply", () => {
+  it("keeps text no code matches, for the owner to see", () => {
     const parsed = parseSubmissionPayload({ full_name: "Ada", country: "Atlantis" }, allEnabled);
-    expect(parsed).toEqual({ success: true, data: { full_name: "Ada" } });
+    expect(parsed).toEqual({ success: true, data: { full_name: "Ada", country: "Atlantis" } });
+  });
+
+  it("reads blank country text as clearing the code", () => {
+    expect(clearedFields({ country: "" }, allEnabled)).toEqual(["country_code"]);
+    expect(parseSubmissionForDisplay({ country: "" }, allEnabled)).toEqual({ country_code: "" });
+    expect(parseSubmissionPayload({ full_name: "Ada", country: "" }, allEnabled)).toEqual({
+      success: true,
+      data: { full_name: "Ada" },
+    });
   });
 
   it("shows the code for a known name and keeps unknown text for display", () => {

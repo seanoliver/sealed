@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
-import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
+import { contactDetailsToRow, householdToRow, legacyCountryAfter } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
@@ -38,7 +38,8 @@ export const NAME_FIELDS = [
   "partner_last_name",
   "kids",
 ] as const;
-export const SNAPSHOT_FIELDS = [...CONTACT_FIELDS, ...NAME_FIELDS] as const;
+// `country` is the text no code matched, kept so undo can bring it back.
+export const SNAPSHOT_FIELDS = [...CONTACT_FIELDS, ...NAME_FIELDS, "country"] as const;
 export type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 
 /** Field snapshot keyed by form/schema names, for audit diffs. */
@@ -68,6 +69,7 @@ const SNAPSHOT_COLUMNS = {
   partner_first_name: "partnerFirstName",
   partner_last_name: "partnerLastName",
   kids: "kids",
+  country: "legacyCountry",
 } as const satisfies Record<SnapshotField, keyof Row>;
 
 export function rowToSnapshot(row: Pick<ContactRow, (typeof SNAPSHOT_COLUMNS)[SnapshotField]>): Snapshot {
@@ -225,8 +227,10 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
   }
   const parsed = parseDetails({ ...rowToDetailValues(existing), ...request.values }, { stored: existing });
   if (!parsed.success) return { kind: "invalid", error: parsed.error };
+  const details = contactDetailsToRow(parsed.data);
   const row = {
-    ...contactDetailsToRow(parsed.data),
+    ...details,
+    legacyCountry: legacyCountryAfter(existing, details.countryCode),
     ...(household ? householdToRow(household) : {}),
   };
   const before = rowToSnapshot(existing);

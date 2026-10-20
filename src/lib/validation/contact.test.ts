@@ -204,6 +204,10 @@ describe("checkAddress", () => {
     expect(checkAddress({ postal_code: "1017", country_code: "NL" }, { stored }).ok).toBe(false);
     expect(checkAddress({ postal_code: "1016", country_code: "BE" }, { stored }).ok).toBe(true);
     expect(checkAddress({ postal_code: "1016", country_code: "DE" }, { stored }).ok).toBe(false);
+    // The stored value is compared as the form saves it: upper case, spaced.
+    expect(
+      checkAddress({ postal_code: "NOPE", country_code: "GB" }, { stored: { postal_code: "nope", country_code: "GB" } }).ok,
+    ).toBe(true);
   });
 
   it("only takes country codes on the list", () => {

@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
-import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
+import { contactDetailsToRow, householdToRow, legacyCountryAfter } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
@@ -85,14 +85,31 @@ function detailsErrorState(
     : { error: details.error };
 }
 
-function withStoredPartnerEmail(
+const KEPT_WHEN_ABSENT = {
+  partner_email: "partnerEmail",
+  address_line1: "addressLine1",
+  address_line2: "addressLine2",
+  district: "district",
+  city: "city",
+  state_region: "stateRegion",
+  postal_code: "postalCode",
+  country_code: "countryCode",
+} as const;
+
+/** A field the form didn't post (hidden for the contact's country) keeps its stored value. */
+function withStoredAbsentFields(
   formData: FormData,
   values: ContactFormValues,
   existing: ContactRow,
 ): ContactFormValues {
-  return formData.has("partner_email")
-    ? values
-    : { ...values, partner_email: existing.partnerEmail ?? "" };
+  const kept = { ...values };
+  for (const [field, column] of Object.entries(KEPT_WHEN_ABSENT) as [
+    keyof typeof KEPT_WHEN_ABSENT,
+    (typeof KEPT_WHEN_ABSENT)[keyof typeof KEPT_WHEN_ABSENT],
+  ][]) {
+    if (!formData.has(field)) kept[field] = existing[column] ?? "";
+  }
+  return kept;
 }
 
 function parseContactForm(
@@ -185,7 +202,7 @@ export async function updateContact(
         invalid = { error: CHANGED_SINCE_OPENED, ...echo };
         return existing;
       }
-      const values = withStoredPartnerEmail(formData, echo.values, existing);
+      const values = withStoredAbsentFields(formData, echo.values, existing);
       const keepNames = isUntouchedPrefill(
         storedNames(existing),
         readHouseholdValues(formData, { kidsLimit: Infinity }),
@@ -205,6 +222,7 @@ export async function updateContact(
         }
         row = inputToRow(parsed.details, parsed.household);
       }
+      row = { ...row, legacyCountry: legacyCountryAfter(existing, row.countryCode ?? null) };
       if (changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }))) {
         await tx
           .update(contacts)
