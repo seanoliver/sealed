@@ -165,6 +165,7 @@ export function ContactForm({
         }}
         preview="beside"
         handleRef={address}
+        errorsKey={state}
         prefillCountry={contactId === undefined}
       />
 

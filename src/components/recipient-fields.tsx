@@ -41,6 +41,7 @@ type RecipientFieldsProps = {
   senderCountry: string;
   legacyCountry?: string | null;
   addressRef?: Ref<AddressFieldsHandle>;
+  errorsKey?: unknown;
 };
 
 type FieldProps = {
@@ -88,6 +89,7 @@ export function RecipientFields({
   senderCountry,
   legacyCountry,
   addressRef,
+  errorsKey,
 }: RecipientFieldsProps) {
   return (
     <>
@@ -129,6 +131,7 @@ export function RecipientFields({
         audience={{ kind: "recipient", ownerName }}
         styles={{ input: inputClasses, label: labelClasses }}
         errors={{ postal_code: household.errors?.postal_code }}
+        errorsKey={errorsKey}
         preview="below"
         handleRef={addressRef}
       />

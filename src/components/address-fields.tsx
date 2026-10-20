@@ -41,6 +41,8 @@ type AddressFieldsProps = {
   audience: { kind: "recipient"; ownerName: string } | { kind: "owner" };
   styles: AddressFieldStyles;
   errors?: { postal_code?: string; country_code?: string };
+  /** Changes with each server response, so a repeated error shows again. */
+  errorsKey?: unknown;
   preview: "below" | "beside";
   handleRef?: Ref<AddressFieldsHandle>;
   /** Off for a saved contact: prefilling there would save a country nobody picked. */
@@ -181,6 +183,7 @@ export function AddressFields({
   audience,
   styles,
   errors,
+  errorsKey,
   preview,
   handleRef,
   prefillCountry = true,
@@ -195,17 +198,28 @@ export function AddressFields({
   }));
   const [stash, setStash] = useState<Partial<AddressValues>>({});
   const [showLine2, setShowLine2] = useState(initial.current.address_line2 !== "");
-  const [postcodeError, setPostcodeError] = useState<string | null>(errors?.postal_code ?? null);
-  const [serverError, setServerError] = useState(errors?.postal_code);
-  if (errors?.postal_code !== serverError) {
-    setServerError(errors?.postal_code);
-    setPostcodeError(errors?.postal_code ?? null);
+  // Until the country changes, fields the layout hides aren't posted, so a save leaves them alone.
+  const [countryChanged, setCountryChanged] = useState(false);
+  const [unmatchedCountry, setUnmatchedCountry] = useState<string | null>(null);
+  const [postcodeError, setPostcodeError] = useState<{ text: string; fromServer: boolean } | null>(
+    errors?.postal_code ? { text: errors.postal_code, fromServer: true } : null,
+  );
+  const [seenErrorsKey, setSeenErrorsKey] = useState(errorsKey);
+  if (errorsKey !== seenErrorsKey) {
+    setSeenErrorsKey(errorsKey);
+    setPostcodeError(errors?.postal_code ? { text: errors.postal_code, fromServer: true } : null);
   }
   const name = useFormHousehold(anchor);
 
   const layoutCode = values.country_code || (unrecognized ? null : senderCountry);
   const country = getCountry(layoutCode);
   const layout = addressLayout(layoutCode);
+  // A stored value the country has no field for stays editable until the country changes.
+  const [extraFields] = useState(() =>
+    ADDRESS_FIELDS.filter(
+      (field) => !layout.fields.has(field) && initial.current[field].trim() !== "",
+    ),
+  );
 
   function problem(next: AddressValues = values): string | null {
     const postcode = normalizePostcode(next.country_code, next.postal_code);
@@ -215,10 +229,17 @@ export function AddressFields({
     return unchanged ? null : postcodeProblem(next.country_code, postcode);
   }
 
+  const clientError = (text: string | null) =>
+    setPostcodeError(text === null ? null : { text, fromServer: false });
+
   useImperativeHandle(handleRef, () => ({
     validate() {
+      if (unmatchedCountry !== null) {
+        document.getElementById("country_code")?.focus();
+        return false;
+      }
       const found = problem();
-      setPostcodeError(found);
+      clientError(found);
       if (found) {
         const field = document.getElementById("postal_code");
         field?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -254,8 +275,9 @@ export function AddressFields({
     const next = { ...BLANK_ADDRESS, ...kept, ...restored, country_code: code } as AddressValues;
     setStash({ ...stash, ...dropped });
     setValues(next);
+    setCountryChanged(true);
     if (nextLayout.line2OnlyWhenFilled) setShowLine2(next.address_line2 !== "");
-    setPostcodeError(postcodeError ? problem(next) : null);
+    clientError(postcodeError ? problem(next) : null);
   }
 
   function setField(field: AddressField, value: string) {
@@ -288,8 +310,23 @@ export function AddressFields({
 
   const visible = (spec: AddressFieldSpec) =>
     spec.name !== "address_line2" || !layout.line2OnlyWhenFilled || showLine2;
+  const extraRows = countryChanged
+    ? []
+    : extraFields.map((name) => ({
+        fields: [
+          {
+            name,
+            label: fieldLabel(name, country),
+            required: false,
+            options: null,
+            autoComplete: "off",
+          } satisfies AddressFieldSpec,
+        ],
+        wideOnly: false,
+      }));
+  const rows = [...layout.rows, ...extraRows];
   const shown = new Set(
-    layout.rows.flatMap((row) => row.fields.filter(visible).map((field) => field.name)),
+    rows.flatMap((row) => row.fields.filter(visible).map((field) => field.name)),
   );
 
   const label = (spec: AddressFieldSpec) => (
@@ -332,7 +369,10 @@ export function AddressFields({
         </select>
       );
     }
-    const numeric = spec.name === "postal_code" && /^\d+$/.test(country?.zipExample ?? "");
+    const numeric =
+      spec.name === "postal_code" &&
+      /^\d+$/.test(country?.zipExample ?? "") &&
+      !/-| |\\s/.test(country?.zip?.source ?? "-");
     return (
       <input
         {...common}
@@ -342,7 +382,7 @@ export function AddressFields({
         inputMode={numeric ? "numeric" : undefined}
         autoCapitalize={spec.name === "postal_code" ? "characters" : undefined}
         onChange={(event) => setField(spec.name, event.target.value)}
-        onBlur={spec.name === "postal_code" ? () => setPostcodeError(problem()) : undefined}
+        onBlur={spec.name === "postal_code" ? () => clientError(problem()) : undefined}
       />
     );
   };
@@ -360,7 +400,15 @@ export function AddressFields({
           onChange={changeCountry}
           className={styles.input}
           invalid={Boolean(errors?.country_code)}
-          describedBy={unrecognized && !values.country_code ? "country_code-hint" : undefined}
+          describedBy={
+            [
+              unrecognized && !values.country_code ? "country_code-hint" : null,
+              errors?.country_code ? "country_code-error" : null,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+          onUnmatchedChange={setUnmatchedCountry}
         />
         {unrecognized && !values.country_code ? (
           <p id="country_code-hint" className="text-xs text-amber-700 dark:text-amber-300">
@@ -369,11 +417,13 @@ export function AddressFields({
           </p>
         ) : null}
         {errors?.country_code ? (
-          <p className="text-xs text-destructive">{errors.country_code}</p>
+          <p id="country_code-error" className="text-xs text-destructive">
+            {errors.country_code}
+          </p>
         ) : null}
       </div>
 
-      {layout.rows.map((row) => {
+      {rows.map((row) => {
         const specs = row.fields.filter(visible);
         if (specs.length === 0) return null;
         const hasPostcode = specs.some((spec) => spec.name === "postal_code");
@@ -396,17 +446,24 @@ export function AddressFields({
               ))}
             </div>
             {hasPostcode && postcodeError ? (
-              <p id="postal_code-error" role="alert" className="text-xs text-destructive">
-                {postcodeError}
+              // The form's own alert already reads a server error out.
+              <p
+                id="postal_code-error"
+                role={postcodeError.fromServer ? undefined : "alert"}
+                className="text-xs text-destructive"
+              >
+                {postcodeError.text}
               </p>
             ) : null}
           </div>
         );
       })}
 
-      {ADDRESS_FIELDS.filter((field) => !shown.has(field)).map((field) => (
-        <input key={field} type="hidden" name={field} value="" />
-      ))}
+      {countryChanged
+        ? ADDRESS_FIELDS.filter((field) => !shown.has(field)).map((field) => (
+            <input key={field} type="hidden" name={field} value="" />
+          ))
+        : null}
     </div>
   );
 

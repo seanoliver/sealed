@@ -7,28 +7,32 @@ import { aliasesFor, COUNTRY_OPTIONS, countryCodeFor, countryName } from "@/lib/
 
 type Option = { code: string; name: string };
 
-const ALL: Option[] = COUNTRY_OPTIONS.map(([code, name]) => ({ code, name }));
+const ALL = COUNTRY_OPTIONS.map(([code, name]) => ({
+  option: { code, name } as Option,
+  code: code.toLowerCase(),
+  name: countryKey(name),
+  words: countryKey(name).split(" "),
+  aliases: aliasesFor(code).map(countryKey),
+}));
 
 export function filterCountries(query: string): Option[] {
   const key = countryKey(query);
-  if (key === "") return ALL;
+  if (key === "") return ALL.map((entry) => entry.option);
   const ranked: [number, Option][] = [];
-  for (const option of ALL) {
-    const name = countryKey(option.name);
-    const aliases = aliasesFor(option.code).map(countryKey);
+  for (const entry of ALL) {
     const rank =
-      option.code.toLowerCase() === key || name === key || aliases.includes(key)
+      entry.code === key || entry.name === key || entry.aliases.includes(key)
         ? 0
-        : name.startsWith(key)
+        : entry.name.startsWith(key)
           ? 1
-          : aliases.some((alias) => alias.startsWith(key))
+          : entry.aliases.some((alias) => alias.startsWith(key))
             ? 2
-            : name.split(" ").some((word) => word.startsWith(key))
+            : entry.words.some((word) => word.startsWith(key))
               ? 3
-              : name.includes(key)
+              : entry.name.includes(key)
                 ? 4
                 : -1;
-    if (rank >= 0) ranked.push([rank, option]);
+    if (rank >= 0) ranked.push([rank, entry.option]);
   }
   return ranked
     .sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name))
@@ -44,6 +48,8 @@ type CountryPickerProps = {
   invalid?: boolean;
   describedBy?: string;
   placeholder?: string;
+  /** Typed text that matches no country, or null once a country is picked. */
+  onUnmatchedChange?: (text: string | null) => void;
 };
 
 export function CountryPicker({
@@ -55,9 +61,12 @@ export function CountryPicker({
   invalid,
   describedBy,
   placeholder = "Start typing a country",
+  onUnmatchedChange,
 }: CountryPickerProps) {
   const listId = `${useId()}-countries`;
+  const errorId = `${id}-unmatched`;
   const [query, setQuery] = useState<string | null>(null);
+  const [unmatched, setUnmatchedState] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
@@ -73,6 +82,11 @@ export function CountryPicker({
     node?.scrollIntoView({ block: "nearest" });
   }, [active, open]);
 
+  function setUnmatched(next: string | null) {
+    setUnmatchedState(next);
+    onUnmatchedChange?.(next);
+  }
+
   function show() {
     const selected = query === null ? options.findIndex((option) => option.code === value) : 0;
     setActive(Math.max(selected, 0));
@@ -82,17 +96,18 @@ export function CountryPicker({
   function commit(code: string) {
     setQuery(null);
     setOpen(false);
+    setUnmatched(null);
     if (code !== value) onChange(code);
   }
 
+  // Leaving the field picks the best match; text that matches nothing stays, with an error.
   function settle() {
-    if (query !== null) {
-      const exact = countryCodeFor(query);
-      if (exact) commit(exact);
-      else if (query.trim() === "") commit("");
-      else setQuery(null);
-    }
     setOpen(false);
+    if (query === null) return;
+    if (query.trim() === "") return commit("");
+    const pick = countryCodeFor(query) ?? (options[active] ?? options[0])?.code;
+    if (pick) commit(pick);
+    else setUnmatched(query.trim());
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -126,15 +141,17 @@ export function CountryPicker({
           event.preventDefault();
           event.stopPropagation();
           setQuery(null);
+          setUnmatched(null);
           setOpen(false);
         }
         break;
       case "Tab":
-        if (open && query !== null && activeOption) commit(activeOption.code);
-        else settle();
+        settle();
         break;
     }
   }
+
+  const described = [describedBy, unmatched ? errorId : null].filter(Boolean).join(" ");
 
   return (
     <div className="relative">
@@ -143,12 +160,12 @@ export function CountryPicker({
         id={id}
         type="text"
         role="combobox"
-        aria-expanded={open}
+        aria-expanded={open && options.length > 0}
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={activeOption ? `${listId}-${activeOption.code}` : undefined}
-        aria-invalid={invalid || undefined}
-        aria-describedby={describedBy}
+        aria-invalid={invalid || unmatched !== null || undefined}
+        aria-describedby={described || undefined}
         autoComplete="off"
         spellCheck={false}
         placeholder={placeholder}
@@ -162,7 +179,7 @@ export function CountryPicker({
         onClick={() => (open ? null : show())}
         onBlur={settle}
         onKeyDown={onKeyDown}
-        className={`${className} w-full pr-9`}
+        className={`${className} w-full pr-9 ${unmatched ? "border-destructive" : ""}`}
       />
       <button
         type="button"
@@ -174,42 +191,55 @@ export function CountryPicker({
           if (open) setOpen(false);
           else show();
         }}
-        className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground"
+        className="absolute top-0 right-0 flex h-full max-h-11 w-9 items-center justify-center text-muted-foreground"
       >
         <ChevronDown aria-hidden="true" className="size-4" />
       </button>
       <input type="hidden" name={name} value={value} />
+      <span className="sr-only" aria-live="polite">
+        {open && query !== null
+          ? options.length === 1
+            ? "1 country"
+            : `${options.length} countries`
+          : ""}
+      </span>
       <ul
         ref={listRef}
         id={listId}
         role="listbox"
         aria-label="Countries"
-        hidden={!open}
+        hidden={!open || options.length === 0}
         className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-lg"
       >
-        {options.length === 0 ? (
-          <li className="px-3 py-2 text-sm text-muted-foreground">No country matches “{query}”.</li>
-        ) : (
-          options.map((option, i) => (
-            <li
-              key={option.code}
-              id={`${listId}-${option.code}`}
-              data-index={i}
-              role="option"
-              aria-selected={option.code === value}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseMove={() => setActive(i)}
-              onClick={() => commit(option.code)}
-              className={`flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm ${
-                i === active ? "bg-accent text-accent-foreground" : ""
-              } ${option.code === value ? "font-medium" : ""}`}
-            >
-              <span>{option.name}</span>
-              <span className="text-xs text-muted-foreground">{option.code}</span>
-            </li>
-          ))
-        )}
+        {options.map((option, i) => (
+          <li
+            key={option.code}
+            id={`${listId}-${option.code}`}
+            data-index={i}
+            role="option"
+            aria-selected={i === active}
+            onMouseDown={(event) => event.preventDefault()}
+            onMouseMove={() => setActive(i)}
+            onClick={() => commit(option.code)}
+            className={`flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm ${
+              i === active ? "bg-accent text-accent-foreground" : ""
+            } ${option.code === value ? "font-medium" : ""}`}
+          >
+            <span>{option.name}</span>
+            <span className="text-xs text-muted-foreground">{option.code}</span>
+          </li>
+        ))}
       </ul>
+      {open && options.length === 0 ? (
+        <div className="absolute inset-x-0 top-full z-30 mt-1 rounded-lg border border-border bg-popover px-3 py-2 text-sm text-muted-foreground shadow-lg">
+          No country matches “{query}”.
+        </div>
+      ) : null}
+      {unmatched ? (
+        <p id={errorId} className="mt-1.5 text-xs text-destructive">
+          No country matches “{unmatched}”. Pick one from the list.
+        </p>
+      ) : null}
     </div>
   );
 }

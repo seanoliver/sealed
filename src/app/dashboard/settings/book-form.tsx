@@ -22,6 +22,7 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
   const [displayName, setDisplayName] = useState(defaults.display_name);
   const [slugValue, setSlugValue] = useState(defaults.slug);
   const [senderCountry, setSenderCountry] = useState(defaults.sender_country);
+  const [unmatchedSender, setUnmatchedSender] = useState<string | null>(null);
   const [enabledFields, setEnabledFields] = useState<EnabledFields>({
     partner_name: defaults.partner_name,
     kids_names: defaults.kids_names,
@@ -126,6 +127,7 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
             onChange={(code) => code && setSenderCountry(code)}
             className={inputClasses}
             describedBy="sender_country-hint"
+            onUnmatchedChange={setUnmatchedSender}
           />
           <p id="sender_country-hint" className="text-xs text-muted-foreground">
             Envelopes to this country leave the country line off.
@@ -184,7 +186,7 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
 
       <button
         type="submit"
-        disabled={pending || (slugChanged && !slugChangeAcked)}
+        disabled={pending || (slugChanged && !slugChangeAcked) || unmatchedSender !== null}
         className="h-10 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50  sm:self-end"
       >
         {pending ? "Saving…" : "Save"}

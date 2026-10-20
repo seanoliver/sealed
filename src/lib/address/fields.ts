@@ -135,6 +135,7 @@ export function fieldLabel(field: AddressField, country: Country | null): string
     case "city":
       return LOCALITY_LABELS[country?.localityNameType ?? "city"] ?? "City";
     case "state_region":
+      if (country?.code === "GB") return "County";
       return country ? (STATE_LABELS[country.stateNameType] ?? "Province") : "State / region";
     case "postal_code":
       return postcodeLabel(country);

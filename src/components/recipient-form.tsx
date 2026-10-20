@@ -102,6 +102,7 @@ export function RecipientForm({
         senderCountry={senderCountry}
         legacyCountry={legacyCountry}
         addressRef={address}
+        errorsKey={state}
       />
 
       {seenAt === undefined ? null : (
