@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { countryCodeFor } from "@/lib/address/countries";
 import { formatKids, formatPerson, type Kid } from "@/lib/names";
 import { contactSchema, tokenUpdateSchema, type TokenUpdateField } from "./contact";
 import { householdShape, requirePartnerFirstName } from "./household";
@@ -36,10 +37,25 @@ const hasHouseholdNames = (payload: unknown) =>
   payload !== null &&
   ("first_name" in payload || "last_name" in payload);
 
+/**
+ * Payloads saved before country codes carry `country` text. Map it to a code;
+ * text no code matches is dropped (the review card still shows it).
+ */
+export function withCountryCode(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
+  const { country, ...rest } = payload as Record<string, unknown>;
+  if (country === undefined || "country_code" in rest) return rest;
+  if (typeof country !== "string") return rest;
+  if (country.trim() === "") return { ...rest, country_code: "" };
+  const code = countryCodeFor(country);
+  return code === null ? rest : { ...rest, country_code: code };
+}
+
 export function parseSubmissionPayload(
-  payload: unknown,
+  raw: unknown,
   enabled: EnabledFields,
 ): { success: true; data: SubmissionPayload } | { success: false } {
+  const payload = withCountryCode(raw);
   const parsed = hasHouseholdNames(payload)
     ? householdPayloadSchema.safeParse(payload)
     : tokenUpdateSchema.safeParse(payload);
@@ -102,9 +118,12 @@ export const submissionDisplaySchema = z.object({
   birthday: displayValue,
   address_line1: displayValue,
   address_line2: displayValue,
+  district: displayValue,
   city: displayValue,
   state_region: displayValue,
   postal_code: displayValue,
+  country_code: displayValue,
+  /** Country text from before codes; display maps it to a code when it can. */
   country: displayValue,
   first_name: rawName,
   last_name: rawName,
@@ -115,7 +134,10 @@ export const submissionDisplaySchema = z.object({
 
 export type SubmissionDisplayFields = Partial<
   Record<TokenUpdateField | "partner_email", string>
->;
+> & {
+  /** Old country text no code matched. */
+  country?: string;
+};
 
 function capDisplay(value: string | null): string | undefined {
   if (value === null) return undefined;
@@ -172,8 +194,18 @@ export function parseSubmissionForDisplay(
     partner_first_name,
     partner_last_name,
     kids,
-    ...display
+    country,
+    ...rest
   } = dropDisabledFields(parsed.data, enabled);
+  const legacyCode = country === undefined ? undefined : countryCodeFor(country);
+  const display: SubmissionDisplayFields =
+    country === undefined || rest.country_code !== undefined
+      ? rest
+      : legacyCode
+        ? { ...rest, country_code: legacyCode }
+        : country.trim() === ""
+          ? { ...rest, country_code: "" }
+          : { ...rest, country };
   if (first_name === undefined && last_name === undefined) return display;
   return {
     ...display,
@@ -214,10 +246,11 @@ export function submittedPeople(payload: unknown, enabled: EnabledFields): Submi
 export const CLEARABLE_FIELDS = [
   "address_line1",
   "address_line2",
+  "district",
   "city",
   "state_region",
   "postal_code",
-  "country",
+  "country_code",
   "birthday",
   "partner_name",
   "kids_names",
@@ -247,7 +280,7 @@ export function clearedFields(
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return [];
   }
-  const raw = payload as Record<string, unknown>;
+  const raw = withCountryCode(payload) as Record<string, unknown>;
   const cleared = new Set<ClearableField>(
     CLEARABLE_FIELDS.filter((field) => field in raw && isBlank(raw[field])),
   );

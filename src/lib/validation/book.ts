@@ -1,5 +1,6 @@
 import { z } from "zod";
 import "./zod-locale";
+import { isCountryCode } from "@/lib/address/countries";
 import { BOOK_LINK_SHAPE } from "@/lib/book-link";
 
 export const bookSchema = z.object({
@@ -11,3 +12,8 @@ export const bookSchema = z.object({
   birthday: z.boolean(),
 });
 export type BookInput = z.infer<typeof bookSchema>;
+
+export const senderCountrySchema = z
+  .string()
+  .trim()
+  .refine(isCountryCode, "Pick the country you mail from");

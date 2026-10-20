@@ -208,19 +208,19 @@ describe("/api/mcp", () => {
     });
     expect(edit).toMatchObject({
       changed: true,
-      after: { country: "Nigeria" },
+      after: { country_code: "NG" },
       pending_email_change: {
         changes: { email: ["ben@mcp.test", "ben.new@mcp.test"] },
         message: expect.stringContaining("waiting for the owner"),
       },
     });
-    const [row] = await dbAdmin.execute<{ country: string | null; email: string }>(
-      sql`select country, email from public.contacts where id = ${C2}`,
+    const [row] = await dbAdmin.execute<{ country_code: string | null; email: string }>(
+      sql`select country_code, email from public.contacts where id = ${C2}`,
     );
-    expect(row).toEqual({ country: "Nigeria", email: "ben@mcp.test" });
+    expect(row).toEqual({ country_code: "NG", email: "ben@mcp.test" });
 
     const undone = await call(writeOnlyToken, "undo_agent_change", { event_id: edit.event_id });
-    expect(undone).toMatchObject({ contact_id: C2, restored: { country: null } });
+    expect(undone).toMatchObject({ contact_id: C2, restored: { country_code: null } });
   });
 
   it("has no tool that deletes: a delete request waits for the owner", async () => {

@@ -62,8 +62,30 @@ const SHORT = new Set<AddressField>(["district", "city", "state_region", "postal
 
 // Where the house number follows the street name.
 const STREET_AND_NUMBER = new Set([
-  "NL", "DE", "AT", "CH", "BE", "LU", "DK", "NO", "SE", "FI", "IS", "PL", "CZ", "SK",
-  "HU", "SI", "HR", "IT", "ES", "PT", "GR", "EE", "LV", "LT",
+  "NL",
+  "DE",
+  "AT",
+  "CH",
+  "BE",
+  "LU",
+  "DK",
+  "NO",
+  "SE",
+  "FI",
+  "IS",
+  "PL",
+  "CZ",
+  "SK",
+  "HU",
+  "SI",
+  "HR",
+  "IT",
+  "ES",
+  "PT",
+  "GR",
+  "EE",
+  "LV",
+  "LT",
 ]);
 const FLAT_FIRST = new Set(["GB", "IE", "AU", "NZ"]);
 // The street line usually carries the flat or room too.
@@ -109,7 +131,9 @@ export function postcodeLabel(country: Country | null): string {
 export function fieldLabel(field: AddressField, country: Country | null): string {
   switch (field) {
     case "address_line1":
-      return country && STREET_AND_NUMBER.has(country.code) ? "Street and house number" : "Street address";
+      return country && STREET_AND_NUMBER.has(country.code)
+        ? "Street and house number"
+        : "Street address";
     case "address_line2":
       return country && FLAT_FIRST.has(country.code) ? "Flat, building" : "Apartment, suite";
     case "district":
@@ -136,7 +160,10 @@ export function addressLayout(code: string | null): AddressLayout {
   const spec = (name: AddressField): AddressFieldSpec => ({
     name,
     label: fieldLabel(name, country),
-    required: name === "address_line2" ? false : (country?.require.has(TOKEN_FOR[name]) ?? name === "address_line1"),
+    required:
+      name === "address_line2"
+        ? false
+        : (country?.require.has(TOKEN_FOR[name]) ?? name === "address_line1"),
     options: name === "state_region" ? (country?.subdivisions ?? null) : null,
     autoComplete: {
       address_line1: "address-line1",

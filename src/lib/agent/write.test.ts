@@ -154,6 +154,20 @@ describe("agent write tools", () => {
       expect(await eventsOf(ANA)).toHaveLength(0);
     });
 
+    it("takes a country as a name, short form or code, and checks the postcode against it", async () => {
+      expect(await update({ id: ANA, fields: { country: "Holland", postal_code: "1016dz" } })).toMatchObject({
+        changed: true,
+        after: { country_code: "NL", postal_code: "1016 DZ" },
+      });
+      await expect(update({ id: ANA, fields: { country: "Atlantis" } })).rejects.toThrow(
+        "isn't a country I know",
+      );
+      await expect(update({ id: ANA, fields: { postal_code: "1016" } })).rejects.toThrow(
+        "A Dutch postcode is four digits and two letters, like 1234 AB.",
+      );
+      expect((await stored(ANA)).countryCode).toBe("NL");
+    });
+
     it("leaves updated_at alone and writes no history for a no-op", async () => {
       const before = await version(ANA);
       expect(await update({ id: ANA, fields: { city: "Portland" } })).toEqual({ id: ANA, changed: false });

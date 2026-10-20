@@ -9,7 +9,7 @@ import { isUniqueViolation } from "@/lib/db/errors";
 import { books, profiles } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
 import { getOwnBook } from "@/lib/queries/books";
-import { bookSchema } from "@/lib/validation/book";
+import { bookSchema, senderCountrySchema } from "@/lib/validation/book";
 
 export type BookFormValues = {
   display_name: string;
@@ -17,6 +17,7 @@ export type BookFormValues = {
   partner_name: boolean;
   kids_names: boolean;
   birthday: boolean;
+  sender_country: string;
 };
 
 export type SaveBookState = {
@@ -46,12 +47,20 @@ export async function saveBook(
     partner_name: formData.get("partner_name") === "on",
     kids_names: formData.get("kids_names") === "on",
     birthday: formData.get("birthday") === "on",
+    sender_country: String(formData.get("sender_country") ?? ""),
   };
 
   const parsed = bookSchema.safeParse(submitted);
   if (!parsed.success) {
     return {
       error: parsed.error.issues[0]?.message ?? "Invalid input",
+      values: submitted,
+    };
+  }
+  const senderCountry = senderCountrySchema.safeParse(submitted.sender_country);
+  if (!senderCountry.success) {
+    return {
+      error: senderCountry.error.issues[0]?.message ?? "Invalid input",
       values: submitted,
     };
   }
@@ -65,7 +74,7 @@ export async function saveBook(
       // first and fail the transaction if it disappeared after the guard.
       const updated = await tx
         .update(books)
-        .set({ slug, enabledFields })
+        .set({ slug, enabledFields, senderCountry: senderCountry.data })
         .where(eq(books.ownerId, claims.sub))
         .returning({ id: books.id });
       if (updated.length === 0) throw new Error("Address book not found");

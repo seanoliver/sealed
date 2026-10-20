@@ -11,6 +11,7 @@ export {
   envelopeLines,
   formatEnvelope,
   isLocalScript,
+  rowAddress,
   type Envelope,
   type EnvelopeLine,
   type PostalAddress,

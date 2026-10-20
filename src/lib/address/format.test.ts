@@ -34,7 +34,14 @@ describe("envelopeLines", () => {
   it("adds the country in capitals when mailing to the US from elsewhere", () => {
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "1 Main St", city: "Boston", stateRegion: "MA", postalCode: "02110", countryCode: "US" },
+        {
+          ...blank,
+          addressLine1: "1 Main St",
+          city: "Boston",
+          stateRegion: "MA",
+          postalCode: "02110",
+          countryCode: "US",
+        },
         { senderCountry: "GB" },
       )?.at(-1),
     ).toBe("UNITED STATES");
@@ -64,7 +71,13 @@ describe("envelopeLines", () => {
   it("puts the Dutch postcode before the city", () => {
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "Keizersgracht 212", city: "Amsterdam", postalCode: "1016 DZ", countryCode: "NL" },
+        {
+          ...blank,
+          addressLine1: "Keizersgracht 212",
+          city: "Amsterdam",
+          postalCode: "1016 DZ",
+          countryCode: "NL",
+        },
         { ...US, name: "Sanne de Vries" },
       ),
     ).toEqual(["Sanne de Vries", "Keizersgracht 212", "1016 DZ Amsterdam", "NETHERLANDS"]);
@@ -86,7 +99,7 @@ describe("envelopeLines", () => {
     expect(envelope?.local).toBe(true);
     expect(envelope?.lines.map((line) => line.text)).toEqual([
       "201203",
-      "上海市上海市浦东新区",
+      "上海市浦东新区",
       "张江路1500弄6号501室",
       "王芳 收",
       "CHINA",
@@ -129,7 +142,13 @@ describe("envelopeLines", () => {
   it("prints Singapore's fixed SINGAPORE line once", () => {
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "10 Anson Road #20-05", city: "Singapore", postalCode: "079903", countryCode: "SG" },
+        {
+          ...blank,
+          addressLine1: "10 Anson Road #20-05",
+          city: "Singapore",
+          postalCode: "079903",
+          countryCode: "SG",
+        },
         { ...US, name: "Mei Tan" },
       ),
     ).toEqual(["Mei Tan", "10 Anson Road #20-05", "SINGAPORE 079903"]);
@@ -144,25 +163,51 @@ describe("envelopeLines", () => {
   it("formats Greece, Spain, Germany and South Africa", () => {
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "Ermou 15", city: "Athens", postalCode: "105 63", countryCode: "GR" },
+        {
+          ...blank,
+          addressLine1: "Ermou 15",
+          city: "Athens",
+          postalCode: "105 63",
+          countryCode: "GR",
+        },
         US,
       ),
     ).toEqual(["Ermou 15", "105 63 Athens", "GREECE"]);
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "Calle Mayor 5", city: "Madrid", stateRegion: "Madrid", postalCode: "28013", countryCode: "ES" },
+        {
+          ...blank,
+          addressLine1: "Calle Mayor 5",
+          city: "Madrid",
+          stateRegion: "Madrid",
+          postalCode: "28013",
+          countryCode: "ES",
+        },
         US,
       ),
-    ).toEqual(["Calle Mayor 5", "28013 MADRID MADRID", "SPAIN"]);
+    ).toEqual(["Calle Mayor 5", "28013 MADRID", "SPAIN"]);
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "Unter den Linden 77", city: "Berlin", postalCode: "10117", countryCode: "DE" },
+        {
+          ...blank,
+          addressLine1: "Unter den Linden 77",
+          city: "Berlin",
+          postalCode: "10117",
+          countryCode: "DE",
+        },
         US,
       ),
     ).toEqual(["Unter den Linden 77", "10117 Berlin", "GERMANY"]);
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "12 Long Street", district: "Gardens", city: "Cape Town", postalCode: "8001", countryCode: "ZA" },
+        {
+          ...blank,
+          addressLine1: "12 Long Street",
+          district: "Gardens",
+          city: "Cape Town",
+          postalCode: "8001",
+          countryCode: "ZA",
+        },
         US,
       ),
     ).toEqual(["12 Long Street", "Gardens", "Cape Town", "8001", "SOUTH AFRICA"]);
@@ -171,7 +216,13 @@ describe("envelopeLines", () => {
   it("omits the country line for the sender's own country", () => {
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "Keizersgracht 212", city: "Amsterdam", postalCode: "1016 DZ", countryCode: "NL" },
+        {
+          ...blank,
+          addressLine1: "Keizersgracht 212",
+          city: "Amsterdam",
+          postalCode: "1016 DZ",
+          countryCode: "NL",
+        },
         { senderCountry: "NL" },
       ),
     ).toEqual(["Keizersgracht 212", "1016 DZ Amsterdam"]);
@@ -179,23 +230,50 @@ describe("envelopeLines", () => {
 
   it("drops separators next to an empty field", () => {
     expect(
-      envelopeLines({ ...blank, addressLine1: "1 Main St", stateRegion: "OR", postalCode: "97214", countryCode: "US" }, US),
+      envelopeLines(
+        {
+          ...blank,
+          addressLine1: "1 Main St",
+          stateRegion: "OR",
+          postalCode: "97214",
+          countryCode: "US",
+        },
+        US,
+      ),
     ).toEqual(["1 Main St", "OR 97214"]);
     expect(
-      envelopeLines({ ...blank, addressLine1: "1 Main St", city: "Portland", countryCode: "US" }, US),
+      envelopeLines(
+        { ...blank, addressLine1: "1 Main St", city: "Portland", countryCode: "US" },
+        US,
+      ),
     ).toEqual(["1 Main St", "PORTLAND"]);
   });
 
   it("formats a blank country as the sender's country", () => {
     expect(
-      envelopeLines({ ...blank, addressLine1: "1 Main St", city: "Portland", stateRegion: "OR", postalCode: "97214" }, US),
+      envelopeLines(
+        {
+          ...blank,
+          addressLine1: "1 Main St",
+          city: "Portland",
+          stateRegion: "OR",
+          postalCode: "97214",
+        },
+        US,
+      ),
     ).toEqual(["1 Main St", "PORTLAND, OR 97214"]);
   });
 
   it("prints unrecognized country text as typed, in the old order", () => {
     expect(
       envelopeLines(
-        { ...blank, addressLine1: "1 Coral Way", city: "Port Royal", postalCode: "X1", legacyCountry: "Atlantis" },
+        {
+          ...blank,
+          addressLine1: "1 Coral Way",
+          city: "Port Royal",
+          postalCode: "X1",
+          legacyCountry: "Atlantis",
+        },
         US,
       ),
     ).toEqual(["1 Coral Way", "Port Royal, X1", "ATLANTIS"]);
@@ -203,13 +281,21 @@ describe("envelopeLines", () => {
 
   it("is null without a street line", () => {
     expect(envelopeLines(blank, US)).toBeNull();
-    expect(envelopeLines({ ...blank, city: "Oslo", addressLine2: "Apt 3", countryCode: "NO" }, US)).toBeNull();
+    expect(
+      envelopeLines({ ...blank, city: "Oslo", addressLine2: "Apt 3", countryCode: "NO" }, US),
+    ).toBeNull();
   });
 
   it("writes Japanese with the 〒 mark and 様", () => {
     expect(
       envelopeLines(
-        { ...blank, postalCode: "100-0005", stateRegion: "東京都", addressLine1: "千代田区丸の内1-1-1", countryCode: "JP" },
+        {
+          ...blank,
+          postalCode: "100-0005",
+          stateRegion: "東京都",
+          addressLine1: "千代田区丸の内1-1-1",
+          countryCode: "JP",
+        },
         { ...US, name: "山田太郎" },
       ),
     ).toEqual(["〒100-0005", "東京都", "千代田区丸の内1-1-1", "山田太郎 様", "JAPAN"]);

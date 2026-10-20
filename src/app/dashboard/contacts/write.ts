@@ -10,6 +10,7 @@ import { books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
 import { householdLine, pickStoredNames, type Kid, type StoredNames } from "@/lib/names";
 import {
+  checkAddress,
   CONTACT_FIELDS,
   contactDetailsSchema,
   type ContactDetailsInput,
@@ -56,10 +57,11 @@ const SNAPSHOT_COLUMNS = {
   birthday: "birthday",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
+  district: "district",
   city: "city",
   state_region: "stateRegion",
   postal_code: "postalCode",
-  country: "country",
+  country_code: "countryCode",
   notes: "notes",
   first_name: "firstName",
   last_name: "lastName",
@@ -68,7 +70,7 @@ const SNAPSHOT_COLUMNS = {
   kids: "kids",
 } as const satisfies Record<SnapshotField, keyof Row>;
 
-export function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
+export function rowToSnapshot(row: Pick<ContactRow, (typeof SNAPSHOT_COLUMNS)[SnapshotField]>): Snapshot {
   return Object.fromEntries(
     SNAPSHOT_FIELDS.map((field) => [field, row[SNAPSHOT_COLUMNS[field]]]),
   ) as Snapshot;
@@ -107,21 +109,32 @@ export function changedFields(before: Snapshot, after: Snapshot): ContactDiff | 
 
 export type ParsedDetails =
   | { success: true; data: ContactDetailsInput }
-  | { success: false; error: string; field?: "partner_email" };
+  | { success: false; error: string; field?: "partner_email" | "postal_code" | "country_code" };
 
-export function parseDetails(values: Partial<ContactFormValues>): ParsedDetails {
+/** `stored` is the contact being edited: its saved postcode is not re-checked. */
+export function parseDetails(
+  values: Partial<ContactFormValues>,
+  { stored }: { stored?: Pick<ContactRow, "postalCode" | "countryCode"> } = {},
+): ParsedDetails {
   const details = contactDetailsSchema.safeParse(values);
   if (!details.success) {
     const issue = details.error.issues[0];
+    const field = issue?.path[0];
     return {
       success: false,
       error: issue?.message ?? "Invalid input",
-      field: issue?.path[0] === "partner_email" ? "partner_email" : undefined,
+      field: field === "partner_email" || field === "country_code" ? field : undefined,
     };
   }
-  return samePartnerEmail(details.data)
-    ? { success: false, error: SAME_PARTNER_EMAIL, field: "partner_email" }
-    : details;
+  if (samePartnerEmail(details.data)) {
+    return { success: false, error: SAME_PARTNER_EMAIL, field: "partner_email" };
+  }
+  const address = checkAddress(details.data, {
+    stored: stored && { postal_code: stored.postalCode, country_code: stored.countryCode },
+  });
+  return address.ok
+    ? { success: true, data: address.data }
+    : { success: false, error: address.error, field: address.field };
 }
 
 export const DETAIL_FIELDS = CONTACT_FIELDS.filter(
@@ -211,7 +224,7 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
     }
     household = parsed.data;
   }
-  const parsed = parseDetails({ ...rowToDetailValues(existing), ...request.values });
+  const parsed = parseDetails({ ...rowToDetailValues(existing), ...request.values }, { stored: existing });
   if (!parsed.success) return { kind: "invalid", error: parsed.error };
   const row = {
     ...contactDetailsToRow(parsed.data),

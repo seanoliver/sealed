@@ -12,6 +12,22 @@ export type PostalAddress = {
   legacyCountry?: string | null;
 };
 
+type AddressColumns = Omit<PostalAddress, "legacyCountry"> & { legacyCountry: string | null };
+
+/** A contacts row's address. Leftover country text only counts while no code is set. */
+export function rowAddress(row: AddressColumns): PostalAddress {
+  return {
+    addressLine1: row.addressLine1,
+    addressLine2: row.addressLine2,
+    district: row.district,
+    city: row.city,
+    stateRegion: row.stateRegion,
+    postalCode: row.postalCode,
+    countryCode: row.countryCode,
+    legacyCountry: row.countryCode ? null : row.legacyCountry,
+  };
+}
+
 export type EnvelopeLine = {
   text: string;
   /** The format capitalized something the person typed in lower case. */
@@ -32,6 +48,8 @@ export type EnvelopeOptions = {
   name?: string | null;
   /** Code of the country the owner mails from. */
   senderCountry: string;
+  /** Skip the country's upper-case rules, to compare against what was typed. */
+  asTyped?: boolean;
 };
 
 // The old US-order layout, for country text no code matches.
@@ -53,8 +71,19 @@ const NAME_SUFFIX: Record<string, string> = {
 const clean = (value: string | null | undefined) => value?.trim().replace(/\s+/g, " ") ?? "";
 
 /** True when a letter in the address is from a non-Latin script (汉字, かな, 한글, Кириллица…). */
-export function isLocalScript(address: Pick<PostalAddress, "addressLine1" | "addressLine2" | "district" | "city" | "stateRegion">): boolean {
-  const text = [address.addressLine1, address.addressLine2, address.district, address.city, address.stateRegion].join("");
+export function isLocalScript(
+  address: Pick<
+    PostalAddress,
+    "addressLine1" | "addressLine2" | "district" | "city" | "stateRegion"
+  >,
+): boolean {
+  const text = [
+    address.addressLine1,
+    address.addressLine2,
+    address.district,
+    address.city,
+    address.stateRegion,
+  ].join("");
   for (const char of text) {
     if (/\p{L}/u.test(char) && !/\p{Script=Latin}/u.test(char)) return true;
   }
@@ -112,7 +141,10 @@ function renderLine(parts: Part[], value: (field: FormatField) => string): strin
 }
 
 /** The envelope for an address, or null when there is no street line to mail to. */
-export function formatEnvelope(address: PostalAddress, { name, senderCountry }: EnvelopeOptions): Envelope | null {
+export function formatEnvelope(
+  address: PostalAddress,
+  { name, senderCountry, asTyped = false }: EnvelopeOptions,
+): Envelope | null {
   const line1 = clean(address.addressLine1);
   if (line1 === "") return null;
   const line2 = clean(address.addressLine2);
@@ -121,7 +153,7 @@ export function formatEnvelope(address: PostalAddress, { name, senderCountry }: 
   const country = known ?? (legacy === "" ? getCountry(senderCountry) : null);
   const local = country?.lfmt != null && isLocalScript(address);
   const fmt = country === null ? UNKNOWN_FMT : local ? country.fmt : (country.lfmt ?? country.fmt);
-  const upper = country?.upper ?? new Set<FormatField>();
+  const upper = asTyped ? new Set<FormatField>() : (country?.upper ?? new Set<FormatField>());
 
   const street = local
     ? [line1, line2]
@@ -135,7 +167,11 @@ export function formatEnvelope(address: PostalAddress, { name, senderCountry }: 
     A: street.filter(Boolean).join(local ? "\n" : ", "),
     D: clean(address.district),
     C: clean(address.city),
-    S: clean(address.stateRegion),
+    // A city that is its own province (上海市, Madrid) prints once.
+    S:
+      clean(address.stateRegion).toLowerCase() === clean(address.city).toLowerCase()
+        ? ""
+        : clean(address.stateRegion),
     Z: clean(address.postalCode),
   };
   const raw = (field: FormatField) => values[field] ?? "";
@@ -167,7 +203,19 @@ export function envelopeLines(address: PostalAddress, options: EnvelopeOptions):
   return formatEnvelope(address, options)?.lines.map((line) => line.text) ?? null;
 }
 
-/** The address on one line ("14 Kestrel Lane, BRISTOL, BS6 5QT, UNITED KINGDOM"), or "" without a street. */
-export function addressSummary(address: PostalAddress, { senderCountry }: { senderCountry: string }): string {
-  return envelopeLines(address, { senderCountry })?.join(", ") ?? "";
+/**
+ * The address on one line ("Flat 2, 14 Kestrel Lane, BRISTOL, BS6 5QT, UNITED KINGDOM").
+ * Without a street, whatever parts there are, so a contact is still recognizable.
+ */
+export function addressSummary(
+  address: PostalAddress,
+  { senderCountry }: { senderCountry: string },
+): string {
+  const lines = envelopeLines(address, { senderCountry });
+  if (lines) return lines.join(", ");
+  const country = getCountry(address.countryCode)?.name ?? address.legacyCountry;
+  return [address.district, address.city, address.stateRegion, address.postalCode, country]
+    .map(clean)
+    .filter(Boolean)
+    .join(", ");
 }

@@ -41,10 +41,13 @@ export function contactDetailsToRow(d: ContactDetailsInput) {
     birthday: d.birthday ?? null,
     addressLine1: d.address_line1 ?? null,
     addressLine2: d.address_line2 ?? null,
+    district: d.district ?? null,
     city: d.city ?? null,
     stateRegion: d.state_region ?? null,
     postalCode: d.postal_code ?? null,
-    country: d.country ?? null,
+    countryCode: d.country_code ?? null,
+    // A picked country settles text no code matched; without one the text stays visible.
+    ...(d.country_code ? { legacyCountry: null } : {}),
     notes: d.notes ?? null,
   };
 }

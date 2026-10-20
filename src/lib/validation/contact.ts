@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isCountryCode } from "@/lib/address/countries";
+import { normalizeAddress, postcodeProblem, type AddressInput } from "@/lib/address/rules";
 import "./zod-locale";
 
 /**
@@ -19,6 +21,15 @@ const isRealDate = (s: string) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 };
 
+/** A two-letter code from the country list; names are mapped to codes before this. */
+const countryCode = z
+  .string()
+  .trim()
+  .transform((s) => s.toUpperCase())
+  .refine((s) => s === "" || isCountryCode(s), "Pick a country from the list")
+  .transform((s) => (s === "" ? undefined : s))
+  .optional();
+
 const optEmail = z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional();
 
 export const contactSchema = z.object({
@@ -30,9 +41,9 @@ export const contactSchema = z.object({
   // refine: shape-valid but calendar-invalid dates ("2025-99-99") must never
   // reach the Postgres date cast — class-22 errors embed the value in logs
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealDate, "Invalid date").or(z.literal("")).transform((s) => s === "" ? undefined : s).optional(),
-  address_line1: opt(200), address_line2: opt(200),
+  address_line1: opt(200), address_line2: opt(200), district: opt(120),
   city: opt(120), state_region: opt(120),
-  postal_code: opt(20), country: opt(120),
+  postal_code: opt(20), country_code: countryCode,
   notes: opt(2000),
 });
 export type ContactInput = z.infer<typeof contactSchema>;
@@ -52,6 +63,28 @@ export function withoutSamePartnerEmail(d: ContactInput): ContactInput {
   return samePartnerEmail(d) ? { ...d, partner_email: undefined } : d;
 }
 
+export type AddressCheck<T> =
+  | { ok: true; data: T }
+  | { ok: false; field: "postal_code"; error: string };
+
+/**
+ * Normalizes the address (spaces, postcode, US state) and checks the postcode
+ * against the country's pattern. A postcode and country that match `stored`
+ * pass unchecked, so a contact saved before the check can still be edited.
+ */
+export function checkAddress<T extends AddressInput>(
+  data: T,
+  { stored }: { stored?: { postal_code?: string | null; country_code?: string | null } } = {},
+): AddressCheck<T> {
+  const normalized = normalizeAddress(data);
+  const unchanged =
+    stored !== undefined &&
+    (stored.postal_code ?? undefined) === normalized.postal_code &&
+    (stored.country_code ?? undefined) === normalized.country_code;
+  const problem = unchanged ? null : postcodeProblem(normalized.country_code, normalized.postal_code);
+  return problem ? { ok: false, field: "postal_code", error: problem } : { ok: true, data: normalized };
+}
+
 export const contactDetailsSchema = contactSchema.omit({
   full_name: true,
   partner_name: true,
@@ -69,10 +102,11 @@ export const CONTACT_FIELDS = [
   "birthday",
   "address_line1",
   "address_line2",
+  "district",
   "city",
   "state_region",
   "postal_code",
-  "country",
+  "country_code",
   "notes",
 ] as const;
 
@@ -93,10 +127,11 @@ export const TOKEN_UPDATE_FIELDS = [
   "birthday",
   "address_line1",
   "address_line2",
+  "district",
   "city",
   "state_region",
   "postal_code",
-  "country",
+  "country_code",
 ] as const satisfies readonly ContactField[];
 
 export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];

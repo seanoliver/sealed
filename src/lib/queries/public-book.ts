@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): the public
 // permalink page is unauthenticated, so there are no claims for withRls —
 // this module is the ONLY reader on that surface and it selects nothing but
-// the two public display fields below.
+// the public display fields below.
 import { BOOK_LINK_SHAPE } from "@/lib/book-link";
 import { dbAdmin } from "@/lib/db/admin";
 import { books, profiles } from "@/lib/db/schema";
@@ -22,6 +22,8 @@ export const SLUG_SHAPE = BOOK_LINK_SHAPE;
 export type PublicBook = {
   ownerName: string;
   enabledFields: { partner_name: boolean; kids_names: boolean; birthday: boolean };
+  /** Prefills the form's country and drops it from the envelope preview, so every visitor sees it anyway. */
+  senderCountry: string;
 };
 
 /**
@@ -53,6 +55,7 @@ export async function getPublicBook(slug: string): Promise<PublicBook | null> {
     .select({
       ownerName: profiles.displayName,
       enabledFields: books.enabledFields,
+      senderCountry: books.senderCountry,
     })
     .from(books)
     .innerJoin(profiles, eq(profiles.id, books.ownerId))

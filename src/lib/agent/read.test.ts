@@ -171,9 +171,9 @@ describe("agent read tools", () => {
         updated: 0,
       },
       byCountry: [
-        { country: "USA", count: 3 },
-        { country: null, count: 1 },
-        { country: "Canada", count: 1 },
+        { country: "United States", countryCode: "US", count: 3 },
+        { country: null, countryCode: null, count: 1 },
+        { country: "Canada", countryCode: "CA", count: 1 },
       ],
       missing: { street: 1, city: 1, postal_code: 2, country: 1, any_address_field: 2, email: 1 },
       pendingReview: 2,

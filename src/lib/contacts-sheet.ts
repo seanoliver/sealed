@@ -8,7 +8,7 @@ import {
   isSplit,
   type StoredNames,
 } from "@/lib/names";
-import { addressLines } from "@/lib/address";
+import { addressSummary, countryName, DEFAULT_SENDER_COUNTRY, envelopeLines, rowAddress } from "@/lib/address";
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
 import type { Readings } from "@/lib/readings";
@@ -35,7 +35,7 @@ export type SheetField = Extract<
   | "city"
   | "state_region"
   | "postal_code"
-  | "country"
+  | "country_code"
 >;
 
 export type SheetValues = Record<SheetField, string>;
@@ -46,6 +46,10 @@ export interface SheetRow {
   id: string;
   names: StoredNames;
   values: SheetValues;
+  /** Country text from before codes that no code matched, while no code is set. */
+  legacyCountry: string | null;
+  /** The address on one line, as it prints. */
+  place: string;
   status: StatusKey;
   failureReason: FailureReason | null;
   people: PersonSend[];
@@ -67,7 +71,11 @@ export type PendingAnswer = {
 export function toSheetRow(
   row: ContactListRow,
   formatDate: (date: Date) => string,
-  { answer, readings = {} }: { answer?: PendingAnswer; readings?: Readings } = {},
+  {
+    answer,
+    readings = {},
+    senderCountry = DEFAULT_SENDER_COUNTRY,
+  }: { answer?: PendingAnswer; readings?: Readings; senderCountry?: string } = {},
 ): SheetRow {
   const values: SheetValues = {
     email: row.email ?? "",
@@ -76,7 +84,7 @@ export function toSheetRow(
     city: row.city ?? "",
     state_region: row.stateRegion ?? "",
     postal_code: row.postalCode ?? "",
-    country: row.country ?? "",
+    country_code: row.countryCode ?? "",
   };
   const { emailed, status, failureReason, attention } = effectiveSends(row);
   return {
@@ -92,6 +100,8 @@ export function toSheetRow(
       kids: row.kids,
     },
     values,
+    legacyCountry: row.countryCode ? null : (row.legacyCountry?.trim() || null),
+    place: addressSummary(rowAddress(row), { senderCountry }),
     status,
     failureReason,
     people:
@@ -103,7 +113,7 @@ export function toSheetRow(
       : [],
     needsAttention: attention.length > 0,
     attention,
-    answers: answer ? twoAnswers(row, answer) : null,
+    answers: answer ? twoAnswers(row, answer, { senderCountry }) : null,
     readings,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
@@ -251,10 +261,11 @@ export type TwoAnswers = {
 const ADDRESS_FIELDS = [
   ["address_line1", "Street"],
   ["address_line2", "Line 2"],
+  ["district", "District"],
   ["city", "City"],
   ["state_region", "State"],
   ["postal_code", "Postal code"],
-  ["country", "Country"],
+  ["country_code", "Country"],
 ] as const;
 
 const CLEARABLE: ReadonlySet<string> = new Set(CLEARABLE_FIELDS);
@@ -284,6 +295,7 @@ type AnswerField =
 export function twoAnswers(
   row: ContactListRow,
   { submissionId, display, from, savedBy }: PendingAnswer,
+  { senderCountry = DEFAULT_SENDER_COUNTRY }: { senderCountry?: string } = {},
 ): TwoAnswers {
   const saved: Record<AnswerField, string> = {
     full_name: row.fullName,
@@ -294,10 +306,11 @@ export function twoAnswers(
     partner_email: row.partnerEmail ?? "",
     address_line1: row.addressLine1 ?? "",
     address_line2: row.addressLine2 ?? "",
+    district: row.district ?? "",
     city: row.city ?? "",
     state_region: row.stateRegion ?? "",
     postal_code: row.postalCode ?? "",
-    country: row.country ?? "",
+    country_code: row.countryCode ?? "",
   };
   const reply = (field: AnswerField) => {
     const value = display[field];
@@ -309,19 +322,29 @@ export function twoAnswers(
 
   const address = (value: (field: AnswerField) => string, mark: boolean) => {
     const at = (field: AnswerField) => {
-      const text = value(field);
-      if (text === "") return null;
+      const raw = value(field);
+      if (raw === "") return null;
+      const text = field === "country_code" ? countryName(raw) : raw;
       return mark && changed(field) ? `${MARK_START}${text}${MARK_END}` : text;
     };
-    const lines =
-      addressLines({
+    const code = value("country_code");
+    const formatted = envelopeLines(
+      {
         addressLine1: at("address_line1"),
         addressLine2: at("address_line2"),
+        district: at("district"),
         city: at("city"),
         stateRegion: at("state_region"),
         postalCode: at("postal_code"),
-        country: at("country"),
-      }) ?? ADDRESS_FIELDS.map(([field]) => at(field)).filter((text) => text !== null);
+        countryCode: code === "" ? null : code,
+      },
+      { senderCountry },
+    );
+    const countryLine = code === "" ? "" : countryName(code).toUpperCase();
+    const lines =
+      formatted?.map((line) =>
+        mark && changed("country_code") && line === countryLine ? `${MARK_START}${line}${MARK_END}` : line,
+      ) ?? ADDRESS_FIELDS.map(([field]) => at(field)).filter((text) => text !== null);
     return {
       label: null,
       parts: lines

@@ -27,7 +27,7 @@ describe("parseContactsCsv", () => {
       city: "London",
       state_region: "Greater London",
       postal_code: "SW1Y 4JH",
-      country: "UK",
+      country_code: "GB",
       notes: "met at a party",
     });
     // Empty cells become undefined (stored as NULL), not "".
@@ -37,7 +37,7 @@ describe("parseContactsCsv", () => {
       city: "Arlington",
       state_region: "VA",
       postal_code: "22201",
-      country: "USA",
+      country_code: "US",
     });
   });
 
@@ -318,5 +318,43 @@ describe("splitCouple", () => {
     const cap = word[0].toUpperCase() + word.slice(1);
     expect(splitCouple(`Ada & ${cap} Byron`)).toBeUndefined();
     expect(splitCouple(`${cap} Ada & Will Byron`)).toBeUndefined();
+  });
+});
+
+describe("countries and postcodes", () => {
+  it("maps country names, short forms and codes to codes", () => {
+    const { valid, errors } = parseContactsCsv(
+      ["name,country", "Ada,United Kingdom", "Bea,usa", "Cai,NL", "Dee,CHINA", "Eve,"].join("\n"),
+    );
+    expect(errors).toEqual([]);
+    expect(valid.map((row) => row.country_code)).toEqual(["GB", "US", "NL", "CN", undefined]);
+  });
+
+  it("reports a country it doesn't know as a row error", () => {
+    const { valid, errors } = parseContactsCsv(["name,country", "Ada,Atlantis", "Bea,Spain"].join("\n"));
+    expect(valid.map((row) => row.full_name)).toEqual(["Bea"]);
+    expect(errors).toEqual([
+      { row: 1, message: 'country: "Atlantis" isn\'t a country we know. Use its English name or two-letter code.' },
+    ]);
+  });
+
+  it("formats postcodes and US states, and reports one that doesn't fit the country", () => {
+    const { valid, errors } = parseContactsCsv(
+      [
+        "name,country,postcode,state,suburb",
+        "Ada,UK,bs65qt,,",
+        "Bea,US,97214,oregon,",
+        "Cai,Netherlands,1016,,",
+        "Dee,South Africa,8001,,Gardens",
+      ].join("\n"),
+    );
+    expect(valid).toEqual([
+      { full_name: "Ada", country_code: "GB", postal_code: "BS6 5QT" },
+      { full_name: "Bea", country_code: "US", postal_code: "97214", state_region: "OR" },
+      { full_name: "Dee", country_code: "ZA", postal_code: "8001", district: "Gardens" },
+    ]);
+    expect(errors).toEqual([
+      { row: 3, message: "postal_code: A Dutch postcode is four digits and two letters, like 1234 AB." },
+    ]);
   });
 });

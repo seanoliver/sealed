@@ -15,8 +15,11 @@ export interface AddressRequestEmailInput {
   recipientName?: string | null;
   updateUrl: string;
   confirmUrl: string;
-  /** What the envelope says today: the household line, then the address lines (none when missing). */
-  envelope: { household: string; address: string[] | null };
+  /**
+   * What the envelope says today: the printed lines with the household line in
+   * its place for the country, or null without an address (the household alone shows).
+   */
+  envelope: { household: string; lines: string[] | null };
 }
 
 export interface EmailContent {
@@ -48,13 +51,14 @@ export function addressRequestEmail({
   const aboutUrl = new URL("/about", updateUrl).href;
   const safeName = recipientName?.replace(/\p{Cc}+/gu, " ").trim() ?? "";
   const greeting = safeName === "" ? "Hi," : `Hi ${safeName},`;
-  const hasAddress = envelope.address !== null;
+  const hasAddress = envelope.lines !== null;
+  const printed = envelope.lines ?? [envelope.household];
   const subject = hasAddress
     ? `Will ${safeOwnerName}'s holiday card reach you? · Sealed`
     : `Where should ${safeOwnerName} send your holiday card? · Sealed`;
 
   const owner = escapeHtml(safeOwnerName);
-  const lines = [envelope.household, ...(envelope.address ?? [])].map(escapeHtml);
+  const lines = printed.map(escapeHtml);
   const envelopeHtml = `<div style="margin:0 0 24px;background:#fffdf8;border:1px solid #ddd3c3;border-radius:6px;padding:18px 18px 26px">
     <p style="margin:0 0 22px;font-size:11px;color:#6a6157">${owner}</p>
     <p style="margin:0 0 0 48px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.5;color:#3a332c">${lines.join("<br>")}</p>
@@ -75,7 +79,7 @@ export function addressRequestEmail({
   <p style="margin:0;color:#6a6157;font-size:13px;text-align:center">Sent with <a href="${escapeHtml(aboutUrl)}" style="color:#6a6157">Sealed</a>. This link is personal to you, so please don&#39;t forward it. It expires in ${TOKEN_TTL_DAYS} days.</p>
 </div>`;
 
-  const plainLines = [envelope.household, ...(envelope.address ?? [])].map((line) => `  ${line}`).join("\n");
+  const plainLines = printed.map((line) => `  ${line}`).join("\n");
   const text = hasAddress
     ? `${greeting} ${safeOwnerName} is addressing holiday cards. Here's exactly how yours will look:
 

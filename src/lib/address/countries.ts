@@ -38,7 +38,7 @@ type CountryRecord = {
   s?: [string, string][];
 };
 
-const RECORDS = data as Record<string, CountryRecord>;
+const RECORDS = data as unknown as Record<string, CountryRecord>;
 
 const fieldSet = (letters: string) => new Set(letters.split("") as FormatField[]);
 
@@ -80,9 +80,9 @@ export function countryName(code: string): string {
 }
 
 /** Every country as [code, English name], sorted by name. */
-export const COUNTRY_OPTIONS: readonly (readonly [string, string])[] = Object.entries(
-  RECORDS,
-).map(([code, record]) => [code, record.n] as const);
+export const COUNTRY_OPTIONS: readonly (readonly [string, string])[] = Object.entries(RECORDS).map(
+  ([code, record]) => [code, record.n] as const,
+);
 
 let lookup: Map<string, string> | null = null;
 

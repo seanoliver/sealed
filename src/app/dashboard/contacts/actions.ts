@@ -97,10 +97,10 @@ function withStoredPartnerEmail(
 
 function parseContactForm(
   formData: FormData,
-  { values = readContactForm(formData) }: { values?: ContactFormValues } = {},
+  { values = readContactForm(formData), stored }: { values?: ContactFormValues; stored?: ContactRow } = {},
 ): ParsedContactForm {
   const household = parseHouseholdForm(formData);
-  const details = parseDetails(values);
+  const details = parseDetails(values, { stored });
   if (household.ok && details.success) {
     return { ok: true, details: details.data, household: household.data };
   }
@@ -191,14 +191,14 @@ export async function updateContact(
         readHouseholdValues(formData, { kidsLimit: Infinity }),
       );
       if (keepNames) {
-        const details = parseDetails(values);
+        const details = parseDetails(values, { stored: existing });
         if (!details.success) {
           invalid = { ...detailsErrorState(details), ...echo };
           return existing;
         }
         row = contactDetailsToRow(details.data);
       } else {
-        const parsed = parseContactForm(formData, { values });
+        const parsed = parseContactForm(formData, { values, stored: existing });
         if (!parsed.ok) {
           invalid = parsed.state;
           return existing;

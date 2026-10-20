@@ -4,6 +4,13 @@ import { CONTACT_FIELDS, type ContactField } from "@/lib/validation/contact";
 // access) — like import.ts it is pure string logic; the export route handler
 // does the server-only work.
 
+const DETAIL_COLUMNS = CONTACT_FIELDS.filter(
+  (field) =>
+    field !== "full_name" && field !== "partner_name" && field !== "kids_names" && field !== "notes",
+);
+
+// `country` is the English name (or text no code matched) and `envelope` the
+// printed lines; re-import reads `country` and `country_code` alike and ignores `envelope`.
 export const CSV_COLUMNS = [
   "full_name",
   "partner_name",
@@ -12,9 +19,10 @@ export const CSV_COLUMNS = [
   "last_name",
   "partner_first_name",
   "partner_last_name",
-  ...CONTACT_FIELDS.filter(
-    (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",
-  ),
+  ...DETAIL_COLUMNS,
+  "country",
+  "notes",
+  "envelope",
 ] as const;
 
 export type CsvColumn = ContactField | (typeof CSV_COLUMNS)[number];

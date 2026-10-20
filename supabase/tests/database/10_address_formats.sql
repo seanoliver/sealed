@@ -115,8 +115,8 @@ select is(private.apply_token_reply('af3', '{"country_code": "", "district": ""}
   'an empty code clears it');
 select results_eq(
   $$ select country_code, country, district from public.contacts where id = '20000000-0000-4000-8000-000000099003' $$,
-  $$ values (null::text, null::text, null::text) $$,
-  'the cleared code, text and district are blank');
+  $$ values (null::text, 'Germany', null::text) $$,
+  'an empty code clears the code and district but keeps old text for the owner');
 
 -- A colliding reply is queued with its new keys.
 update public.contacts set partner_email = 'eve@af.test', country_code = 'US'

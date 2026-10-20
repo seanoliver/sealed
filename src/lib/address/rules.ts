@@ -2,18 +2,55 @@ import { getCountry, type Country } from "./countries";
 import { postcodeLabel } from "./fields";
 
 const ADJECTIVES: Record<string, string> = {
-  AT: "Austrian", AU: "Australian", BE: "Belgian", BR: "Brazilian", CA: "Canadian",
-  CH: "Swiss", CN: "Chinese", DE: "German", DK: "Danish", ES: "Spanish", FI: "Finnish",
-  FR: "French", GB: "UK", GR: "Greek", IE: "Irish", IN: "Indian", IT: "Italian",
-  JP: "Japanese", KR: "Korean", MX: "Mexican", NL: "Dutch", NO: "Norwegian",
-  NZ: "New Zealand", PL: "Polish", PT: "Portuguese", SE: "Swedish", SG: "Singapore",
-  TW: "Taiwanese", US: "US", ZA: "South African",
+  AT: "Austrian",
+  AU: "Australian",
+  BE: "Belgian",
+  BR: "Brazilian",
+  CA: "Canadian",
+  CH: "Swiss",
+  CN: "Chinese",
+  DE: "German",
+  DK: "Danish",
+  ES: "Spanish",
+  FI: "Finnish",
+  FR: "French",
+  GB: "UK",
+  GR: "Greek",
+  IE: "Irish",
+  IN: "Indian",
+  IT: "Italian",
+  JP: "Japanese",
+  KR: "Korean",
+  MX: "Mexican",
+  NL: "Dutch",
+  NO: "Norwegian",
+  NZ: "New Zealand",
+  PL: "Polish",
+  PT: "Portuguese",
+  SE: "Swedish",
+  SG: "Singapore",
+  TW: "Taiwanese",
+  US: "US",
+  ZA: "South African",
 };
 
 // Names that read with "the" in a sentence.
-const WITH_THE = /^(United|Netherlands|Philippines|Bahamas|Gambia|Czech|Dominican|Central African|Maldives|Marshall|Solomon|Comoros|Cayman|Falkland|Faroe|Cook|British|U\.S\.|Democratic|Republic|Vatican|Turks|Northern Mariana|Cocos|Caribbean)/;
+const WITH_THE =
+  /^(United|Netherlands|Philippines|Bahamas|Gambia|Czech|Dominican|Central African|Maldives|Marshall|Solomon|Comoros|Cayman|Falkland|Faroe|Cook|British|U\.S\.|Democratic|Republic|Vatican|Turks|Northern Mariana|Cocos|Caribbean)/;
 
-const NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const NUMBERS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+];
 
 function count(n: number, noun: string): string {
   return `${NUMBERS[n] ?? n} ${noun}${n === 1 ? "" : "s"}`;
@@ -35,7 +72,10 @@ function shapeOf(example: string): string | null {
 
 function postcodeNoun(country: Country): string {
   const label = postcodeLabel(country);
-  const noun = label === "ZIP code" || label === "PIN code" || label === "Eircode" ? label : label.toLowerCase();
+  const noun =
+    label === "ZIP code" || label === "PIN code" || label === "Eircode"
+      ? label
+      : label.toLowerCase();
   const adjective = ADJECTIVES[country.code];
   if (adjective) return `${/^[AEIO]/.test(adjective) ? "An" : "A"} ${adjective} ${noun}`;
   const name = WITH_THE.test(country.name) ? `the ${country.name}` : country.name;
@@ -43,7 +83,10 @@ function postcodeNoun(country: Country): string {
 }
 
 /** Why a postcode doesn't fit the country's pattern, or null when it fits (or the country has none). */
-export function postcodeProblem(countryCode: string | null | undefined, postcode: string | null | undefined): string | null {
+export function postcodeProblem(
+  countryCode: string | null | undefined,
+  postcode: string | null | undefined,
+): string | null {
   const country = getCountry(countryCode);
   const value = postcode?.trim() ?? "";
   if (country?.zip == null || value === "" || country.zip.test(value)) return null;
@@ -60,7 +103,10 @@ const collapse = (value: string) => value.trim().replace(/\s+/g, " ");
  * Postcode as the post office writes it: upper case, and for the UK, Canada
  * and the Netherlands the space in its usual place when the pattern fits.
  */
-export function normalizePostcode(countryCode: string | null | undefined, postcode: string): string {
+export function normalizePostcode(
+  countryCode: string | null | undefined,
+  postcode: string,
+): string {
   const value = collapse(postcode).toUpperCase();
   const country = getCountry(countryCode);
   if (country === null) return value;

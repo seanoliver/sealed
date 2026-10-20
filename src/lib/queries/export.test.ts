@@ -64,3 +64,40 @@ describe("CSV export of names in Chinese characters", () => {
     expect(csv).not.toMatch(/zh[aā]ng|\bw[eě]i,|\bl[iǐ]\b|\bn[aà]\b/i);
   });
 });
+
+describe("CSV export of countries and envelopes", () => {
+  const CU = "00000000-0000-4000-8000-0000000ef201";
+  const CB = "10000000-0000-4000-8000-0000000ef201";
+
+  beforeAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${CB}`);
+    await dbAdmin.execute(sql`
+      insert into auth.users (id, email) values (${CU}, 'ex-env@ex.test') on conflict (id) do nothing`);
+    await dbAdmin.execute(sql`
+      insert into public.books (id, owner_id, slug, sender_country) values (${CB}, ${CU}, 'ex-env-book', 'US')`);
+    await dbAdmin.execute(sql`
+      insert into public.contacts
+        (book_id, full_name, first_name, last_name, address_line1, address_line2, city, postal_code, country_code, country)
+      values
+        (${CB}, 'Priya Raman', 'Priya', 'Raman', '14 Kestrel Lane', 'Flat 2', 'Bristol', 'BS6 5QT', 'GB', null),
+        (${CB}, 'Nemo Diver', 'Nemo', 'Diver', '1 Coral Way', null, null, null, null, 'Atlantis')`);
+  });
+
+  afterAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${CB}`);
+    await dbAdmin.execute(sql`delete from auth.users where id = ${CU}`);
+  });
+
+  it("exports the code, the English name and the printed envelope", async () => {
+    const rows = await listCsvRows({ sub: CU });
+    expect(rows.map(({ full_name, country_code, country, envelope }) => ({ full_name, country_code, country, envelope }))).toEqual([
+      { full_name: "Nemo Diver", country_code: null, country: "Atlantis", envelope: "Nemo Diver\n1 Coral Way\nATLANTIS" },
+      {
+        full_name: "Priya Raman",
+        country_code: "GB",
+        country: "United Kingdom",
+        envelope: "Priya Raman\nFlat 2, 14 Kestrel Lane\nBRISTOL\nBS6 5QT\nUNITED KINGDOM",
+      },
+    ]);
+  });
+});

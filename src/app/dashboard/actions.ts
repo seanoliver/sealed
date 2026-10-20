@@ -15,7 +15,7 @@ import { dbAdmin } from "@/lib/db/admin";
 import { books, contacts, emailSends, profiles, updateTokens } from "@/lib/db/schema";
 import { isEmailDryRun, sendAddressRequests } from "@/lib/email/resend";
 import { addressRequestEmail } from "@/lib/email/templates";
-import { addressLines } from "@/lib/address";
+import { envelopeLines, rowAddress } from "@/lib/address";
 import { envelopeLine, pickStoredNames } from "@/lib/names";
 import { logDbError } from "@/lib/log";
 import { addressRecipients } from "@/lib/recipients";
@@ -85,13 +85,14 @@ export async function requestAddresses(
         bookId: string;
         ownerName: string;
         showPartner: boolean;
+        senderCountry: string;
         rows: (typeof contacts.$inferSelect)[];
       }
     | undefined;
   try {
     scope = await withRls(claims, async (tx) => {
       const [book] = await tx
-        .select({ id: books.id, enabledFields: books.enabledFields })
+        .select({ id: books.id, enabledFields: books.enabledFields, senderCountry: books.senderCountry })
         .from(books)
         .where(eq(books.ownerId, claims.sub))
         .limit(1);
@@ -117,6 +118,7 @@ export async function requestAddresses(
         bookId: book.id,
         ownerName: profile?.displayName.trim() ?? "",
         showPartner: book.enabledFields.partner_name,
+        senderCountry: book.senderCountry,
         rows,
       };
     });
@@ -168,19 +170,25 @@ export async function requestAddresses(
   }
 
   const results = await sendAddressRequests(
-    minted.map(({ target, token }) => ({
-      to: target.email,
-      ...addressRequestEmail({
-        ownerName: scope.ownerName,
-        recipientName: target.firstName,
-        updateUrl: `${appUrl}/u/${token}`,
-        confirmUrl: `${appUrl}/u/${token}/confirm`,
-        envelope: {
-          household: envelopeLine(pickStoredNames(target.row), { partner: scope.showPartner }),
-          address: addressLines(target.row),
-        },
-      }),
-    })),
+    minted.map(({ target, token }) => {
+      const household = envelopeLine(pickStoredNames(target.row), { partner: scope.showPartner });
+      return {
+        to: target.email,
+        ...addressRequestEmail({
+          ownerName: scope.ownerName,
+          recipientName: target.firstName,
+          updateUrl: `${appUrl}/u/${token}`,
+          confirmUrl: `${appUrl}/u/${token}/confirm`,
+          envelope: {
+            household,
+            lines: envelopeLines(rowAddress(target.row), {
+              name: household,
+              senderCountry: scope.senderCountry,
+            }),
+          },
+        }),
+      };
+    }),
     { batchKey: randomUUID() },
   );
 

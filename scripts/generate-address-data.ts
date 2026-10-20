@@ -84,7 +84,11 @@ function englishName(code: string, names: Intl.DisplayNames): string {
 
 function compact(code: string, raw: Raw, names: Intl.DisplayNames): CountryRecord {
   const record: CountryRecord = { n: englishName(code, names) };
-  const keep = <K extends keyof CountryRecord>(key: K, value: string | undefined, fallback?: string) => {
+  const keep = <K extends keyof CountryRecord>(
+    key: K,
+    value: string | undefined,
+    fallback?: string,
+  ) => {
     if (value !== undefined && value !== fallback) (record as Record<string, unknown>)[key] = value;
   };
   keep("f", raw.fmt, DEFAULTS.fmt);
@@ -125,7 +129,7 @@ function sqlRows(data: Record<string, CountryRecord>): string {
 async function main() {
   if (process.argv.includes("--sql")) {
     const { default: data } = await import("../src/lib/address/data.json");
-    console.log(sqlRows(data as Record<string, CountryRecord>));
+    console.log(sqlRows(data as unknown as Record<string, CountryRecord>));
     return;
   }
   const index = await getJson(INDEX_URL);
@@ -142,7 +146,9 @@ async function main() {
     Object.entries(data).sort(([, a], [, b]) => a.n.localeCompare(b.n, "en")),
   );
   await writeFile(OUT, `${JSON.stringify(sorted)}\n`);
-  console.log(`Wrote ${Object.keys(sorted).length} countries to ${path.relative(process.cwd(), OUT)}`);
+  console.log(
+    `Wrote ${Object.keys(sorted).length} countries to ${path.relative(process.cwd(), OUT)}`,
+  );
 }
 
 main().catch((err) => {

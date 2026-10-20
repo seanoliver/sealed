@@ -48,10 +48,11 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     birthday: row.birthday,
     address_line1: row.addressLine1,
     address_line2: row.addressLine2,
+    district: row.district,
     city: row.city,
     state_region: row.stateRegion,
     postal_code: row.postalCode,
-    country: row.country,
+    country_code: row.countryCode,
     first_name: row.firstName,
     last_name: row.lastName,
     partner_first_name: row.partnerFirstName,
@@ -99,10 +100,11 @@ const FIELD_TO_COLUMN = {
   birthday: "birthday",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
+  district: "district",
   city: "city",
   state_region: "stateRegion",
   postal_code: "postalCode",
-  country: "country",
+  country_code: "countryCode",
   first_name: "firstName",
   last_name: "lastName",
   partner_first_name: "partnerFirstName",
@@ -152,10 +154,11 @@ const sameAddress = (a: string | null | undefined, b: string | null | undefined)
 const CLEARS: Record<ClearableField, readonly SnapshotField[]> = {
   address_line1: ["address_line1"],
   address_line2: ["address_line2"],
+  district: ["district"],
   city: ["city"],
   state_region: ["state_region"],
   postal_code: ["postal_code"],
-  country: ["country"],
+  country_code: ["country_code"],
   birthday: ["birthday"],
   partner_name: ["partner_first_name", "partner_last_name", "partner_name"],
   kids_names: ["kids", "kids_names"],
@@ -181,7 +184,7 @@ export function mergeUpdate(
       set[FIELD_TO_COLUMN[field]] = patch[field];
     }
   }
-  return Object.keys(set).length > 0
-    ? (set as Partial<typeof contacts.$inferInsert>)
-    : undefined;
+  if (Object.keys(set).length === 0) return undefined;
+  if (set.countryCode) set.legacyCountry = null;
+  return set as Partial<typeof contacts.$inferInsert>;
 }

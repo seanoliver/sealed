@@ -14,6 +14,7 @@ import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import {
+  checkAddress,
   readTokenDetails,
   TOKEN_DETAIL_FIELDS,
   tokenDetailSchema,
@@ -105,8 +106,17 @@ export async function submitTokenUpdate(
   // 4. Validate. Same limits as the SQL CHECK constraints — class-22 errors
   //    (which can echo values into logs) stay unreachable.
   const household = parseHouseholdForm(formData, { ownerName: "the sender" });
-  const details = tokenDetailSchema.safeParse(submitted);
-  const data = household.ok ? null : await tokenData(token);
+  const parsedDetails = tokenDetailSchema.safeParse(submitted);
+  let address = parsedDetails.success ? checkAddress(parsedDetails.data) : null;
+  const data = household.ok && address?.ok !== false ? null : await tokenData(token);
+  // A postcode saved before the check, left as it was, still saves.
+  if (address?.ok === false && parsedDetails.success && data !== null) {
+    address = checkAddress(parsedDetails.data, { stored: data.contact });
+  }
+  if (address?.ok === false) {
+    return { error: address.error, fieldErrors: { postal_code: address.error }, ...echo };
+  }
+  const details = address?.ok ? { success: true as const, data: address.data } : parsedDetails;
   const keepNames =
     data !== null && keepLegacyNames(data, readHouseholdValues(formData, { kidsLimit: Infinity }));
   if ((!household.ok && !keepNames) || !details.success) {

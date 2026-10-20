@@ -1,5 +1,7 @@
 import Papa from "papaparse";
+import { countryCodeFor } from "@/lib/address/countries";
 import {
+  checkAddress,
   CONTACT_FIELDS,
   contactSchema,
   type ContactField,
@@ -44,6 +46,11 @@ const HEADER_ALIASES: Record<string, ContactField> = {
   address1: "address_line1",
   street_address: "address_line1",
   address2: "address_line2",
+  country: "country_code",
+  nation: "country_code",
+  suburb: "district",
+  neighborhood: "district",
+  neighbourhood: "district",
   "e-mail": "email",
   email_address: "email",
   email_2: "partner_email",
@@ -154,11 +161,26 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
       const couple = splitCouple(candidate.full_name ?? "");
       if (couple) Object.assign(candidate, couple);
     }
+    const country = candidate.country_code?.trim() ?? "";
+    if (country !== "") {
+      const code = countryCodeFor(country);
+      if (code === null) {
+        errors.push({
+          row: i + 1,
+          message: `country: "${country.slice(0, 60)}" isn't a country we know. Use its English name or two-letter code.`,
+        });
+        return;
+      }
+      candidate.country_code = code;
+    }
 
     const result = contactSchema.safeParse(candidate);
-    if (result.success) {
-      valid.push(withoutSamePartnerEmail(result.data));
-    } else {
+    const address = result.success ? checkAddress(result.data) : null;
+    if (address?.ok) {
+      valid.push(withoutSamePartnerEmail(address.data));
+    } else if (address) {
+      errors.push({ row: i + 1, message: `${address.field}: ${address.error}` });
+    } else if (!result.success) {
       const issue = result.error.issues[0];
       const message = issue
         ? [issue.path.join("."), issue.message].filter(Boolean).join(": ")

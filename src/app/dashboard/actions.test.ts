@@ -147,7 +147,7 @@ describe("requestAddresses", () => {
     const cal = items.find((item) => item.to === "cal@ra.test")!;
     const token = sentLinks()["ana@ra.test"];
     expect(ana.text).toContain(
-      "  Ana Reyes\n  1428 Alder St\n  Portland, OR 97214",
+      "  Ana Reyes\n  1428 Alder St\n  PORTLAND, OR 97214",
     );
     expect(ana.text).toContain(
       `Yes, send it here: https://app.example/u/${token}/confirm`,

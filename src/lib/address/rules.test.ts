@@ -67,7 +67,9 @@ describe("postcodeProblem", () => {
     expect(postcodeProblem("BR", "1")).toBe(
       "A Brazilian postal code is five digits, a hyphen and three digits, like 40301-110.",
     );
-    expect(postcodeProblem("PH", "1")).toBe("A postal code in the Philippines is four digits, like 1008.");
+    expect(postcodeProblem("PH", "1")).toBe(
+      "A postal code in the Philippines is four digits, like 1008.",
+    );
   });
 });
 
@@ -102,8 +104,12 @@ describe("normalizeAddress", () => {
       postal_code: "97214",
       country_code: "US",
     });
-    expect(normalizeAddress({ state_region: "District of Columbia", country_code: "US" }).state_region).toBe("DC");
-    expect(normalizeAddress({ state_region: "Oregon", country_code: "CA" }).state_region).toBe("Oregon");
+    expect(
+      normalizeAddress({ state_region: "District of Columbia", country_code: "US" }).state_region,
+    ).toBe("DC");
+    expect(normalizeAddress({ state_region: "Oregon", country_code: "CA" }).state_region).toBe(
+      "Oregon",
+    );
   });
 });
 
@@ -124,16 +130,16 @@ describe("addressLayout", () => {
   });
 
   it("asks the UK for a post town and postcode", () => {
-    expect(rows("GB")).toEqual([
-      ["Street address"],
-      ["Flat, building"],
-      ["Post town", "Postcode"],
-    ]);
+    expect(rows("GB")).toEqual([["Street address"], ["Flat, building"], ["Post town", "Postcode"]]);
     expect(addressLayout("GB").rows[2].wideOnly).toBe(true);
   });
 
   it("puts the Dutch postcode and city on one row", () => {
-    expect(rows("NL")).toEqual([["Street and house number"], ["Apartment, suite"], ["Postcode", "City"]]);
+    expect(rows("NL")).toEqual([
+      ["Street and house number"],
+      ["Apartment, suite"],
+      ["Postcode", "City"],
+    ]);
     expect(addressLayout("NL").line2OnlyWhenFilled).toBe(true);
   });
 

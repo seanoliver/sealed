@@ -14,6 +14,7 @@ import {
   type NamePatch,
   type PatchRequest,
 } from "@/app/dashboard/contacts/write";
+import { countryCodeFor } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { validateHousehold } from "@/lib/contacts-sheet";
 
@@ -48,12 +49,15 @@ const detailShape = {
   birthday: clearable("YYYY-MM-DD."),
   address_line1: clearable("Street address."),
   address_line2: clearable("Apartment, suite, etc."),
-  city: clearable("City."),
-  state_region: clearable("State, province or region."),
-  postal_code: clearable("Postal or ZIP code."),
-  country: clearable("Country."),
+  district: clearable("District, suburb or neighborhood, where the country's format has one (China, South Africa, Mexico)."),
+  city: clearable("City or post town."),
+  state_region: clearable("State, province or region. US states are saved as their two-letter code."),
+  postal_code: clearable("Postal or ZIP code. Checked against the country's format."),
+  country: clearable(
+    'Country as an English name, a common short form ("UK", "USA") or a two-letter ISO code ("GB").',
+  ),
   notes: clearable("The owner's private notes; recipients never see them."),
-} satisfies Record<DetailField, unknown>;
+} satisfies Record<Exclude<DetailField, "country_code"> | "country", unknown>;
 
 const nameShape = {
   first_name: text.optional().describe("The contact's first name. Required on create; can't be cleared."),
@@ -74,7 +78,17 @@ type ContactFields = z.output<typeof contactFieldsInput>;
 export function toPatchRequest(fields: ContactFields): PatchRequest {
   const values: Partial<Record<DetailField, string>> = {};
   for (const field of DETAIL_FIELDS) {
-    if (field in fields) values[field] = fields[field] ?? "";
+    if (field !== "country_code" && field in fields) values[field] = fields[field] ?? "";
+  }
+  if ("country" in fields) {
+    const country = fields.country ?? "";
+    const code = countryCodeFor(country);
+    if (country.trim() !== "" && code === null) {
+      throw new ToolError(
+        `"${country.slice(0, 60)}" isn't a country I know. Use its English name or two-letter ISO code.`,
+      );
+    }
+    values.country_code = code ?? "";
   }
   const names: NamePatch = {};
   for (const field of NAME_FIELDS) {

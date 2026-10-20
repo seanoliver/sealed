@@ -8,7 +8,7 @@ import { withRls } from "@/lib/db";
 import { contactInputToRow } from "@/lib/db/contact-row";
 import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { contactSchema, withoutSamePartnerEmail } from "@/lib/validation/contact";
+import { checkAddress, contactSchema, withoutSamePartnerEmail } from "@/lib/validation/contact";
 
 const importSchema = z.array(contactSchema).max(1000);
 
@@ -24,6 +24,9 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
   const parsed = importSchema.safeParse(rows);
   if (!parsed.success) return { error: "Invalid import data." };
   if (parsed.data.length === 0) return { imported: 0, skipped: 0 };
+  const checked = parsed.data.map((row) => checkAddress(row));
+  if (checked.some((row) => !row.ok)) return { error: "Invalid import data." };
+  const valid = checked.flatMap((row) => (row.ok ? [row.data] : []));
 
   let result: { imported: number; skipped: number } | undefined;
   try {
@@ -39,7 +42,7 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
       const inserted = await tx
         .insert(contacts)
         .values(
-          parsed.data.map((d) => ({
+          valid.map((d) => ({
             bookId: book.id,
             ...contactInputToRow(withoutSamePartnerEmail(d)),
           })),

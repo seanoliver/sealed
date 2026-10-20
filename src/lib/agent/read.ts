@@ -1,6 +1,13 @@
 import "server-only";
 import { count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import {
+  countryCodeFor,
+  countryName,
+  DEFAULT_SENDER_COUNTRY,
+  envelopeLines,
+  rowAddress,
+} from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { effectiveSends, type EffectiveSends, type StatusKey } from "@/lib/contacts-sheet";
 import { contactsToCsv } from "@/lib/csv/export";
@@ -45,9 +52,16 @@ function addressGaps(row: ContactListRow): GapField[] {
     street: row.addressLine1,
     city: row.city,
     postal_code: row.postalCode,
-    country: row.country,
+    country: row.countryCode,
   };
   return GAP_FIELDS.filter((field) => blank(values[field]));
+}
+
+/** English name and code; text from before codes that no code matched comes back with a null code. */
+function countryOf(row: Pick<ContactListRow, "countryCode" | "legacyCountry">) {
+  return row.countryCode
+    ? { country: countryName(row.countryCode), countryCode: row.countryCode }
+    : { country: blank(row.legacyCountry) ? null : row.legacyCountry!.trim(), countryCode: null };
 }
 
 function isCouple(names: StoredNames): boolean {
@@ -62,7 +76,9 @@ export type ContactSummary = {
   city: string | null;
   stateRegion: string | null;
   postalCode: string | null;
+  /** English name, or unrecognized text when countryCode is null. */
   country: string | null;
+  countryCode: string | null;
   status: StatusKey;
   needsAttention: boolean;
   attention: EffectiveSends["attention"];
@@ -82,7 +98,7 @@ function summarize(row: ContactListRow): ContactSummary {
     city: row.city,
     stateRegion: row.stateRegion,
     postalCode: row.postalCode,
-    country: row.country,
+    ...countryOf(row),
     status,
     needsAttention: attention.length > 0,
     attention,
@@ -115,7 +131,12 @@ export const searchContactsInput = z.object({
     .optional()
     .describe("True: missing street, city, postal code or country. False: all four present."),
   missing_email: z.boolean().optional().describe("True: the contact has no email (partner email aside)."),
-  country: z.string().trim().max(120).optional().describe("Exact country, case-insensitive."),
+  country: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .describe('Country as an English name, short form ("UK") or two-letter code ("GB").'),
   couples_only: z.boolean().optional().describe("True: only contacts with a partner."),
   page: pageField,
   limit: limitField(100, 25),
@@ -127,7 +148,7 @@ export async function searchContacts(
 ): Promise<Page<ContactSummary>> {
   const rows = await listContacts(claims);
   const query = input.query?.toLowerCase();
-  const country = input.country?.toLowerCase();
+  const country = input.country === undefined ? undefined : (countryCodeFor(input.country) ?? input.country.toLowerCase());
   const matches = rows.flatMap((row) => {
     const summary = summarize(row);
     return keep(row, summary) ? [summary] : [];
@@ -157,7 +178,13 @@ export async function searchContacts(
       return false;
     }
     if (input.missing_email !== undefined && blank(row.email) !== input.missing_email) return false;
-    if (country !== undefined && (row.country ?? "").trim().toLowerCase() !== country) return false;
+    if (
+      country !== undefined &&
+      row.countryCode !== country &&
+      (row.countryCode !== null || (row.legacyCountry ?? "").trim().toLowerCase() !== country)
+    ) {
+      return false;
+    }
     if (input.couples_only && !isCouple(row)) return false;
     return true;
   }
@@ -181,7 +208,7 @@ type SendRow = {
 };
 
 export async function getContact(claims: SessionClaims, input: z.output<typeof getContactInput>) {
-  const detail = await getContactWithEvents(claims, input.id);
+  const [detail, book] = await Promise.all([getContactWithEvents(claims, input.id), getOwnBook(claims)]);
   if (!detail) return null;
   const sends: SendRow[] = await withRls(claims, (tx) =>
     tx
@@ -217,8 +244,18 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
     sendStatuses: { primary, partner },
     updatedAfterSend,
   });
+  const { legacyCountry, ...stored } = contact;
+  const name = householdLine(pickStoredNames(contact));
   return {
-    contact: { ...contact, name: householdLine(pickStoredNames(contact)) },
+    contact: {
+      ...stored,
+      name,
+      ...countryOf({ countryCode: contact.countryCode, legacyCountry }),
+      envelope: envelopeLines(rowAddress(contact), {
+        name,
+        senderCountry: book?.senderCountry ?? DEFAULT_SENDER_COUNTRY,
+      }),
+    },
     sendStatus: {
       status,
       failureReason,
@@ -263,7 +300,7 @@ export async function bookSummary(claims: SessionClaims) {
   const byStatus = Object.fromEntries(
     STATUS_FILTERS.map((status) => [status, 0]),
   ) as Record<StatusKey, number>;
-  const countries = new Map<string, { country: string | null; count: number }>();
+  const countries = new Map<string, { country: string | null; countryCode: string | null; count: number }>();
   const missing = { street: 0, city: 0, postal_code: 0, country: 0, any_address_field: 0, email: 0 };
   let couples = 0;
   let needsAttention = 0;
@@ -279,9 +316,9 @@ export async function bookSummary(claims: SessionClaims) {
     for (const gap of gaps) missing[gap] += 1;
     if (gaps.length > 0) missing.any_address_field += 1;
     if (blank(row.email)) missing.email += 1;
-    const label = blank(row.country) ? null : row.country!.trim();
-    const key = label?.toLowerCase() ?? "";
-    const entry = countries.get(key) ?? { country: label, count: 0 };
+    const named = countryOf(row);
+    const key = named.countryCode ?? named.country?.toLowerCase() ?? "";
+    const entry = countries.get(key) ?? { ...named, count: 0 };
     entry.count += 1;
     countries.set(key, entry);
   }
