@@ -120,8 +120,29 @@ describe("owner edits of the partner's email", () => {
 });
 
 describe("owner readings for names in Chinese characters", () => {
+  // Posts the stored household unchanged, so the form takes the untouched-names branch.
   const readingForm = (fields: Record<string, string>) =>
-    editForm({ first_name: "雨桐", last_name: "曾", ...fields });
+    editForm({
+      first_name: "雨桐",
+      last_name: "曾",
+      partner_section: "1",
+      partner_first_name: "伟",
+      partner_last_name: "张",
+      ...fields,
+    });
+  const namesBase = async () => {
+    const before = await stored();
+    return {
+      fullName: before.fullName,
+      partnerName: before.partnerName,
+      kidsNames: before.kidsNames,
+      firstName: before.firstName,
+      lastName: before.lastName,
+      partnerFirstName: before.partnerFirstName,
+      partnerLastName: before.partnerLastName,
+      kids: before.kids,
+    };
+  };
 
   beforeEach(async () => {
     vi.mocked(requireUser).mockResolvedValue({ sub: U });
@@ -159,6 +180,52 @@ describe("owner readings for names in Chinese characters", () => {
     });
   });
 
+  it("caps the name reading's length on its field without saving", async () => {
+    await expect(
+      updateContact({}, readingForm({ name_reading: "a".repeat(201) })),
+    ).resolves.toMatchObject({
+      fieldErrors: { name_reading: "Keep the reading under 201 characters." },
+    });
+    expect((await stored()).nameReading).toBe("Yǔtóng Céng");
+  });
+
+  it("keeps a new reading the owner writes while renaming", async () => {
+    await updateContact({}, readingForm({ first_name: "雨彤", name_reading: "Yǔtóng Zēng" }));
+    expect(await stored()).toMatchObject({ fullName: "雨彤 曾", nameReading: "Yǔtóng Zēng" });
+  });
+
+  it("drops the old reading when the owner renames without touching it", async () => {
+    await updateContact({}, readingForm({ first_name: "雨彤" }));
+    expect(await stored()).toMatchObject({
+      fullName: "雨彤 曾",
+      nameReading: null,
+      partnerNameReading: "Wěi Zhāng",
+    });
+  });
+
+  it("drops the partner's reading when the form removes the partner", async () => {
+    const form = readingForm({});
+    form.delete("partner_first_name");
+    form.delete("partner_last_name");
+    await expect(updateContact({}, form)).resolves.toMatchObject({ saved: true });
+    expect(await stored()).toMatchObject({
+      partnerName: null,
+      nameReading: "Yǔtóng Céng",
+      partnerNameReading: null,
+    });
+  });
+
+  it("records reading changes in the contact's history", async () => {
+    await updateContact({}, readingForm({ name_reading: "Yǔtóng Zēng" }));
+    const rows = await dbAdmin.execute(sql`
+      select diff from public.contact_events
+      where contact_id = ${C} and source = 'owner' order by created_at desc limit 1`);
+    expect(rows[0]?.diff).toEqual({
+      before: { name_reading: "Yǔtóng Céng" },
+      after: { name_reading: "Yǔtóng Zēng" },
+    });
+  });
+
   it("caps a reading's length on its field", async () => {
     await expect(
       updateContact({}, readingForm({ partner_name_reading: "a".repeat(201) })),
@@ -177,6 +244,20 @@ describe("owner readings for names in Chinese characters", () => {
       .from(contacts)
       .where(eq(contacts.email, "zy@ce.test"));
     expect(row?.nameReading).toBe("Zēng Yǔtóng");
+  });
+
+  it("drops only the partner's reading when the sheet renames the partner", async () => {
+    await expect(
+      patchContact(C, {
+        household: { first_name: "雨桐", last_name: "曾", partner_first_name: "威", partner_last_name: "张" },
+        namesBase: await namesBase(),
+      }),
+    ).resolves.toEqual({});
+    expect(await stored()).toMatchObject({
+      partnerName: "威 张",
+      nameReading: "Yǔtóng Céng",
+      partnerNameReading: null,
+    });
   });
 
   it("drops a reading when the sheet renames that person", async () => {

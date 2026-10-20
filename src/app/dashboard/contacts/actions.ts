@@ -328,7 +328,7 @@ export async function updateContact(
   }
 
   let before: ContactRow | undefined;
-  let row: Partial<Row> | undefined;
+  let after: ContactRow | undefined;
   let invalid: ContactFormState | undefined;
   try {
     before = await withRls(claims, async (tx) => {
@@ -347,6 +347,7 @@ export async function updateContact(
       if (!existing) return undefined;
       const values = withStoredPartnerEmail(formData, echo.values, existing);
       const readings = readReadings(formData, { stored: existing });
+      let row: Partial<Row>;
       const keepNames = isUntouchedPrefill(
         storedNames(existing),
         readHouseholdValues(formData, { kidsLimit: Infinity }),
@@ -371,10 +372,11 @@ export async function updateContact(
         }
         row = parsed.row;
       }
-      await tx
+      [after] = await tx
         .update(contacts)
         .set(row)
-        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
+        .returning();
       return existing;
     });
   } catch (err) {
@@ -395,7 +397,7 @@ export async function updateContact(
   }
   if (invalid) return invalid;
 
-  const diff = changedFields(rowToSnapshot(before), rowToSnapshot({ ...before, ...row }));
+  const diff = after && changedFields(rowToSnapshot(before), rowToSnapshot(after));
   if (diff) await recordContactEvent(id, diff);
 
   revalidatePath("/dashboard");
@@ -490,25 +492,21 @@ export async function patchContact(
         ...fields.data.values,
       });
       if (!parsed.success) return { kind: "invalid", error: parsed.error };
-      const household = names ? householdToRow(names) : null;
       const row = {
         ...contactDetailsToRow(parsed.data),
-        ...household,
-        ...(household && household.fullName !== existing.fullName ? { nameReading: null } : {}),
-        ...(household && household.partnerName !== existing.partnerName
-          ? { partnerNameReading: null }
-          : {}),
+        ...(names ? householdToRow(names) : {}),
       };
       const before = rowToSnapshot(existing);
-      const after = rowToSnapshot({ ...existing, ...row });
       // A no-op save must not bump updated_at.
-      if (changedFields(before, after)) {
-        await tx
-          .update(contacts)
-          .set(row)
-          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+      if (!changedFields(before, rowToSnapshot({ ...existing, ...row }))) {
+        return { kind: "saved", before, after: before };
       }
-      return { kind: "saved", before, after };
+      const [updated] = await tx
+        .update(contacts)
+        .set(row)
+        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
+        .returning();
+      return { kind: "saved", before, after: rowToSnapshot(updated ?? existing) };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
