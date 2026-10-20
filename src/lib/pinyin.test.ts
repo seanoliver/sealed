@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { contactReadings, readingsForContact } from "./pinyin";
 import { matchesReading } from "./readings";
 
@@ -12,6 +12,17 @@ const contact = {
 };
 
 const unsplit = (full: string) => ({ full, first: null, last: null });
+
+// Stands in for a pinyin-pro result that doesn't line up with the characters.
+const MISALIGNED = "测𠮷";
+vi.mock("pinyin-pro", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("pinyin-pro")>();
+  const pinyin = ((text: string, options?: { type?: string }) =>
+    text === MISALIGNED && options?.type === "array"
+      ? ["cè"]
+      : actual.pinyin(text, options as never)) as typeof actual.pinyin;
+  return { ...actual, pinyin };
+});
 
 describe("contactReadings", () => {
   it("reads surnames in surname mode", async () => {
@@ -86,5 +97,17 @@ describe("contactReadings", () => {
     expect(await readingsForContact({ ...contact, fullName: "𠮷田" })).toEqual({
       𠮷田: ["", "Tián"],
     });
+  });
+
+  it("reads each character alone when pinyin-pro's result doesn't line up", async () => {
+    expect(await contactReadings({ people: [unsplit(MISALIGNED)] })).toEqual({
+      [MISALIGNED]: ["Cè", ""],
+    });
+  });
+
+  it("leaves an unreadable surname of a split name without a syllable", async () => {
+    expect(
+      await contactReadings({ people: [{ full: "田 𠮷", first: "田", last: "𠮷" }] }),
+    ).toEqual({ 𠮷: [""], 田: ["Tián"] });
   });
 });
