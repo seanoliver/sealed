@@ -257,6 +257,33 @@ describe("agent write tools", () => {
       expect(await stored(ANA)).toMatchObject({ email: "ana.new@wt.test", partnerEmail: "ben@wt.test" });
     });
 
+    it("drops an earlier change whose email moved since, keeping the new one", async () => {
+      await requestEmail(ANA, "ana.new@wt.test");
+      await dbAdmin.update(contacts).set({ email: "ana.owner@wt.test" }).where(eq(contacts.id, ANA));
+      const second = await update({ id: ANA, fields: { partner_email: "ben@wt.test" } });
+      const pending = await listPendingRequests(ctx.claims);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toMatchObject({
+        previewId: second.pending_email_change!.request_id,
+        changes: { partner_email: [null, "ben@wt.test"] },
+      });
+      expect(pending[0].kind === "email" && pending[0].changes).not.toHaveProperty("email");
+      expect(await approveRequest(ctx.claims, pending[0].previewId)).toMatchObject({ ok: true });
+      expect(await stored(ANA)).toMatchObject({ email: "ana.owner@wt.test", partnerEmail: "ben@wt.test" });
+    });
+
+    it("withdraws a change when the agent sets the email back", async () => {
+      await requestEmail(ANA, "ana.new@wt.test");
+      expect(await update({ id: ANA, fields: { email: "ana@wt.test" } })).toEqual({
+        id: ANA,
+        changed: false,
+        pending_email_change: null,
+        message: "The earlier email change was withdrawn. No email change is waiting for the owner.",
+      });
+      expect(await listPendingRequests(ctx.claims)).toEqual([]);
+      expect((await stored(ANA)).email).toBe("ana@wt.test");
+    });
+
     it("can clear an email, with a history row once approved", async () => {
       const requestId = (await update({ id: ANA, fields: { email: null } })).pending_email_change!.request_id;
       expect((await stored(ANA)).email).toBe("ana@wt.test");

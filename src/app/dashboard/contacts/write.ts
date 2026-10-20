@@ -283,6 +283,8 @@ export type PatchOutcome = {
   diff?: ContactDiff;
   eventId?: string;
   emailRequest?: { id: string; changes: EmailChange };
+  /** An open email change was withdrawn and nothing replaced it. */
+  emailWithdrawn?: boolean;
 };
 
 export async function patchContactAs(
@@ -359,19 +361,28 @@ export async function patchContactAs(
         }
       }
       let emailRequest: PatchOutcome["emailRequest"];
-      if (holding && actor.source === "agent") {
-        // One open email change per contact and token: the new one replaces it,
-        // keeping the old one's changes to fields this call didn't mention.
+      let emailWithdrawn = false;
+      const mentioned = EMAIL_FIELDS.filter((field) => field in (request.values ?? {}));
+      if (holdEmails && actor.source === "agent" && mentioned.length > 0) {
+        // One open email change per contact and token. The new one replaces it and
+        // keeps an old change only for a field this call didn't mention that is
+        // still what the old change saw, so a field set back to its value is withdrawn.
         const open = await tx.execute<{ id: string; changes: EmailChange }>(sql`
           select id, items->0->'changes' as changes from public.agent_previews
           where agent_token_id = ${actor.tokenId} and kind = 'email' and items->0->>'id' = ${id}
             and requested_at is not null and applied_at is null and discarded_at is null
           for update`);
+        const stored: Record<EmailField, string | null> = {
+          email: existing.email,
+          partner_email: existing.partnerEmail,
+        };
         const changes: EmailChange = {};
         for (const previous of open) {
           for (const field of EMAIL_FIELDS) {
             const change = previous.changes[field];
-            if (change && !(field in (request.values ?? {}))) changes[field] = change;
+            if (change && !mentioned.includes(field) && change[0] === stored[field]) {
+              changes[field] = change;
+            }
           }
         }
         Object.assign(changes, held);
@@ -382,16 +393,20 @@ export async function patchContactAs(
               items = jsonb_build_array(jsonb_build_object('id', items->0->'id', 'name', items->0->'name'))
             where id in ${open.map((row) => row.id)}`);
         }
-        const items = [{ id, name: householdLine(pickStoredNames(existing)), changes }];
-        const [queued] = await tx.execute<{ id: string }>(sql`
-          insert into public.agent_previews
-            (user_id, agent_token_id, kind, items, requested_at, expires_at)
-          values (${claims.sub}, ${actor.tokenId}, 'email', ${JSON.stringify(items)}::jsonb, now(),
-            now() + make_interval(days => ${EMAIL_REQUEST_TTL_DAYS}::int))
-          returning id`);
-        emailRequest = { id: queued.id, changes };
+        if (Object.keys(changes).length > 0) {
+          const items = [{ id, name: householdLine(pickStoredNames(existing)), changes }];
+          const [queued] = await tx.execute<{ id: string }>(sql`
+            insert into public.agent_previews
+              (user_id, agent_token_id, kind, items, requested_at, expires_at)
+            values (${claims.sub}, ${actor.tokenId}, 'email', ${JSON.stringify(items)}::jsonb, now(),
+              now() + make_interval(days => ${EMAIL_REQUEST_TTL_DAYS}::int))
+            returning id`);
+          emailRequest = { id: queued.id, changes };
+        } else {
+          emailWithdrawn = open.length > 0;
+        }
       }
-      return { kind: "saved", diff: plan.diff, eventId, emailRequest };
+      return { kind: "saved", diff: plan.diff, eventId, emailRequest, emailWithdrawn };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
@@ -402,14 +417,14 @@ export async function patchContactAs(
   }
   if (outcome.kind === "missing") return { ok: false, error: "Contact not found." };
   if (outcome.kind === "invalid") return { ok: false, error: outcome.error };
-  const { diff, emailRequest } = outcome;
+  const { diff, emailRequest, emailWithdrawn } = outcome;
   const eventId =
     actor.source === "agent"
       ? outcome.eventId
       : diff
         ? await recordContactEvent({ contactId: id, diff }, "owner")
         : undefined;
-  return { ok: true, value: { diff, eventId, emailRequest } };
+  return { ok: true, value: { diff, eventId, emailRequest, emailWithdrawn } };
 }
 
 export async function createContactAs(

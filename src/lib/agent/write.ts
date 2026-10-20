@@ -26,6 +26,8 @@ export const agentActor = (ctx: AgentContext): AgentActor => ({
 
 const EMAIL_WAITING =
   "The email change is waiting for the owner to approve on the Agents page; the other fields are saved.";
+const EMAIL_WITHDRAWN =
+  "The earlier email change was withdrawn. No email change is waiting for the owner.";
 
 export class ToolError extends Error {}
 
@@ -92,7 +94,8 @@ export type UpdateContactResult = {
   before?: ContactDiff["before"];
   after?: ContactDiff["after"];
   event_id?: string | null;
-  pending_email_change?: { request_id: string; changes: EmailChange; message: string };
+  pending_email_change?: { request_id: string; changes: EmailChange; message: string } | null;
+  message?: string;
 };
 
 export async function updateContact(
@@ -107,7 +110,7 @@ export async function updateContact(
     { holdEmails: true },
   );
   if (!result.ok) throw new ToolError(result.error);
-  const { diff, eventId, emailRequest } = result.value;
+  const { diff, eventId, emailRequest, emailWithdrawn } = result.value;
   const pending = emailRequest
     ? {
         pending_email_change: {
@@ -116,7 +119,9 @@ export async function updateContact(
           message: EMAIL_WAITING,
         },
       }
-    : {};
+    : emailWithdrawn
+      ? { pending_email_change: null, message: EMAIL_WITHDRAWN }
+      : {};
   return diff
     ? { id: input.id, changed: true, before: diff.before, after: diff.after, event_id: eventId ?? null, ...pending }
     : { id: input.id, changed: false, ...pending };

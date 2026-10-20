@@ -227,7 +227,7 @@ export function registerAgentTools(server: McpServer): void {
     name: "update_contact",
     title: "Update contact",
     description:
-      "Change some fields of one contact, with the same rules as the dashboard. Saves at once and returns the before and after values plus an event_id for undo_agent_change. A change to an existing email or partner email is not saved: it waits for the owner's approval, and the result says so in pending_email_change.",
+      "Change some fields of one contact, with the same rules as the dashboard. Saves at once and returns the before and after values plus an event_id for undo_agent_change. A change to an existing email or partner email is not saved: it waits for the owner's approval, and the result says so in pending_email_change. Setting an email back to its current value withdraws a pending change to it.",
     inputSchema: updateContactInput,
     run: updateContact,
   });
