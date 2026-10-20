@@ -253,32 +253,39 @@ export function AddressFields({
     const nextCode = code || (unrecognized ? null : senderCountry);
     const nextLayout = addressLayout(nextCode);
     const nextCountry = getCountry(nextCode);
-    const kept: Partial<AddressValues> = {};
-    const dropped: Partial<AddressValues> = {};
-    for (const field of ADDRESS_FIELDS) {
-      const value = values[field];
+    // A list of states (US) can't show text that isn't one of them.
+    const fit = (field: AddressField, value: string): string | null => {
       const state = field === "state_region" ? normalizeState(nextCode, value) : value;
-      // A list of states (US) can't show text that isn't one of them.
       const listed =
         field !== "state_region" ||
         !nextCountry?.subdivisions ||
         value === "" ||
         nextCountry.subdivisions.some(([sub]) => sub === state);
-      if (nextLayout.fields.has(field) && listed) kept[field] = state;
+      return listed ? state : null;
+    };
+    const backToStart = code === startCode.current;
+    const kept: Partial<AddressValues> = {};
+    const dropped: Partial<AddressValues> = {};
+    for (const field of ADDRESS_FIELDS) {
+      const value = values[field];
+      const fitted = nextLayout.fields.has(field) ? fit(field, value) : null;
+      if (fitted !== null && fitted !== "") kept[field] = fitted;
       else if (value !== "") dropped[field] = value;
     }
-    const backToStart = code === startCode.current;
-    const pool = { ...stash, ...dropped };
-    const restored = Object.fromEntries(
-      ADDRESS_FIELDS.filter(
-        (field) =>
-          (nextLayout.fields.has(field) || (backToStart && extraFields.includes(field))) &&
-          !kept[field] &&
-          pool[field],
-      ).map((field) => [field, pool[field]]),
-    );
+    const restored: Partial<AddressValues> = {};
+    for (const field of ADDRESS_FIELDS) {
+      if (kept[field]) continue;
+      const source =
+        backToStart && extraFields.includes(field)
+          ? initial.current[field]
+          : nextLayout.fields.has(field)
+            ? stash[field]
+            : undefined;
+      const fitted = source ? fit(field, source) : null;
+      if (fitted) restored[field] = fitted;
+    }
     const next = { ...BLANK_ADDRESS, ...kept, ...restored, country_code: code } as AddressValues;
-    setStash(pool);
+    setStash({ ...stash, ...dropped });
     setValues(next);
     setCountryChanged(!backToStart);
     if (nextLayout.line2OnlyWhenFilled) setShowLine2(next.address_line2 !== "");

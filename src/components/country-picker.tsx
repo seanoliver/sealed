@@ -68,6 +68,8 @@ export function CountryPicker({
   const [unmatched, setUnmatchedState] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  // Only a highlight moved with the keyboard counts as a choice; hovering doesn't.
+  const [navigated, setNavigated] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -89,20 +91,23 @@ export function CountryPicker({
   function show() {
     const selected = query === null ? options.findIndex((option) => option.code === value) : 0;
     setActive(Math.max(selected, 0));
+    setNavigated(false);
     setOpen(true);
   }
 
   function commit(code: string) {
     setQuery(null);
     setOpen(false);
+    setNavigated(false);
     setUnmatched(null);
     if (code !== value) onChange(code);
   }
 
   function settle() {
     if (query !== null && query.trim() === "") return commit("");
-    if (activeOption) return commit(activeOption.code);
+    if (activeOption && navigated) return commit(activeOption.code);
     setOpen(false);
+    setNavigated(false);
     if (query === null) return;
     const pick = countryCodeFor(query) ?? options[0]?.code;
     if (pick) commit(pick);
@@ -116,17 +121,20 @@ export function CountryPicker({
         event.preventDefault();
         if (!open) show();
         else setActive((i) => Math.min(i + 1, options.length - 1));
+        setNavigated(true);
         break;
       case "ArrowUp":
         event.preventDefault();
         if (!open) show();
         else setActive((i) => Math.max(i - 1, 0));
+        setNavigated(true);
         break;
       case "Home":
       case "End":
         if (open) {
           event.preventDefault();
           setActive(event.key === "Home" ? 0 : options.length - 1);
+          setNavigated(true);
         }
         break;
       case "Enter":
@@ -172,6 +180,7 @@ export function CountryPicker({
         onChange={(event) => {
           setQuery(event.target.value);
           setActive(0);
+          setNavigated(false);
           setOpen(true);
         }}
         onFocus={(event) => event.currentTarget.select()}

@@ -23,6 +23,7 @@ let wangTokens: string[];
 let ukId: string;
 let unknownId: string;
 let beaId: string;
+let blankId: string;
 let beaToken: string;
 
 const pickCountry = async (page: Page, typed: string, name: string) => {
@@ -89,6 +90,7 @@ test.beforeAll(async ({ browser }) => {
     countryCode: "GB",
   });
   beaToken = await seedUpdateToken(beaId);
+  blankId = await seedContact({ bookId, fullName: "Cal Blank", addressLine1: "1 Main St" });
   unknownId = await seedContact({
     bookId,
     fullName: "Nemo Diver",
@@ -245,10 +247,38 @@ test("a stored value the country has no field for stays, and the picker settles 
   await page.getByLabel("Street address").click();
   await expect(picker).toHaveValue("United Kingdom");
   await expect(page.getByLabel("County")).toHaveValue("Somerset");
+
+  // Values come back from before the switch, and a US state list never shows a county.
+  await pickCountry(page, "canada", "Canada");
+  await expect(page.getByLabel("Province")).toHaveValue("Somerset");
+  await page.getByLabel("Province").fill("Ontario");
+  await pickCountry(page, "united k", "United Kingdom");
+  await expect(page.getByLabel("County")).toHaveValue("Somerset");
+  await pickCountry(page, "usa", "United States");
+  await expect(page.getByLabel("State")).toHaveValue("");
+  await pickCountry(page, "united k", "United Kingdom");
+  await expect(page.getByLabel("County")).toHaveValue("Somerset");
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(/\/u\/thanks$/);
   await context.close();
   expect(await getContactAddress(beaId)).toMatchObject({ state_region: "Somerset", country_code: "GB" });
+});
+
+test("the picker keeps its value unless the person types or arrows to another", async () => {
+  await ownerPage.setViewportSize({ width: 1280, height: 900 });
+  await ownerPage.goto(`/dashboard/contacts/${blankId}`);
+  const picker = ownerPage.getByRole("combobox", { name: "Country" });
+  await expect(picker).toHaveValue("");
+  await picker.click();
+  await expect(ownerPage.getByRole("listbox", { name: "Countries" })).toBeVisible();
+  await ownerPage.getByRole("heading", { name: "Cal Blank" }).click();
+  await expect(picker).toHaveValue("");
+
+  await pickCountry(ownerPage, "germ", "Germany");
+  await picker.click();
+  await ownerPage.getByRole("option", { name: /^France/ }).hover();
+  await ownerPage.getByRole("heading", { name: "Cal Blank" }).click();
+  await expect(picker).toHaveValue("Germany");
 });
 
 test("the owner's contact page edits the address with the envelope beside it", async () => {
