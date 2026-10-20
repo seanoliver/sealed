@@ -42,7 +42,6 @@ function syllables(pinyin: PinyinFn, run: string, { surname }: { surname: boolea
       });
 }
 
-/** One run holding a whole name, surname first: 曾雨桐 → Zēng Yǔ tóng. */
 function surnameFirstRun(pinyin: PinyinFn, run: string): string[] {
   const parts = syllables(pinyin, run, { surname: true });
   const surname = COMPOUND_SURNAMES.has(Array.from(run).slice(0, 2).join("")) ? 2 : 1;
@@ -94,8 +93,8 @@ const personHasHan = (person: Person) =>
   hasHan(person.full) || hasHan(person.first) || hasHan(person.last);
 
 /**
- * Generated readings for every Han run in these people's names, or {} when
- * pinyin-pro can't load: names then show without pinyin.
+ * Returns {} when pinyin-pro can't load: never throw, or the dashboard fails
+ * for any book with a Chinese name.
  */
 export async function contactReadings({ people }: { people: readonly Person[] }): Promise<Readings> {
   if (!people.some(personHasHan)) return {};

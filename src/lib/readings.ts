@@ -1,6 +1,5 @@
 // Client components import this module: never import pinyin-pro here.
 
-/** Han run → one syllable per character. */
 export type Readings = Record<string, string[]>;
 
 export type Run = { text: string; han: boolean };
@@ -95,7 +94,6 @@ export function matchesReading({
     const read = (run: Run) =>
       run.han ? (lookupRun(readings, run.text) ?? []).join("") : run.text;
     const han = runs.filter((run) => run.han).map((run) => lookupRun(readings, run.text) ?? []);
-    // Stored order, surname first ("伟 张" → zhang wei), and given name first (张伟 → wei zhang).
     const orders = [
       runs.map(read),
       [...han].reverse().map((syllables) => syllables.join("")),
