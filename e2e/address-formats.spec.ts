@@ -248,7 +248,6 @@ test("a stored value the country has no field for stays, and the picker settles 
   await expect(picker).toHaveValue("United Kingdom");
   await expect(page.getByLabel("County")).toHaveValue("Somerset");
 
-  // Values come back from before the switch, and a US state list never shows a county.
   await pickCountry(page, "canada", "Canada");
   await expect(page.getByLabel("Province")).toHaveValue("Somerset");
   await page.getByLabel("Province").fill("Ontario");
