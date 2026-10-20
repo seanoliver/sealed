@@ -75,7 +75,9 @@ The local and production environments and the release workflow are documented in
 
 ## Deploying
 
-The reference deployment is **Vercel + hosted Supabase + Resend + Cloudflare Turnstile**:
+These are the maintainer's notes for the production deployment. They are not a license to run your own copy (see [License](#license)).
+
+The production deployment is **Vercel + hosted Supabase + Resend + Cloudflare Turnstile**:
 
 1. Create a [Supabase](https://supabase.com) project and push the schema: `supabase link --project-ref <ref> && supabase db push`.
 2. **Work through the [production checklist in docs/SECURITY.md](docs/SECURITY.md#production-checklist)** — most importantly: remove all exposed schemas from the Data API, and use the transaction-pooler `DATABASE_URL` (port 6543, `sslmode=require`). Connect as a restricted `app_server` role rather than `postgres` — the tested one-time SQL is in the [Database role](docs/SECURITY.md#database-role) section.
@@ -87,10 +89,18 @@ The reference deployment is **Vercel + hosted Supabase + Resend + Cloudflare Tur
 
 ## Contributing
 
-Issues and PRs welcome. Before opening a PR, run the full gate locally:
+Bug reports and feature ideas are welcome as GitHub issues. Pull requests are not accepted yet. To report a security issue, **do not open a public issue** — see the [vulnerability reporting section](docs/SECURITY.md#reporting-a-vulnerability).
+
+Before pushing a change, run the full gate locally:
 
 ```bash
 pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm test:db && pnpm build && pnpm e2e
 ```
 
-New tables must ship with RLS policies and pgTAP coverage — the test suite fails otherwise (by design; see [docs/SECURITY.md](docs/SECURITY.md)). To report a security issue, **do not open a public issue** — see the [vulnerability reporting section](docs/SECURITY.md#reporting-a-vulnerability).
+New tables must ship with RLS policies and pgTAP coverage — the test suite fails otherwise (by design; see [docs/SECURITY.md](docs/SECURITY.md)).
+
+## License
+
+Copyright © 2026 Sean Oliver. All rights reserved.
+
+This source is public for reference. You may not copy, modify, host, or redistribute it without written permission.
