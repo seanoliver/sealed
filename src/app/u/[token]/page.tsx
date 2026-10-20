@@ -48,10 +48,11 @@ export default async function TokenUpdatePage({
     birthday: enabled_fields.birthday ? (contact.birthday ?? "") : "",
     address_line1: contact.address_line1 ?? "",
     address_line2: contact.address_line2 ?? "",
+    district: contact.district ?? "",
     city: contact.city ?? "",
     state_region: contact.state_region ?? "",
     postal_code: contact.postal_code ?? "",
-    country: contact.country ?? "",
+    country_code: contact.country_code ?? "",
   };
 
   // Bind the token server-side. Note: bound args may round-trip through the
@@ -79,6 +80,9 @@ export default async function TokenUpdatePage({
           pendingLabel="Saving…"
           household={household}
           seenAt={loaded.data.updated_at}
+          ownerName={ownerLabel}
+          senderCountry={loaded.data.sender_country}
+          legacyCountry={contact.country_code ? null : contact.country}
         />
       </div>
       <div className="mt-4">

@@ -92,10 +92,14 @@ export async function seedContact(opts: {
   partnerName?: string;
   kidsNames?: string;
   addressLine1?: string;
+  addressLine2?: string;
+  district?: string;
   city?: string;
   stateRegion?: string;
   postalCode?: string;
+  /** Free text, as the app wrote it before codes; the database derives the code. */
   country?: string;
+  countryCode?: string;
   household?: {
     firstName: string;
     lastName: string;
@@ -108,14 +112,15 @@ export async function seedContact(opts: {
   const rows = await db`
     insert into public.contacts
       (book_id, full_name, email, partner_email, partner_name, kids_names, address_line1,
-       city, state_region, postal_code, country, first_name, last_name,
-       partner_first_name, partner_last_name, kids)
+       address_line2, district, city, state_region, postal_code, country, country_code,
+       first_name, last_name, partner_first_name, partner_last_name, kids)
     values
       (${opts.bookId}, ${opts.fullName}, ${opts.email ?? null},
        ${opts.partnerEmail ?? null}, ${opts.partnerName ?? null}, ${opts.kidsNames ?? null},
-       ${opts.addressLine1 ?? null}, ${opts.city ?? null},
-       ${opts.stateRegion ?? null}, ${opts.postalCode ?? null},
-       ${opts.country ?? null}, ${h?.firstName ?? null}, ${h?.lastName ?? null},
+       ${opts.addressLine1 ?? null}, ${opts.addressLine2 ?? null}, ${opts.district ?? null},
+       ${opts.city ?? null}, ${opts.stateRegion ?? null}, ${opts.postalCode ?? null},
+       ${opts.country ?? null}, ${opts.countryCode ?? null},
+       ${h?.firstName ?? null}, ${h?.lastName ?? null},
        ${h?.partnerFirstName ?? null}, ${h?.partnerLastName ?? null},
        ${h?.kids ? db.json(h.kids) : null})
     returning id`;
@@ -357,4 +362,28 @@ export async function getContactCity(contactId: string): Promise<string | null> 
 export async function contactExists(contactId: string): Promise<boolean> {
   const rows = await db`select 1 from public.contacts where id = ${contactId}`;
   return rows.length > 0;
+}
+
+export type ContactAddress = {
+  address_line1: string | null;
+  address_line2: string | null;
+  district: string | null;
+  city: string | null;
+  state_region: string | null;
+  postal_code: string | null;
+  country_code: string | null;
+  country: string | null;
+};
+
+export async function getContactAddress(contactId: string): Promise<ContactAddress> {
+  const rows = await db<ContactAddress[]>`
+    select address_line1, address_line2, district, city, state_region, postal_code,
+           country_code, country
+    from public.contacts where id = ${contactId}`;
+  return rows[0];
+}
+
+export async function getSenderCountry(bookId: string): Promise<string> {
+  const rows = await db`select sender_country from public.books where id = ${bookId}`;
+  return rows[0].sender_country;
 }

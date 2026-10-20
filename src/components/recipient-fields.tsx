@@ -1,3 +1,8 @@
+import { type Ref } from "react";
+import {
+  AddressFields,
+  type AddressFieldsHandle,
+} from "@/components/address-fields";
 import { HouseholdFields } from "@/components/household-fields";
 import { inputClasses, labelClasses } from "@/components/recipient-field-styles";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
@@ -20,10 +25,11 @@ export const BLANK_RECIPIENT_VALUES: TokenUpdateValues = {
   birthday: "",
   address_line1: "",
   address_line2: "",
+  district: "",
   city: "",
   state_region: "",
   postal_code: "",
-  country: "",
+  country_code: "",
 };
 
 type RecipientFieldsProps = {
@@ -31,6 +37,11 @@ type RecipientFieldsProps = {
   enabled: EnabledFields;
   emailHint?: string;
   household: { defaults: HouseholdValues; errors?: HouseholdFieldErrors };
+  ownerName: string;
+  senderCountry: string;
+  /** Country text from before codes that no code matched. */
+  legacyCountry?: string | null;
+  addressRef?: Ref<AddressFieldsHandle>;
 };
 
 type FieldProps = {
@@ -74,6 +85,10 @@ export function RecipientFields({
   enabled,
   emailHint,
   household,
+  ownerName,
+  senderCountry,
+  legacyCountry,
+  addressRef,
 }: RecipientFieldsProps) {
   return (
     <>
@@ -98,40 +113,26 @@ export function RecipientFields({
           type="date"
         />
       ) : null}
-      <Field
-        name="address_line1"
-        label="Address line 1"
-        value={v.address_line1}
-        maxLength={200}
+      <AddressFields
+        // A new sender country (the settings preview) starts the address over.
+        key={senderCountry}
+        defaults={{
+          address_line1: v.address_line1,
+          address_line2: v.address_line2,
+          district: v.district,
+          city: v.city,
+          state_region: v.state_region,
+          postal_code: v.postal_code,
+          country_code: v.country_code,
+        }}
+        legacyCountry={legacyCountry}
+        senderCountry={senderCountry}
+        audience={{ kind: "recipient", ownerName }}
+        styles={{ input: inputClasses, label: labelClasses }}
+        errors={{ postal_code: household.errors?.postal_code }}
+        preview="below"
+        handleRef={addressRef}
       />
-      <Field
-        name="address_line2"
-        label="Address line 2"
-        value={v.address_line2}
-        maxLength={200}
-      />
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <Field name="city" label="City" value={v.city} maxLength={120} />
-        <Field
-          name="state_region"
-          label="State / region"
-          value={v.state_region}
-          maxLength={120}
-        />
-        <Field
-          name="postal_code"
-          label="Postal code"
-          value={v.postal_code}
-          maxLength={20}
-        />
-        <Field
-          name="country"
-          label="Country"
-          value={v.country}
-          maxLength={120}
-        />
-      </div>
     </>
   );
 }

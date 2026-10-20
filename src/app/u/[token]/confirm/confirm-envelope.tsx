@@ -1,13 +1,18 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { Envelope } from "@/components/envelope";
 import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-widget";
+import { type EnvelopeLine } from "@/lib/address";
 import { type ConfirmState } from "./actions";
 
 type Props = {
   action: (state: ConfirmState, formData: FormData) => Promise<ConfirmState>;
   ownerName: string;
-  lines: string[];
+  lines: EnvelopeLine[];
+  /** The household line and the street, for the thank-you copy. */
+  name: string;
+  street: string;
   updateHref: string;
   seenAt: string;
 };
@@ -16,6 +21,8 @@ export function ConfirmEnvelope({
   action,
   ownerName,
   lines,
+  name,
+  street,
   updateHref,
   seenAt,
 }: Props) {
@@ -41,8 +48,8 @@ export function ConfirmEnvelope({
           You&apos;re on the list
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {ownerName}&apos;s card will go to {lines[0]} at {lines[1]}. You can
-          close this page.
+          {ownerName}&apos;s card will go to {name} at {street}. You can close
+          this page.
         </p>
       </div>
     );
@@ -64,19 +71,7 @@ export function ConfirmEnvelope({
           {state.error}
         </div>
       ) : null}
-      <div className="rounded-md border border-border bg-background px-4 pt-4 pb-6">
-        <div
-          aria-hidden="true"
-          className="ml-auto h-11 w-9 rounded-sm border border-dashed border-border"
-        />
-        <address className="mt-3 pl-6 font-serif text-lg leading-relaxed not-italic text-foreground">
-          {lines.map((line) => (
-            <span key={line} className="block">
-              {line}
-            </span>
-          ))}
-        </address>
-      </div>
+      <Envelope lines={lines} />
       <input type="hidden" name="seen_at" value={seenAt} />
       <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
       <button

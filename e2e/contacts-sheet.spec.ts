@@ -371,7 +371,7 @@ test("Save and Cancel stay in view when the table is wider than the window", asy
       const box = await table().getByRole("button", { name, exact: true }).boundingBox();
       expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width);
     }
-    const country = table().getByRole("textbox", { name: "Country" });
+    const country = table().getByRole("combobox", { name: "Country" });
     await country.focus();
     expect(
       await country.evaluate((input) => {

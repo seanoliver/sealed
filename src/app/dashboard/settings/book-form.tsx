@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { CountryPicker } from "@/components/country-picker";
 import { InvitePageConfigurator } from "@/components/invite-page-configurator";
 import { type EnabledFields } from "@/components/recipient-fields";
 import { saveBook, type BookFormValues, type SaveBookState } from "./actions";
@@ -20,6 +21,7 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
   const [state, formAction, pending] = useActionState(saveBook, initialState);
   const [displayName, setDisplayName] = useState(defaults.display_name);
   const [slugValue, setSlugValue] = useState(defaults.slug);
+  const [senderCountry, setSenderCountry] = useState(defaults.sender_country);
   const [enabledFields, setEnabledFields] = useState<EnabledFields>({
     partner_name: defaults.partner_name,
     kids_names: defaults.kids_names,
@@ -113,6 +115,23 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
           </div>
         </div>
 
+        <div className="mt-5 flex max-w-sm flex-col gap-1.5">
+          <label htmlFor="sender_country" className="text-sm font-medium text-foreground">
+            I mail from
+          </label>
+          <CountryPicker
+            id="sender_country"
+            name="sender_country"
+            value={senderCountry}
+            onChange={(code) => code && setSenderCountry(code)}
+            className={inputClasses}
+            describedBy="sender_country-hint"
+          />
+          <p id="sender_country-hint" className="text-xs text-muted-foreground">
+            Envelopes to this country leave the country line off.
+          </p>
+        </div>
+
         {slugChanged ? (
           <div
             role="alert"
@@ -144,6 +163,7 @@ export function BookForm({ urlPrefix, defaults, currentSlug }: BookFormProps) {
         onFieldChange={(name, enabled) =>
           setEnabledFields((current) => ({ ...current, [name]: enabled }))
         }
+        senderCountry={senderCountry}
       />
 
       <input

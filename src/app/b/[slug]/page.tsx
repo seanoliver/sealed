@@ -96,6 +96,8 @@ export default async function PublicBookPage({
           pendingLabel="Submitting…"
           emailHint={`Optional — but include it so ${ownerLabel} can reach you.`}
           household={BLANK_HOUSEHOLD_VALUES}
+          ownerName={ownerLabel}
+          senderCountry={book.senderCountry}
         />
       </div>
       <div className="mt-4">

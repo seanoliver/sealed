@@ -62,6 +62,7 @@ export default async function DashboardPage({
           }),
         {
           answer: answers.get(contact.id),
+          senderCountry: book.senderCountry,
           readings: await readingsForContact(contact, {
             extra: answerPeople.get(contact.id) ?? [],
           }),

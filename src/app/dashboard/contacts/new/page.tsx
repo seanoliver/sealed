@@ -13,7 +13,7 @@ export default async function NewContactPage() {
   if (!book) redirect("/onboarding");
 
   return (
-    <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10">
+    <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10 lg:max-w-3xl">
       <div className="rounded-xl border border-border bg-card p-8 shadow-sm ">
         <h1 className="font-serif text-2xl leading-tight text-foreground">
           Add a contact
@@ -26,6 +26,7 @@ export default async function NewContactPage() {
         <ContactForm
           action={createContact}
           submitLabel="Add contact"
+          senderCountry={book.senderCountry}
           household={BLANK_HOUSEHOLD_VALUES}
           defaults={{
             full_name: "",
@@ -36,10 +37,11 @@ export default async function NewContactPage() {
             birthday: "",
             address_line1: "",
             address_line2: "",
+            district: "",
             city: "",
             state_region: "",
             postal_code: "",
-            country: "",
+            country_code: "",
             notes: "",
           }}
         />

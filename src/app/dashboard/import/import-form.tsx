@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition, type ChangeEvent } from "react";
+import { countryName } from "@/lib/address";
 import { parseContactsCsv, type CsvRowError } from "@/lib/csv/import";
 import { type ContactInput } from "@/lib/validation/contact";
 import { importContacts } from "./actions";
@@ -237,7 +238,7 @@ export function ImportForm() {
                         <td className={tdClasses}>{row.partner_name ?? "—"}</td>
                         <td className={tdClasses}>{row.email ?? "—"}</td>
                         <td className={tdClasses}>{row.city ?? "—"}</td>
-                        <td className={tdClasses}>{row.country ?? "—"}</td>
+                        <td className={tdClasses}>{row.country_code ? countryName(row.country_code) : "—"}</td>
                       </tr>
                     ))}
                   </tbody>

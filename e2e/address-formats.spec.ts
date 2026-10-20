@@ -1,0 +1,261 @@
+import { expect, test, type Page } from "@playwright/test";
+import {
+  cleanupUser,
+  clearRateLimits,
+  getContactAddress,
+  getSenderCountry,
+  getUserIdByEmail,
+  seedBook,
+  seedContact,
+  seedUpdateToken,
+} from "./db";
+import { signupAndLogin, stubTurnstile, uniqueEmail, uniqueSlug } from "./helpers";
+
+/**
+ * Country-aware addresses (#99): the recipient form and the owner's contact
+ * page follow the picked country's fields, check postcodes, and preview the
+ * envelope; Settings holds the country the owner mails from.
+ */
+test.describe.configure({ mode: "serial" });
+
+const ownerEmail = uniqueEmail("addr-owner");
+let ownerPage: Page;
+let bookId: string;
+let adaId: string;
+let adaToken: string;
+let wangId: string;
+let wangTokens: string[];
+let ukId: string;
+let unknownId: string;
+
+const pickCountry = async (page: Page, typed: string, name: string) => {
+  const picker = page.getByRole("combobox", { name: "Country" });
+  await picker.click();
+  await picker.fill(typed);
+  await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
+  await expect(picker).toHaveValue(name);
+};
+
+test.beforeAll(async ({ browser }) => {
+  await clearRateLimits();
+  ownerPage = await browser.newPage();
+  await signupAndLogin(ownerPage, ownerEmail);
+  bookId = await seedBook({
+    ownerId: await getUserIdByEmail(ownerEmail),
+    slug: uniqueSlug("addr-book"),
+    displayName: "Sean",
+    enabledFields: { partner_name: true, kids_names: false, birthday: false },
+  });
+  adaId = await seedContact({
+    bookId,
+    fullName: "Ada Lovelace",
+    email: "ada@addr.test",
+    household: { firstName: "Ada", lastName: "Lovelace" },
+    addressLine1: "1427 Linden Avenue",
+    addressLine2: "Apt 3B",
+    city: "Portland",
+    stateRegion: "Oregon",
+    postalCode: "97214",
+    country: "United States",
+  });
+  adaToken = await seedUpdateToken(adaId);
+  wangId = await seedContact({
+    bookId,
+    fullName: "王芳",
+    addressLine1: "上海市浦东新区张江路1500弄6号501室",
+    country: "CHINA",
+  });
+  wangTokens = [await seedUpdateToken(wangId), await seedUpdateToken(wangId)];
+  ukId = await seedContact({
+    bookId,
+    fullName: "Priya Raman",
+    household: {
+      firstName: "Priya",
+      lastName: "Raman",
+      partnerFirstName: "Daniel",
+      partnerLastName: "Okafor",
+    },
+    addressLine1: "14 Kestrel Lane",
+    addressLine2: "Flat 2",
+    city: "Bristol",
+    postalCode: "bs6 5qt",
+    country: "UK",
+  });
+  unknownId = await seedContact({
+    bookId,
+    fullName: "Nemo Diver",
+    addressLine1: "1 Coral Way",
+    country: "Atlantis",
+  });
+});
+
+test.afterAll(async () => {
+  await cleanupUser(ownerEmail);
+  await ownerPage.close();
+});
+
+test("the recipient form follows the country, checks the postcode and previews the envelope", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await stubTurnstile(page);
+  await page.goto(`/u/${adaToken}`);
+
+  const preview = page.getByRole("region", { name: "Envelope preview" });
+  await expect(page.getByRole("combobox", { name: "Country" })).toHaveValue("United States");
+  await expect(page.getByLabel("State")).toHaveValue("OR");
+  await expect(page.getByLabel("ZIP code")).toHaveValue("97214");
+  await expect(preview).toContainText("Ada Lovelace");
+  await expect(preview).toContainText("1427 Linden Avenue, Apt 3B");
+  await expect(preview).toContainText("No country line: Sean mails from the US.");
+  await expect(preview).not.toContainText("UNITED STATES");
+
+  // The preview follows the name fields too.
+  await page.locator("#first_name").fill("Augusta");
+  await expect(preview).toContainText("Augusta Lovelace");
+
+  await pickCountry(page, "uk", "United Kingdom");
+  await expect(page.getByLabel("Post town")).toHaveValue("Portland");
+  await expect(page.getByLabel("Postcode")).toHaveValue("97214");
+  await expect(page.getByLabel("State")).toHaveCount(0);
+  await expect(page.getByText("Flat, building")).toBeVisible();
+  await page.getByLabel("Postcode").fill("bs6 5qt");
+  await page.getByLabel("Post town").fill("Bristol");
+  await expect(preview).toContainText("BRISTOL");
+  await expect(preview).toContainText("BS6 5QT");
+  await expect(preview).toContainText("UNITED KINGDOM");
+  await expect(preview).toContainText("print in capitals, as Royal Mail asks.");
+
+  // Back to the US: the state dropped for the UK comes back.
+  await pickCountry(page, "usa", "United States");
+  await expect(page.getByLabel("State")).toHaveValue("OR");
+
+  await pickCountry(page, "neth", "Netherlands");
+  await expect(page.getByLabel("Street and house number")).toHaveValue("1427 Linden Avenue");
+  await page.getByLabel("Street and house number").fill("Keizersgracht 212");
+  await page.getByLabel("City").fill("Amsterdam");
+  await page.getByLabel("Postcode").fill("1016");
+  await page.getByLabel("Postcode").blur();
+  await expect(
+    page.getByText("A Dutch postcode is four digits and two letters, like 1234 AB."),
+  ).toBeVisible();
+  await expect(preview).toContainText("1016 Amsterdam");
+
+  // Save stays enabled; tapping it with the error keeps the page and focuses the field.
+  await page.getByRole("button", { name: "Update my details" }).click();
+  await expect(page).toHaveURL(new RegExp(`/u/${adaToken}$`));
+  await expect(page.getByLabel("Postcode")).toBeFocused();
+
+  await page.getByLabel("Postcode").fill("1016dz");
+  await expect(page.getByText(/A Dutch postcode/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Update my details" }).click();
+  await expect(page).toHaveURL(/\/u\/thanks$/);
+  await context.close();
+
+  expect(await getContactAddress(adaId)).toEqual({
+    address_line1: "Keizersgracht 212",
+    address_line2: "Apt 3B",
+    district: null,
+    city: "Amsterdam",
+    state_region: null,
+    postal_code: "1016 DZ",
+    country_code: "NL",
+    country: null,
+  });
+});
+
+test("a China address in Chinese prints postcode first and name last, and saves as it was", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await stubTurnstile(page);
+  await page.goto(`/u/${wangTokens[0]}`);
+
+  await expect(page.getByRole("combobox", { name: "Country" })).toHaveValue("China");
+  await expect(page.getByLabel("Province")).toBeVisible();
+  await expect(page.getByLabel("District")).toBeVisible();
+  const preview = page.getByRole("region", { name: "Envelope preview" });
+  await expect(preview.locator("address")).toHaveText(
+    /上海市浦东新区张江路1500弄6号501室\s*王芳 收\s*CHINA/,
+  );
+
+  await page.getByLabel("Province").fill("上海市");
+  await page.getByLabel("City").fill("上海市");
+  await page.getByLabel("District").fill("浦东新区");
+  await page.getByLabel("Street address").fill("张江路1500弄6号501室");
+  await page.getByLabel("Postal code").fill("201203");
+  await expect(preview.locator("address")).toHaveText(
+    /^201203\s*上海市浦东新区\s*张江路1500弄6号501室\s*王芳 收\s*CHINA$/,
+  );
+  await expect(preview).toContainText("Chinese order: postcode first, name last.");
+  await context.close();
+
+  // Saved without touching the address, the old one-line address stays as it was.
+  const again = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const unchanged = await again.newPage();
+  await stubTurnstile(unchanged);
+  await unchanged.goto(`/u/${wangTokens[1]}`);
+  // A one-word name needs a last name before any save; that rule predates addresses.
+  await unchanged.locator("#last_name").fill("Wang");
+  await unchanged.getByRole("button", { name: "Update my details" }).click();
+  await expect(unchanged).toHaveURL(/\/u\/thanks$/);
+  await again.close();
+  expect(await getContactAddress(wangId)).toMatchObject({
+    address_line1: "上海市浦东新区张江路1500弄6号501室",
+    city: null,
+    postal_code: null,
+    country_code: "CN",
+  });
+});
+
+test("the owner's contact page edits the address with the envelope beside it", async () => {
+  await ownerPage.setViewportSize({ width: 1280, height: 900 });
+  await ownerPage.goto(`/dashboard/contacts/${ukId}`);
+  const preview = ownerPage.getByRole("region", { name: "On the envelope" });
+  await expect(ownerPage.getByRole("combobox", { name: "Country" })).toHaveValue("United Kingdom");
+  await expect(preview).toContainText("Priya Raman & Daniel Okafor");
+  await expect(preview).toContainText("Flat 2, 14 Kestrel Lane");
+  await expect(preview).toContainText("UNITED KINGDOM");
+
+  await ownerPage.getByLabel("Postcode").fill("BS6");
+  await ownerPage.getByRole("button", { name: "Save changes" }).click();
+  await expect(ownerPage.getByText("A UK postcode looks like EC1Y 8SY.")).toBeVisible();
+  await ownerPage.getByLabel("Postcode").fill("bs65qt");
+  await ownerPage.getByRole("button", { name: "Save changes" }).click();
+  await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
+  expect(await getContactAddress(ukId)).toMatchObject({
+    postal_code: "BS6 5QT",
+    country_code: "GB",
+  });
+
+  // Text no code matched stays visible until a country is picked.
+  await ownerPage.goto(`/dashboard/contacts/${unknownId}`);
+  await expect(ownerPage.getByText("Saved as “Atlantis”, which isn't on the list.")).toBeVisible();
+  await expect(ownerPage.getByRole("region", { name: "On the envelope" })).toContainText(
+    "ATLANTIS",
+  );
+  await pickCountry(ownerPage, "gr", "Greece");
+  await ownerPage.getByRole("button", { name: "Save changes" }).click();
+  await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
+  expect(await getContactAddress(unknownId)).toMatchObject({ country_code: "GR", country: null });
+});
+
+test("Settings sets the country the owner mails from", async () => {
+  await ownerPage.goto("/dashboard/settings");
+  const picker = ownerPage.getByRole("combobox", { name: "I mail from" });
+  await expect(picker).toHaveValue("United States");
+  await picker.click();
+  await picker.fill("United King");
+  await ownerPage.keyboard.press("Enter");
+  await expect(picker).toHaveValue("United Kingdom");
+  await ownerPage.getByRole("button", { name: "Save" }).click();
+  await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
+  expect(await getSenderCountry(bookId)).toBe("GB");
+
+  await ownerPage.goto(`/dashboard/contacts/${ukId}`);
+  const preview = ownerPage.getByRole("region", { name: "On the envelope" });
+  await expect(preview).toContainText("No country line: you mail from the UK.");
+  await expect(preview).not.toContainText("UNITED KINGDOM");
+});

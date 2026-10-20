@@ -1,12 +1,12 @@
 import { type Metadata } from "next";
 import { redirect } from "next/navigation";
-import { addressLines } from "@/lib/address";
+import { formatEnvelope } from "@/lib/address";
 import { envelopeLine } from "@/lib/names";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { Notice } from "../../notice";
 import { loadTokenPage } from "../load";
 import { isSpentToken } from "../owner";
-import { storedNames } from "../token-data";
+import { storedNames, tokenAddress } from "../token-data";
 import { confirmTokenAddress } from "./actions";
 import { ConfirmEnvelope } from "./confirm-envelope";
 import { WhyExplainer } from "@/components/why-explainer";
@@ -39,26 +39,23 @@ export default async function ConfirmAddressPage({
   }
   const { contact, enabled_fields, owner_name: ownerName } = loaded.data;
 
-  const address = addressLines({
-    addressLine1: contact.address_line1,
-    addressLine2: contact.address_line2,
-    city: contact.city,
-    stateRegion: contact.state_region,
-    postalCode: contact.postal_code,
-    country: contact.country,
-  });
-  if (address === null) redirect(`/u/${token}`);
-
   const household = envelopeLine(storedNames(contact), {
     partner: enabled_fields.partner_name,
   });
+  const envelope = formatEnvelope(tokenAddress(contact), {
+    name: household,
+    senderCountry: loaded.data.sender_country,
+  });
+  if (envelope === null) redirect(`/u/${token}`);
 
   return (
     <main className="mx-auto w-full max-w-md flex-1 px-4 py-10">
       <ConfirmEnvelope
         action={confirmTokenAddress.bind(null, token)}
         ownerName={ownerName}
-        lines={[household, ...address]}
+        lines={envelope.lines}
+        name={household}
+        street={contact.address_line1 ?? ""}
         updateHref={`/u/${token}`}
         seenAt={loaded.data.updated_at}
       />
