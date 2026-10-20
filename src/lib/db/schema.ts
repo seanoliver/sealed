@@ -90,6 +90,9 @@ export const contactEvents = pgTable("contact_events", {
   diff: jsonb("diff").notNull(),
   recipient: text("recipient").$type<Recipient>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  agentTokenId: uuid("agent_token_id"),
+  agentPreviewId: uuid("agent_preview_id"),
+  contactUpdatedAt: timestamp("contact_updated_at", { withTimezone: true }),
 });
 
 export const agentTokens = pgTable("agent_tokens", {
@@ -102,4 +105,15 @@ export const agentTokens = pgTable("agent_tokens", {
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
+export const agentPreviews = pgTable("agent_previews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  agentTokenId: uuid("agent_token_id").notNull(),
+  kind: text("kind").$type<"update" | "delete">().notNull(),
+  items: jsonb("items").notNull().$type<unknown[]>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }),
 });

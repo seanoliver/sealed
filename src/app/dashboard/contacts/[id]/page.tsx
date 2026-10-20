@@ -107,7 +107,9 @@ export default async function ContactDetailPage({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-foreground">
-                    {sourceLabels[event.source] ?? event.source}
+                    {event.source === "agent"
+                      ? `Agent: ${event.agentName ?? "removed token"}`
+                      : (sourceLabels[event.source] ?? event.source)}
                   </span>
                   <time
                     dateTime={event.createdAt.toISOString()}

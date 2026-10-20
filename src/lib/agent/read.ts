@@ -232,11 +232,22 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
     events: events.slice(0, input.events_limit).map((event) => ({
       id: event.id,
       source: event.source,
+      agent: event.source === "agent" ? event.agentName : undefined,
       recipient: event.recipient,
-      diff: event.diff,
+      diff: fenceUntrusted(event.diff),
       createdAt: event.createdAt,
     })),
   };
+}
+
+const MAX_DIFF_CHARS = 2000;
+
+/** History diffs carry recipient-typed text: cap them and mark them as data. */
+export function fenceUntrusted(value: unknown): string {
+  const json = JSON.stringify(value) ?? "null";
+  const capped =
+    json.length > MAX_DIFF_CHARS ? `${json.slice(0, MAX_DIFF_CHARS)}… (truncated)` : json;
+  return `<untrusted-data>${capped.replaceAll("</untrusted-data>", "")}</untrusted-data>`;
 }
 
 export const bookSummaryInput = z.object({});

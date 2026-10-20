@@ -6,20 +6,15 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
-import { dbAdmin } from "@/lib/db/admin";
 import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
-import { sameJsonb } from "@/lib/db/jsonb";
-import { books, contactEvents, contacts } from "@/lib/db/schema";
+import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { isUntouchedPrefill, type Kid, type StoredNames } from "@/lib/names";
+import { isUntouchedPrefill, type StoredNames } from "@/lib/names";
 import {
   CONTACT_FIELDS,
-  contactDetailsSchema,
   type ContactDetailsInput,
   type ContactFormValues,
-  SAME_PARTNER_EMAIL,
-  samePartnerEmail,
 } from "@/lib/validation/contact";
 import {
   householdSchema,
@@ -29,6 +24,22 @@ import {
   type HouseholdInput,
   type HouseholdValues,
 } from "@/lib/validation/household";
+import {
+  changedFields,
+  type ContactRow,
+  createContactAs,
+  DETAIL_FIELDS,
+  type DetailField,
+  DUPLICATE_EMAIL,
+  GENERIC_ERROR,
+  parseDetails,
+  type ParsedDetails,
+  patchContactAs,
+  recordContactEvent,
+  type Row,
+  rowToSnapshot,
+  storedNames,
+} from "./write";
 
 export type ContactFormState = {
   error?: string;
@@ -45,6 +56,8 @@ export type ContactFormState = {
 
 export type DeleteContactState = { error?: string };
 
+export type PatchContactResult = { error?: string };
+
 const uuidSchema = z.uuid();
 
 function readContactForm(formData: FormData): ContactFormValues {
@@ -53,97 +66,13 @@ function readContactForm(formData: FormData): ContactFormValues {
   ) as ContactFormValues;
 }
 
-const NAME_FIELDS = [
-  "first_name",
-  "last_name",
-  "partner_first_name",
-  "partner_last_name",
-  "kids",
-] as const;
-const SNAPSHOT_FIELDS = [...CONTACT_FIELDS, ...NAME_FIELDS] as const;
-type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
-
-/** Field snapshot keyed by form/schema names, for audit diffs. */
-type Snapshot = Record<SnapshotField, string | readonly Kid[] | null>;
-
-type ContactRow = typeof contacts.$inferSelect;
-type Row = ReturnType<typeof householdToRow> & ReturnType<typeof contactDetailsToRow>;
-
-function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
-  return {
-    full_name: row.fullName,
-    partner_name: row.partnerName,
-    kids_names: row.kidsNames,
-    email: row.email,
-    partner_email: row.partnerEmail,
-    birthday: row.birthday,
-    address_line1: row.addressLine1,
-    address_line2: row.addressLine2,
-    city: row.city,
-    state_region: row.stateRegion,
-    postal_code: row.postalCode,
-    country: row.country,
-    notes: row.notes,
-    first_name: row.firstName,
-    last_name: row.lastName,
-    partner_first_name: row.partnerFirstName,
-    partner_last_name: row.partnerLastName,
-    kids: row.kids,
-  };
-}
-
 function inputToRow(details: ContactDetailsInput, household: HouseholdInput): Row {
   return { ...householdToRow(household), ...contactDetailsToRow(details) };
-}
-
-/** Non-null fields only — keeps create diffs compact. */
-function definedFields(snap: Snapshot): Partial<Snapshot> {
-  const out: Partial<Snapshot> = {};
-  for (const field of SNAPSHOT_FIELDS) {
-    if (snap[field] !== null) out[field] = snap[field];
-  }
-  return out;
-}
-
-/** Changed fields only, or undefined for a no-op save (no audit row). */
-function changedFields(
-  before: Snapshot,
-  after: Snapshot,
-): { before: Partial<Snapshot>; after: Partial<Snapshot> } | undefined {
-  const diff = { before: {} as Partial<Snapshot>, after: {} as Partial<Snapshot> };
-  let changed = false;
-  for (const field of SNAPSHOT_FIELDS) {
-    if (!sameJsonb(before[field], after[field])) {
-      diff.before[field] = before[field];
-      diff.after[field] = after[field];
-      changed = true;
-    }
-  }
-  return changed ? diff : undefined;
 }
 
 type ParsedContactForm =
   | { ok: true; details: ContactDetailsInput; household: HouseholdInput }
   | { ok: false; state: ContactFormState };
-
-type ParsedDetails =
-  | { success: true; data: ContactDetailsInput }
-  | { success: false; error: string; field?: "partner_email" };
-
-function parseDetails(values: Partial<ContactFormValues>): ParsedDetails {
-  const details = contactDetailsSchema.safeParse(values);
-  if (!details.success) {
-    const issue = details.error.issues[0];
-    return {
-      success: false,
-      error: issue?.message ?? "Invalid input",
-      field: issue?.path[0] === "partner_email" ? "partner_email" : undefined,
-    };
-  }
-  return samePartnerEmail(details.data)
-    ? { success: false, error: SAME_PARTNER_EMAIL, field: "partner_email" }
-    : details;
-}
 
 function detailsErrorState(
   details: Extract<ParsedDetails, { success: false }>,
@@ -188,26 +117,6 @@ function parseContactForm(
   };
 }
 
-/**
- * Audit append — the ONLY sanctioned dbAdmin use in this module.
- * contact_events is client-unwritable by design (no insert policy/grant for
- * `authenticated`), so the row is written via the admin connection after the
- * RLS-scoped write has already succeeded. Best-effort: an audit failure is
- * logged, never surfaced as a user-facing error for a write that committed.
- */
-async function recordContactEvent(
-  contactId: string,
-  diff: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await dbAdmin
-      .insert(contactEvents)
-      .values({ contactId, source: "owner", diff });
-  } catch (err) {
-    logDbError("[ct] [recordContactEvent] audit insert failed", err);
-  }
-}
-
 export async function createContact(
   _prevState: ContactFormState,
   formData: FormData,
@@ -220,44 +129,13 @@ export async function createContact(
     values: readContactForm(formData),
     household: readHouseholdValues(formData),
   };
-  const row = inputToRow(parsed.details, parsed.household);
-
-  let inserted: { id: string } | undefined;
-  try {
-    inserted = await withRls(claims, async (tx) => {
-      // Resolve the book inside the RLS tx — never trust a client bookId.
-      const [book] = await tx
-        .select({ id: books.id })
-        .from(books)
-        .where(eq(books.ownerId, claims.sub))
-        .limit(1);
-      if (!book) return undefined;
-      const [created] = await tx
-        .insert(contacts)
-        .values({ bookId: book.id, ...row })
-        .returning({ id: contacts.id });
-      return created;
-    });
-  } catch (err) {
-    if (isUniqueViolation(err, "contacts_book_email_unique")) {
-      return {
-        error: "You already have a contact with this email",
-        ...echo,
-      };
-    }
-    logDbError("[ct] [createContact] insert failed", err);
-    return {
-      error: "Something went wrong. Please try again.",
-      ...echo,
-    };
-  }
-  if (!inserted) {
-    return { error: "Set up your address book first.", ...echo };
-  }
-
-  await recordContactEvent(inserted.id, {
-    after: definedFields(rowToSnapshot(row)),
-  });
+  const created = await createContactAs(
+    claims,
+    { details: parsed.details, household: parsed.household },
+    { source: "owner" },
+  );
+  if (!created.ok) return { error: created.error, ...echo };
+  const inserted = created.value;
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contacts/${inserted.id}`);
@@ -325,16 +203,10 @@ export async function updateContact(
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
-      return {
-        error: "You already have a contact with this email",
-        ...echo,
-      };
+      return { error: DUPLICATE_EMAIL, ...echo };
     }
     logDbError("[ct] [updateContact] update failed", err);
-    return {
-      error: "Something went wrong. Please try again.",
-      ...echo,
-    };
+    return { error: GENERIC_ERROR, ...echo };
   }
   if (!before) {
     return { error: "Contact not found.", ...echo };
@@ -342,19 +214,12 @@ export async function updateContact(
   if (invalid) return invalid;
 
   const diff = changedFields(rowToSnapshot(before), rowToSnapshot({ ...before, ...row }));
-  if (diff) await recordContactEvent(id, diff);
+  if (diff) await recordContactEvent({ contactId: id, diff }, { source: "owner" });
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contacts/${id}`);
   return { saved: true, ...echo };
 }
-
-export type PatchContactResult = { error?: string };
-
-const DETAIL_FIELDS = CONTACT_FIELDS.filter(
-  (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",
-);
-type DetailField = (typeof DETAIL_FIELDS)[number];
 
 // No name fields here: writing full_name alone clears the structured names.
 const patchSchema = z.strictObject({
@@ -375,29 +240,6 @@ export type ContactPatch = {
   namesBase?: StoredNames;
 };
 
-const NAMES_CHANGED =
-  "This contact's names changed since you opened them. Reload to see the new names.";
-
-function storedNames(row: ContactRow): StoredNames {
-  return {
-    fullName: row.fullName,
-    partnerName: row.partnerName,
-    kidsNames: row.kidsNames,
-    firstName: row.firstName,
-    lastName: row.lastName,
-    partnerFirstName: row.partnerFirstName,
-    partnerLastName: row.partnerLastName,
-    kids: row.kids,
-  };
-}
-
-function rowToDetailValues(row: ContactRow): Record<DetailField, string> {
-  const snap = rowToSnapshot(row);
-  return Object.fromEntries(
-    DETAIL_FIELDS.map((field) => [field, snap[field] ?? ""]),
-  ) as Record<DetailField, string>;
-}
-
 export async function patchContact(
   id: string,
   patch: ContactPatch,
@@ -406,63 +248,9 @@ export async function patchContact(
   if (!uuidSchema.safeParse(id).success) return { error: "Contact not found." };
   const fields = patchSchema.safeParse(patch);
   if (!fields.success) return { error: "Invalid input" };
-  const names = fields.data.household;
 
-  type Outcome =
-    | { kind: "missing" }
-    | { kind: "invalid"; error: string }
-    | { kind: "saved"; before: Snapshot; after: Snapshot };
-  let outcome: Outcome;
-  try {
-    outcome = await withRls(claims, async (tx): Promise<Outcome> => {
-      const [book] = await tx
-        .select({ id: books.id })
-        .from(books)
-        .where(eq(books.ownerId, claims.sub))
-        .limit(1);
-      if (!book) return { kind: "missing" };
-      const [existing] = await tx
-        .select()
-        .from(contacts)
-        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
-        .limit(1)
-        .for("update");
-      if (!existing) return { kind: "missing" };
-      if (names && !sameJsonb(storedNames(existing), fields.data.namesBase)) {
-        return { kind: "invalid", error: NAMES_CHANGED };
-      }
-      const parsed = parseDetails({
-        ...rowToDetailValues(existing),
-        ...fields.data.values,
-      });
-      if (!parsed.success) return { kind: "invalid", error: parsed.error };
-      const row = {
-        ...contactDetailsToRow(parsed.data),
-        ...(names ? householdToRow(names) : {}),
-      };
-      const before = rowToSnapshot(existing);
-      const after = rowToSnapshot({ ...existing, ...row });
-      // A no-op save must not bump updated_at.
-      if (changedFields(before, after)) {
-        await tx
-          .update(contacts)
-          .set(row)
-          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
-      }
-      return { kind: "saved", before, after };
-    });
-  } catch (err) {
-    if (isUniqueViolation(err, "contacts_book_email_unique")) {
-      return { error: "You already have a contact with this email" };
-    }
-    logDbError("[ct] [patchContact] update failed", err);
-    return { error: "Something went wrong. Please try again." };
-  }
-  if (outcome.kind === "missing") return { error: "Contact not found." };
-  if (outcome.kind === "invalid") return { error: outcome.error };
-
-  const diff = changedFields(outcome.before, outcome.after);
-  if (diff) await recordContactEvent(id, diff);
+  const result = await patchContactAs(claims, id, fields.data, { source: "owner" });
+  if (!result.ok) return { error: result.error };
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contacts/${id}`);
