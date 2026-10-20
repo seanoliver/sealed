@@ -40,9 +40,9 @@ Give an agent such as Claude Code access to an address book through the remote M
 
 ## Verification
 
-- In Claude Code, `/mcp` lists `sealed` as connected with fifteen tools (the list does not depend on scopes; calling a tool outside the token's scopes answers 403):
+- In Claude Code, `/mcp` lists `sealed` as connected with twelve tools (the list does not depend on scopes; calling a tool outside the token's scopes answers 403):
   - `read`: `search_contacts`, `get_contact`, `book_summary`, `address_gaps`, `find_duplicates`, `list_review_queue`, `export_contacts`.
-  - `write`: `update_contact`, `create_contact`, `preview_bulk_update`, `apply_bulk_update`, `preview_delete_contacts`, `request_delete_contacts`, `resolve_review_item`, `undo_agent_change`.
+  - `write`: `update_contact`, `create_contact`, `undo_agent_change`, `preview_delete_contacts`, `request_delete_contacts`.
 - An edit made by the agent appears under **Recent agent changes** on the Agents page and as "Agent: <token name>" in the contact's history.
 - Ask for a book summary; the counts match the dashboard.
 - `agent_tokens.last_used_at` for the token is set (it updates at most once a minute).
@@ -56,12 +56,14 @@ Give an agent such as Claude Code access to an address book through the remote M
 
 ## How writes work
 
-- `update_contact`, `create_contact` and `resolve_review_item` apply at once, with the dashboard's validation (they call the same `patchContactAs`, `createContactAs` and review cores). Each returns an `event_id`.
-- Every agent write adds a `contact_events` row with `source = 'agent'`, the token id and the contact's `updated_at` after the write.
-- Bulk edits take two calls. `preview_bulk_update({changes: [{id, fields}]})` validates up to 500 contacts, refuses emails another contact holds (including swaps) or that repeat within the batch, and stores the exact diff in `agent_previews` for 30 minutes, bound to the token. `apply_bulk_update({preview_id})` claims the preview once and applies it in one transaction, refusing everything if any contact's `updated_at` moved since the preview. A bulk apply shows as one "Bulk: n contacts" entry in the feed, with **Undo all**, which skips changes whose contact changed since and says how many it skipped.
-- Agents can't delete. `preview_delete_contacts({ids})` lists what would go, and `request_delete_contacts({preview_id})` hands it to the owner. The request waits at the top of **Recent agent changes** as "Pending deletion: n contacts" for 7 days. **Delete n contacts** (after a confirm) deletes exactly those contacts, refusing if any changed since the preview; **Discard** keeps them. No MCP tool is marked destructive.
-- `undo_agent_change({event_id})`, and **Undo** on the Agents page, put the replaced values back unless the contact changed since. Changes that added a contact can't be undone, and deletes can't be undone at all.
-- Once a preview is applied, approved or discarded, only names (and contact ids for updates) stay in it. Finished previews are deleted after 30 days, and unfinished ones when they expire; the change history stays.
+- `update_contact` and `create_contact` save at once, with the dashboard's validation (they call the same `patchContactAs` and `createContactAs`), and return an `event_id`. Agents can read the review queue but not resolve it.
+- Each agent write records a `contact_events` row (`source = 'agent'`, the token id, the contact's `updated_at` after the write) in the same transaction as the write: an RLS insert policy lets the owner's session add only agent rows for their own live token. If the history can't be written, nothing is saved.
+- Two kinds of change wait for the owner under **Waiting for you** on the Agents page, for 7 days:
+  - An `update_contact` that changes an existing contact's `email` or `partner_email` saves the other fields and queues the email change; the result carries `pending_email_change`. `create_contact` sets emails directly.
+  - `preview_delete_contacts({ids})` lists what would go, and `request_delete_contacts({preview_id})` hands it to the owner. No tool deletes, and none is marked destructive.
+- **Approve** (after a confirm) runs in one transaction: it locks the request, checks it is still open and unexpired, locks the contacts and refuses, by name, if any changed since the agent asked, writes the change and its history, and marks the request applied. **Discard** keeps everything. Revoking a token discards its open requests.
+- `undo_agent_change({event_id})`, and **Undo** on the Agents page, put the replaced values back unless the contact changed since. Changes that added a contact can't be undone, deletes can't be undone at all, and only the owner can undo an email change.
+- Requests hold contact details until they are approved or discarded; then only names (and the contact id for email changes) stay. Requests are pruned on each Agents page load and each new delete preview: unfinished ones once expired, finished ones 30 days after they finished. The change history stays.
 - No tool sends email or touches recipient links (`update_tokens`).
 
 ## Failure recovery
@@ -69,7 +71,8 @@ Give an agent such as Claude Code access to an address book through the remote M
 - **401 with a token:** the token is malformed, unknown, revoked or expired, or was minted against a different database. Mint a new one.
 - **503 with `Retry-After`:** the database could not be reached while checking the token. The token is probably fine; retry later and check the logs for `[mc] [auth] token verification failed`. Do not mint a new token.
 - **403 `insufficient_scope`:** the token lacks the tool's scope. Create a token with the scope; scopes cannot be edited.
-- **Apply refused because contacts changed:** someone edited one of the contacts after the preview. Make a new preview and apply that. For a pending deletion, discard it and ask the agent for a new one.
+- **Approval refused because a contact changed:** someone edited the contact after the agent asked. Discard the request and ask the agent for a new one.
+- **"This contact changed since you opened it" on the contact page:** an agent (or another tab) saved the contact after the page loaded. Reload and edit again.
 - **Leaked token:** press **Revoke** next to it on the Agents page. Without the dashboard, run against the same database:
 
   ```sql
@@ -79,9 +82,9 @@ Give an agent such as Claude Code access to an address book through the remote M
 ## References
 
 - `src/app/api/mcp/route.ts`: the route, using `createMcpHandler` and `withMcpAuth` from `mcp-handler` 2.2.0.
-- `src/lib/agent/`: tokens and verifier (`tokens.ts`), scopes (`scopes.ts`), read tools (`read.ts`), write tool inputs (`write.ts`), previews (`bulk.ts`), change feed and undo (`changes.ts`), MCP registration with `registerReadTool`/`registerWriteTool` (`mcp.ts`).
-- `src/app/dashboard/contacts/write.ts` and `src/app/dashboard/review/resolve.ts`: contact and review logic shared by the dashboard and the agent.
+- `src/lib/agent/`: tokens and verifier (`tokens.ts`), scopes (`scopes.ts`), read tools (`read.ts`), write tool inputs (`write.ts`), delete and email requests (`requests.ts`), change feed and undo (`changes.ts`), MCP registration with `registerReadTool`/`registerWriteTool` (`mcp.ts`).
+- `src/app/dashboard/contacts/write.ts`: contact writes shared by the dashboard and the agent.
 - `src/app/dashboard/agents/`: the Agents page. `src/app/dashboard/settings/agent-token-actions.ts`: create, list and revoke server actions.
 - `supabase/migrations/20261021120000_agent_tokens.sql`: table, RLS, column grants, `private.verify_agent_token`.
-- `supabase/migrations/20261023120000_agent_changes.sql`: `agent_previews`, and the `agent` source and columns on `contact_events`.
+- `supabase/migrations/20261023120000_agent_changes.sql`: `agent_previews` (delete and email requests), the `agent` source and columns on `contact_events`, and the RLS policies that let agent history and email requests be written in the owner's transaction.
 - `node_modules/mcp-handler/README.md`: protocol support and auth wrapper.
