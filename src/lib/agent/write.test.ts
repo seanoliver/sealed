@@ -240,6 +240,23 @@ describe("agent write tools", () => {
       expect(await approveRequest(ctx.claims, first)).toEqual({ ok: false, error: REQUEST_FINISHED });
     });
 
+    it("merges an email change and a later partner email change into one request", async () => {
+      await requestEmail(ANA, "ana.new@wt.test");
+      const second = await update({ id: ANA, fields: { partner_email: "ben@wt.test" } });
+      expect(second.pending_email_change!.changes).toEqual({
+        email: ["ana@wt.test", "ana.new@wt.test"],
+        partner_email: [null, "ben@wt.test"],
+      });
+      const pending = await listPendingRequests(ctx.claims);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toMatchObject({
+        previewId: second.pending_email_change!.request_id,
+        changes: { email: ["ana@wt.test", "ana.new@wt.test"], partner_email: [null, "ben@wt.test"] },
+      });
+      expect(await approveRequest(ctx.claims, pending[0].previewId)).toMatchObject({ ok: true });
+      expect(await stored(ANA)).toMatchObject({ email: "ana.new@wt.test", partnerEmail: "ben@wt.test" });
+    });
+
     it("can clear an email, with a history row once approved", async () => {
       const requestId = (await update({ id: ANA, fields: { email: null } })).pending_email_change!.request_id;
       expect((await stored(ANA)).email).toBe("ana@wt.test");

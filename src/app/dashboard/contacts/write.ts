@@ -360,21 +360,36 @@ export async function patchContactAs(
       }
       let emailRequest: PatchOutcome["emailRequest"];
       if (holding && actor.source === "agent") {
-        // One open email change per contact and token: a retry replaces the last one.
-        await tx.execute(sql`
-          update public.agent_previews
-          set discarded_at = now(),
-            items = jsonb_build_array(jsonb_build_object('id', items->0->'id', 'name', items->0->'name'))
+        // One open email change per contact and token: the new one replaces it,
+        // keeping the old one's changes to fields this call didn't mention.
+        const open = await tx.execute<{ id: string; changes: EmailChange }>(sql`
+          select id, items->0->'changes' as changes from public.agent_previews
           where agent_token_id = ${actor.tokenId} and kind = 'email' and items->0->>'id' = ${id}
-            and requested_at is not null and applied_at is null and discarded_at is null`);
-        const items = [{ id, name: householdLine(pickStoredNames(existing)), changes: held }];
+            and requested_at is not null and applied_at is null and discarded_at is null
+          for update`);
+        const changes: EmailChange = {};
+        for (const previous of open) {
+          for (const field of EMAIL_FIELDS) {
+            const change = previous.changes[field];
+            if (change && !(field in (request.values ?? {}))) changes[field] = change;
+          }
+        }
+        Object.assign(changes, held);
+        if (open.length > 0) {
+          await tx.execute(sql`
+            update public.agent_previews
+            set discarded_at = now(),
+              items = jsonb_build_array(jsonb_build_object('id', items->0->'id', 'name', items->0->'name'))
+            where id in ${open.map((row) => row.id)}`);
+        }
+        const items = [{ id, name: householdLine(pickStoredNames(existing)), changes }];
         const [queued] = await tx.execute<{ id: string }>(sql`
           insert into public.agent_previews
             (user_id, agent_token_id, kind, items, requested_at, expires_at)
           values (${claims.sub}, ${actor.tokenId}, 'email', ${JSON.stringify(items)}::jsonb, now(),
             now() + make_interval(days => ${EMAIL_REQUEST_TTL_DAYS}::int))
           returning id`);
-        emailRequest = { id: queued.id, changes: held };
+        emailRequest = { id: queued.id, changes };
       }
       return { kind: "saved", diff: plan.diff, eventId, emailRequest };
     });
