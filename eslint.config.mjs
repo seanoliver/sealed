@@ -61,7 +61,12 @@ const eslintConfig = defineConfig([
       "src/app/dashboard/contacts/actions.test.ts",
       "src/lib/queries/contacts.test.ts",
       "src/lib/queries/submissions.test.ts",
+      "src/lib/queries/export.test.ts",
       "src/app/dashboard/review/actions.test.ts",
+      "src/lib/agent/tokens.ts",
+      "src/lib/agent/*.test.ts",
+      "src/app/api/mcp/route.test.ts",
+      "src/app/dashboard/settings/agent-token-actions.test.ts",
     ],
     rules: {
       "no-restricted-imports": ["error", { patterns: [supabaseAdminImport] }],

@@ -76,21 +76,7 @@ export function toSheetRow(
     postal_code: row.postalCode ?? "",
     country: row.country ?? "",
   };
-  // A person whose email was removed no longer counts: their old bounce
-  // can't be resent, so it must not hold the row in Needs attention.
-  const emailed = (["primary", "partner"] as const).filter(
-    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
-  );
-  const sendOf = (recipient: Recipient): RecipientSend =>
-    emailed.includes(recipient)
-      ? row.sendStatuses[recipient]
-      : { status: "none", failureReason: null };
-  const combined = combineSends(sendOf("primary"), sendOf("partner"));
-  const attention = row.updatedAfterSend
-    ? []
-    : emailed
-        .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
-        .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status }));
+  const { emailed, status, failureReason, attention } = effectiveSends(row);
   return {
     id: row.id,
     names: {
@@ -104,8 +90,8 @@ export function toSheetRow(
       kids: row.kids,
     },
     values,
-    status: row.updatedAfterSend ? "updated" : combined.status,
-    failureReason: combined.failureReason,
+    status,
+    failureReason,
     people:
       emailed.length === 2
         ? emailed.map((recipient) => ({
@@ -118,6 +104,38 @@ export function toSheetRow(
     answers: answer ? twoAnswers(row, answer) : null,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
+  };
+}
+
+export type EffectiveSends = {
+  emailed: Recipient[];
+  status: StatusKey;
+  failureReason: FailureReason | null;
+  attention: { recipient: Recipient; status: SendStatus }[];
+};
+
+export function effectiveSends(
+  row: Pick<ContactListRow, "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend">,
+): EffectiveSends {
+  // A person whose email was removed no longer counts: their old bounce
+  // can't be resent, so it must not hold the row in Needs attention.
+  const emailed = (["primary", "partner"] as const).filter(
+    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
+  );
+  const sendOf = (recipient: Recipient): RecipientSend =>
+    emailed.includes(recipient)
+      ? row.sendStatuses[recipient]
+      : { status: "none", failureReason: null };
+  const combined = combineSends(sendOf("primary"), sendOf("partner"));
+  return {
+    emailed,
+    status: row.updatedAfterSend ? "updated" : combined.status,
+    failureReason: combined.failureReason,
+    attention: row.updatedAfterSend
+      ? []
+      : emailed
+          .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
+          .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status })),
   };
 }
 

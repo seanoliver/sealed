@@ -9,6 +9,8 @@ describe("proxy matcher", () => {
     ["/api/webhooks/resend", false],
     ["/api/healthz", true],
     ["/api/health/x", true],
+    ["/api/mcp", false],
+    ["/api/mcpx", true],
     ["/dashboard", true],
   ])("%s runs the session proxy: %s", (url, expected) => {
     expect(unstable_doesMiddlewareMatch({ config, url })).toBe(expected);

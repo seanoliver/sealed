@@ -28,7 +28,8 @@ export const config = {
      *   privacy: no session work on recipient-facing pages
      * - /api/webhooks/* (signature-verified, no cookies)
      * - /api/health (cron health check, bearer-secret auth, no cookies)
+     * - /api/mcp (agent MCP server, bearer-token auth, no cookies)
      */
-    "/((?!_next/static|_next/image|favicon.ico|b/|u/|api/webhooks/|api/health$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|txt|xml|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|b/|u/|api/webhooks/|api/health$|api/mcp$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|txt|xml|woff2?)$).*)",
   ],
 };
