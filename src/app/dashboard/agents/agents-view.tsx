@@ -5,7 +5,12 @@ import { type UndoState } from "@/lib/agent/changes";
 import { type AgentScope } from "@/lib/agent/scopes";
 import { cn } from "@/lib/utils";
 import { createAgentToken, revokeAgentToken } from "../settings/agent-token-actions";
-import { undoChange } from "./actions";
+import {
+  approvePendingDeletion,
+  discardPendingDeletion,
+  undoBulk,
+  undoChange,
+} from "./actions";
 
 export type ChangeItem = {
   eventId: string;
@@ -17,8 +22,16 @@ export type ChangeItem = {
 
 export type FeedItem =
   | { kind: "change"; key: string; tokenName: string; when: string; change: ChangeItem }
-  | { kind: "bulk"; key: string; tokenName: string; when: string; changes: ChangeItem[] }
+  | { kind: "bulk"; key: string; tokenName: string; when: string; count: number; changes: ChangeItem[] }
   | { kind: "deleted"; key: string; tokenName: string; when: string; names: string[] };
+
+export type PendingItem = {
+  previewId: string;
+  tokenName: string;
+  when: string;
+  expires: string;
+  names: string[];
+};
 
 export type TokenItem = {
   id: string;
@@ -54,10 +67,12 @@ export function AgentsView({
   mcpUrl,
   tokens,
   feed,
+  pending,
 }: {
   mcpUrl: string;
   tokens: TokenItem[];
   feed: FeedItem[];
+  pending: PendingItem[];
 }) {
   const [tab, setTab] = useState<"changes" | "connect">("changes");
   return (
@@ -70,7 +85,7 @@ export function AgentsView({
       >
         {(
           [
-            ["changes", "Recent changes"],
+            ["changes", pending.length > 0 ? `Recent changes (${pending.length})` : "Recent changes"],
             ["connect", "Connect"],
           ] as const
         ).map(([value, label]) => (
@@ -94,7 +109,7 @@ export function AgentsView({
           <ConnectPanel mcpUrl={mcpUrl} tokens={tokens} />
         </div>
         <div className={cn(tab === "changes" ? "block" : "hidden", "lg:block")}>
-          <ChangesPanel feed={feed} />
+          <ChangesPanel feed={feed} pending={pending} />
         </div>
       </div>
     </main>
@@ -159,7 +174,7 @@ function ConnectPanel({ mcpUrl, tokens }: { mcpUrl: string; tokens: TokenItem[] 
             checked={scopes.write}
             onChange={(write) => setScopes((current) => ({ ...current, write }))}
             title="Fix and fill in."
-            body="Edit, add and delete contacts, and work the review queue. Bulk changes always show you a preview first."
+            body="Edit and add contacts, work the review queue, and ask you to delete some. Bulk changes always show you a preview first."
           />
           <ScopeOption
             checked={false}
@@ -354,12 +369,19 @@ function TokenRow({ token }: { token: TokenItem }) {
   );
 }
 
-function ChangesPanel({ feed }: { feed: FeedItem[] }) {
+function ChangesPanel({ feed, pending }: { feed: FeedItem[]; pending: PendingItem[] }) {
   return (
     <section aria-labelledby="changes-heading" className="flex flex-col gap-3 lg:rounded-xl lg:border lg:border-border lg:bg-card lg:p-6 lg:shadow-sm">
       <h2 id="changes-heading" className="sr-only font-serif text-[22px] leading-tight text-foreground lg:not-sr-only">
         Recent agent changes
       </h2>
+      {pending.length > 0 ? (
+        <ul aria-label="Waiting for you" className="flex flex-col gap-3">
+          {pending.map((request) => (
+            <PendingDeletion key={request.previewId} request={request} />
+          ))}
+        </ul>
+      ) : null}
       <p className="text-sm text-muted-foreground">
         Everything an agent changed, newest first. Undo puts the old values back.
       </p>
@@ -378,6 +400,89 @@ function ChangesPanel({ feed }: { feed: FeedItem[] }) {
   );
 }
 
+const contactCount = (count: number) => (count === 1 ? "1 contact" : `${count} contacts`);
+
+function PendingDeletion({ request }: { request: PendingItem }) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const count = contactCount(request.names.length);
+
+  function run(action: typeof approvePendingDeletion) {
+    setError(null);
+    startTransition(async () => {
+      const result = await action({ previewId: request.previewId });
+      if (result.error) setError(result.error);
+      setConfirming(false);
+    });
+  }
+
+  return (
+    <li className="flex flex-col gap-2.5 rounded-xl border border-destructive/40 bg-destructive/5 p-4">
+      <div className="flex flex-col gap-0.5">
+        <strong className="text-sm font-semibold text-foreground">Pending deletion: {count}</strong>
+        <span className="text-xs text-muted-foreground">
+          Asked {request.when} by {request.tokenName} · expires {request.expires}
+        </span>
+      </div>
+      <details className="group text-sm text-foreground">
+        <summary className="cursor-pointer list-none font-semibold text-primary [&::-webkit-details-marker]:hidden">
+          <span className="group-open:hidden">Show {request.names.length === 1 ? "the contact" : `all ${request.names.length}`}</span>
+          <span className="hidden group-open:inline">Hide</span>
+        </summary>
+        <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-3">
+          {request.names.map((name, index) => (
+            <li key={index}>{name}</li>
+          ))}
+        </ul>
+      </details>
+      <p className="text-xs text-muted-foreground">
+        Deleting also removes their history and send records. It can&apos;t be undone.
+      </p>
+      {confirming ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-foreground">Delete {count} for good?</span>
+          <button
+            type="button"
+            onClick={() => run(approvePendingDeletion)}
+            disabled={pending}
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-destructive px-4 text-sm font-semibold text-white transition-colors hover:bg-destructive/85 disabled:opacity-50 sm:h-8 sm:px-3 sm:text-[13px]"
+          >
+            {pending ? "Deleting…" : "Yes, delete"}
+          </button>
+          <button type="button" onClick={() => setConfirming(false)} className={outlineButton}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={pending}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-destructive/50 bg-card px-3.5 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 sm:h-8 sm:px-3 sm:text-[13px]"
+          >
+            Delete {count}
+          </button>
+          <button
+            type="button"
+            onClick={() => run(discardPendingDeletion)}
+            disabled={pending}
+            className={outlineButton}
+          >
+            Discard
+          </button>
+        </div>
+      )}
+      {error ? (
+        <p role="alert" className={alertClasses}>
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 const rowClasses =
   "rounded-xl border border-border bg-card p-3.5 lg:rounded-none lg:border-0 lg:border-t lg:border-border/70 lg:bg-transparent lg:px-0 lg:py-2.5";
 
@@ -393,31 +498,71 @@ function FeedRow({ item }: { item: FeedItem }) {
     return (
       <li className={cn(rowClasses, "flex flex-col gap-0.5")}>
         <span className="text-sm text-foreground">
-          <strong className="font-semibold">Deleted {item.names.length === 1 ? "1 contact" : `${item.names.length} contacts`}</strong>
+          <strong className="font-semibold">Deleted {contactCount(item.names.length)}</strong>
           {" · "}
           {item.names.slice(0, 3).join(", ")}
           {item.names.length > 3 ? ` and ${item.names.length - 3} more` : ""}
         </span>
         <span className="text-xs text-muted-foreground">
-          {item.when} · {item.tokenName} · Deletes can&apos;t be undone
+          {item.when} · {item.tokenName} · approved by you · Deletes can&apos;t be undone
         </span>
       </li>
     );
   }
+  return <BulkRow item={item} />;
+}
+
+function BulkRow({ item }: { item: Extract<FeedItem, { kind: "bulk" }> }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const undoable = item.changes.filter((change) => change.undo.canUndo).length;
+
+  function undoAll() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await undoBulk({ previewId: item.key });
+      setMessage(
+        result.error ??
+          `Undid ${contactCount(result.undone ?? 0)}.${
+            result.skipped ? ` Skipped ${result.skipped} that changed since or were already undone.` : ""
+          }`,
+      );
+    });
+  }
+
   return (
     <li className={rowClasses}>
       <details className="group">
-        <summary className="flex cursor-pointer list-none flex-col gap-0.5 [&::-webkit-details-marker]:hidden">
-          <span className="text-sm text-foreground">
-            <strong className="font-semibold">Bulk: {item.changes.length} contacts</strong>
-            {" · "}
-            <span className="font-semibold text-primary group-open:hidden">See all</span>
-            <span className="hidden font-semibold text-primary group-open:inline">Hide</span>
+        <summary className="flex cursor-pointer list-none flex-col gap-2 lg:flex-row lg:items-center lg:justify-between [&::-webkit-details-marker]:hidden">
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm text-foreground">
+              <strong className="font-semibold">Bulk: {contactCount(item.count)}</strong>
+              {" · "}
+              <span className="font-semibold text-primary group-open:hidden">See all</span>
+              <span className="hidden font-semibold text-primary group-open:inline">Hide</span>
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {item.when} · {item.tokenName}
+            </span>
           </span>
-          <span className="text-xs text-muted-foreground">
-            {item.when} · {item.tokenName}
-          </span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              undoAll();
+            }}
+            disabled={undoable === 0 || pending}
+            title={undoable === 0 ? "Nothing left to undo" : undefined}
+            className={cn(outlineButton, "self-start lg:self-auto")}
+          >
+            {pending ? "Undoing…" : "Undo all"}
+          </button>
         </summary>
+        {message ? (
+          <p role="status" className="mt-2 text-xs text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
         <ul className="mt-2 flex flex-col border-l-2 border-border pl-3">
           {item.changes.map((change) => (
             <li key={change.eventId} className="py-2">
@@ -425,6 +570,11 @@ function FeedRow({ item }: { item: FeedItem }) {
             </li>
           ))}
         </ul>
+        {item.count > item.changes.length ? (
+          <p className="text-xs text-muted-foreground">
+            {item.count - item.changes.length} more were deleted since.
+          </p>
+        ) : null}
       </details>
     </li>
   );

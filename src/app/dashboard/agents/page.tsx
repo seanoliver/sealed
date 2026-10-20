@@ -1,7 +1,8 @@
+import { listPendingDeletions } from "@/lib/agent/bulk";
 import { listAgentChanges, type FeedEntry } from "@/lib/agent/changes";
 import { listAgentTokens } from "@/lib/agent/tokens";
 import { requireUser, type SessionClaims } from "@/lib/auth";
-import { AgentsView, type FeedItem, type TokenItem } from "./agents-view";
+import { AgentsView, type FeedItem, type PendingItem, type TokenItem } from "./agents-view";
 
 export const metadata = { title: "Agents" };
 
@@ -36,6 +37,7 @@ function toFeedItem(entry: FeedEntry, now: number): FeedItem {
       key: entry.previewId,
       tokenName,
       when,
+      count: entry.count,
       changes: entry.changes.map((change) => ({ ...change, when: timeFrom(change.at, now) })),
     };
   }
@@ -43,7 +45,11 @@ function toFeedItem(entry: FeedEntry, now: number): FeedItem {
 }
 
 async function loadView(claims: SessionClaims) {
-  const [tokens, feed] = await Promise.all([listAgentTokens(claims), listAgentChanges(claims)]);
+  const [tokens, feed, pending] = await Promise.all([
+    listAgentTokens(claims),
+    listAgentChanges(claims),
+    listPendingDeletions(claims),
+  ]);
   const now = Date.now();
   const tokenItems: TokenItem[] = tokens
     .filter((token) => token.revokedAt === null)
@@ -59,10 +65,28 @@ async function loadView(claims: SessionClaims) {
             ? "expired"
             : `expires ${timeFrom(token.expiresAt, now)}`,
     }));
-  return { tokens: tokenItems, feed: feed.map((entry) => toFeedItem(entry, now)) };
+  const pendingItems: PendingItem[] = pending.map((request) => ({
+    previewId: request.previewId,
+    tokenName: request.tokenName ?? "Removed token",
+    when: timeFrom(request.requestedAt, now),
+    expires: timeFrom(request.expiresAt, now),
+    names: request.names,
+  }));
+  return {
+    tokens: tokenItems,
+    feed: feed.map((entry) => toFeedItem(entry, now)),
+    pending: pendingItems,
+  };
 }
 
 export default async function AgentsPage() {
-  const { tokens, feed } = await loadView(await requireUser());
-  return <AgentsView mcpUrl={`${process.env.APP_URL}/api/mcp`} tokens={tokens} feed={feed} />;
+  const { tokens, feed, pending } = await loadView(await requireUser());
+  return (
+    <AgentsView
+      mcpUrl={`${process.env.APP_URL}/api/mcp`}
+      tokens={tokens}
+      feed={feed}
+      pending={pending}
+    />
+  );
 }

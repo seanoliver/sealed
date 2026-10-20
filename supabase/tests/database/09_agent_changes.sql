@@ -1,7 +1,7 @@
 begin;
 create schema if not exists tests;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(18);
 
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000a8001', 'ac-owner@test.dev'),
@@ -62,6 +62,17 @@ select throws_ok($$
   values ('00000000-0000-4000-8000-0000000a8001', '30000000-0000-4000-8000-0000000a8001', 'merge', '[1]',
     now() + interval '1 minute')
 $$, '23514', null, 'a preview is an update or a delete');
+select throws_ok($$
+  update public.agent_previews set requested_at = now() where id = '40000000-0000-4000-8000-0000000a8001'
+$$, '23514', null, 'only a delete waits for the owner');
+select throws_ok($$
+  update public.agent_previews set applied_at = now(), discarded_at = now()
+  where id = '40000000-0000-4000-8000-0000000a8002'
+$$, '23514', null, 'a preview is applied or discarded, not both');
+select lives_ok($$
+  update public.agent_previews set requested_at = now(), discarded_at = now()
+  where id = '40000000-0000-4000-8000-0000000a8002'
+$$, 'an owner can discard a requested delete');
 
 select tests.authenticate_as('00000000-0000-4000-8000-0000000a8001');
 
@@ -82,6 +93,11 @@ select results_eq($$ select agent_token_id from public.contact_events where sour
   $$ values ('30000000-0000-4000-8000-0000000a8001'::uuid) $$, 'owners read their agent events');
 
 reset role;
+delete from public.agent_previews where id = '40000000-0000-4000-8000-0000000a8001';
+select is((select agent_preview_id from public.contact_events where source = 'agent'
+  and contact_id = '20000000-0000-4000-8000-0000000a8001'),
+  '40000000-0000-4000-8000-0000000a8001'::uuid,
+  'pruning a preview keeps its events and their grouping');
 select lives_ok($$ delete from auth.users where id = '00000000-0000-4000-8000-0000000a8001' $$,
   'deleting an owner removes their contacts, tokens, previews and agent events together');
 select is((select count(*)::int from public.contact_events

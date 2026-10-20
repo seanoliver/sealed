@@ -1,15 +1,19 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq, inArray, sql } from "drizzle-orm";
 import { type ServerContext } from "@modelcontextprotocol/server";
 import { dbAdmin } from "@/lib/db/admin";
-import { contactEvents, contacts, submissions } from "@/lib/db/schema";
+import { agentPreviews, contactEvents, contacts, submissions } from "@/lib/db/schema";
 import {
   applyBulkUpdate,
-  applyDeleteContacts,
+  approveDeletion,
+  AWAITING_OWNER,
+  discardDeletion,
+  listPendingDeletions,
   previewBulkUpdate,
   previewDeleteContacts,
+  requestDeleteContacts,
 } from "./bulk";
-import { listAgentChanges, summarizeDiff, undoAgentChange } from "./changes";
+import { listAgentChanges, summarizeDiff, undoAgentBatch, undoAgentChange } from "./changes";
 import { agentContext } from "./mcp";
 import { AgentScopeError } from "./scopes";
 import { mintAgentToken } from "./tokens";
@@ -130,6 +134,24 @@ describe("agent write tools", () => {
       });
       await update({ id: ANA, fields: { partner_first_name: null } });
       expect(await stored(ANA)).toMatchObject({ partnerFirstName: null, partnerName: null });
+    });
+
+    it("still reports a saved edit when the audit insert fails", async () => {
+      const insert = vi.spyOn(dbAdmin, "insert").mockImplementationOnce(() => {
+        throw new Error("audit down");
+      });
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        expect(await update({ id: ANA, fields: { city: "Bend" } })).toMatchObject({
+          changed: true,
+          event_id: null,
+        });
+        expect((await stored(ANA)).city).toBe("Bend");
+        expect(log).toHaveBeenCalledWith("[ct] [recordContactEvents] audit insert failed db error", expect.any(String));
+      } finally {
+        insert.mockRestore();
+        log.mockRestore();
+      }
     });
 
     it("reports a no-op without an event, and another owner's contact as missing", async () => {
@@ -264,6 +286,82 @@ describe("agent write tools", () => {
       });
     });
 
+    it("refuses emails another contact holds, including a swap, and repeats in one batch", async () => {
+      const swap = await previewBulkUpdate(
+        ctx,
+        changes({
+          changes: [
+            { id: ANA, fields: { email: "cara@wt.test" } },
+            { id: CARA, fields: { email: "ANA@wt.test" } },
+          ],
+        }),
+      );
+      expect(swap).toMatchObject({
+        preview_id: null,
+        problems: [
+          { id: ANA, error: expect.stringContaining(`belongs to contact ${CARA}`) },
+          { id: CARA, error: expect.stringContaining(`belongs to contact ${ANA}`) },
+        ],
+      });
+      const repeated = await previewBulkUpdate(
+        ctx,
+        changes({
+          changes: [
+            { id: ANA, fields: { email: "new@wt.test" } },
+            { id: DEV, fields: { email: "New@wt.test" } },
+          ],
+        }),
+      );
+      expect(repeated).toMatchObject({
+        preview_id: null,
+        problems: [{ id: DEV, error: expect.stringContaining(`also given to contact ${ANA}`) }],
+      });
+    });
+
+    it("lists a contact given twice as a problem", async () => {
+      expect(
+        await previewBulkUpdate(
+          ctx,
+          changes({ changes: [{ id: ANA, fields: { city: "A" } }, { id: ANA, fields: { country: "B" } }] }),
+        ),
+      ).toMatchObject({ preview_id: null, problems: [{ id: ANA, error: expect.stringContaining("more than once") }] });
+    });
+
+    it("refuses the whole apply when an email was taken after the preview", async () => {
+      const preview = await previewBulkUpdate(
+        ctx,
+        changes({ changes: [{ id: ANA, fields: { email: "taken@wt.test", city: "Bend" } }] }),
+      );
+      await dbAdmin.insert(contacts).values({ bookId: B, fullName: "Late", email: "taken@wt.test" });
+      expect(await applyBulkUpdate(ctx, preview.preview_id!)).toEqual({
+        ok: false,
+        error: "Nothing was changed: you already have a contact with this email.",
+      });
+      expect((await stored(ANA)).city).toBe("Portland");
+    });
+
+    it("keeps only ids and names once applied", async () => {
+      const preview = await previewBulkUpdate(ctx, changes({ changes: [{ id: ANA, fields: { country: "US" } }] }));
+      await applyBulkUpdate(ctx, preview.preview_id!);
+      const [row] = await dbAdmin
+        .select({ items: agentPreviews.items })
+        .from(agentPreviews)
+        .where(eq(agentPreviews.id, preview.preview_id!));
+      expect(row.items).toEqual([{ id: ANA, name: "Ana Reyes" }]);
+    });
+
+    it("prunes finished previews after 30 days", async () => {
+      const preview = await previewBulkUpdate(ctx, changes({ changes: [{ id: ANA, fields: { country: "US" } }] }));
+      await applyBulkUpdate(ctx, preview.preview_id!);
+      await dbAdmin.execute(sql`
+        update public.agent_previews set applied_at = now() - interval '31 days' where id = ${preview.preview_id}`);
+      await previewBulkUpdate(ctx, changes({ changes: [{ id: CARA, fields: { country: "US" } }] }));
+      expect(
+        await dbAdmin.select().from(agentPreviews).where(eq(agentPreviews.id, preview.preview_id!)),
+      ).toEqual([]);
+      expect((await eventsOf(ANA))[0]).toMatchObject({ agentPreviewId: preview.preview_id });
+    });
+
     it("caps a preview at 500 contacts", () => {
       const many = Array.from({ length: 501 }, () => ({ id: ANA, fields: { city: "X" } }));
       expect(() => previewBulkUpdateInput.parse({ changes: many })).toThrow();
@@ -271,28 +369,87 @@ describe("agent write tools", () => {
   });
 
   describe("delete contacts", () => {
-    it("previews, then deletes exactly those contacts", async () => {
+    const pendingNames = async () =>
+      (await listPendingDeletions(ctx.claims)).map((request) => request.names);
+
+    it("only asks the owner; the owner's approval deletes exactly those contacts", async () => {
       const preview = await previewDeleteContacts(ctx, [CARA, DEV]);
       expect(preview).toMatchObject({ count: 2, items: [{ id: CARA, name: "Cara Diaz" }, { id: DEV }] });
+      expect(await requestDeleteContacts(ctx, preview.preview_id!)).toEqual({
+        ok: true,
+        value: { status: "pending", count: 2, message: AWAITING_OWNER },
+      });
       expect(await stored(CARA)).toBeDefined();
-      expect(await applyDeleteContacts(ctx, preview.preview_id!)).toEqual({ ok: true, value: { deleted: 2 } });
+      expect(await requestDeleteContacts(ctx, preview.preview_id!)).toMatchObject({ ok: false });
+      expect(await pendingNames()).toEqual([["Cara Diaz", "Dev Patel"]]);
+
+      expect(await approveDeletion(ctx.claims, preview.preview_id!)).toEqual({ ok: true, value: { deleted: 2 } });
       expect(await stored(CARA)).toBeUndefined();
       expect(await stored(DEV)).toBeUndefined();
       expect(await stored(ANA)).toBeDefined();
+      expect(await pendingNames()).toEqual([]);
+      expect(await approveDeletion(ctx.claims, preview.preview_id!)).toMatchObject({ ok: false });
     });
 
-    it("refuses when a contact changed after the preview, and leaves every contact", async () => {
+    it("keeps only names once a deletion is approved", async () => {
+      const preview = await previewDeleteContacts(ctx, [CARA]);
+      await requestDeleteContacts(ctx, preview.preview_id!);
+      await approveDeletion(ctx.claims, preview.preview_id!);
+      const [row] = await dbAdmin
+        .select({ items: agentPreviews.items })
+        .from(agentPreviews)
+        .where(eq(agentPreviews.id, preview.preview_id!));
+      expect(row.items).toEqual([{ name: "Cara Diaz" }]);
+      expect(JSON.stringify(row.items)).not.toMatch(/cara@wt\.test|Austin/);
+    });
+
+    it("discarding keeps every contact", async () => {
+      const preview = await previewDeleteContacts(ctx, [CARA]);
+      await requestDeleteContacts(ctx, preview.preview_id!);
+      expect(await discardDeletion(ctx.claims, preview.preview_id!)).toEqual({ ok: true, value: {} });
+      expect(await stored(CARA)).toBeDefined();
+      expect(await pendingNames()).toEqual([]);
+      expect(await approveDeletion(ctx.claims, preview.preview_id!)).toMatchObject({ ok: false });
+    });
+
+    it("refuses an approval when a contact changed after the preview", async () => {
       const preview = await previewDeleteContacts(ctx, [CARA, DEV]);
+      await requestDeleteContacts(ctx, preview.preview_id!);
       await dbAdmin.update(contacts).set({ city: "Waterloo" }).where(eq(contacts.id, DEV));
-      expect(await applyDeleteContacts(ctx, preview.preview_id!)).toMatchObject({ ok: false });
+      const result = await approveDeletion(ctx.claims, preview.preview_id!);
+      expect(result).toMatchObject({ ok: false });
+      expect(!result.ok && result.error).toContain(DEV);
       expect(await stored(CARA)).toBeDefined();
     });
 
-    it("refuses another owner's contact", async () => {
+    it("lets a request expire after 7 days", async () => {
+      const preview = await previewDeleteContacts(ctx, [CARA]);
+      await requestDeleteContacts(ctx, preview.preview_id!);
+      const [row] = await dbAdmin
+        .select({ days: sql<number>`extract(day from ${agentPreviews.expiresAt} - now())::int` })
+        .from(agentPreviews)
+        .where(eq(agentPreviews.id, preview.preview_id!));
+      expect(row.days).toBe(6);
+      await dbAdmin.execute(sql`
+        update public.agent_previews set created_at = now() - interval '8 days', expires_at = now() - interval '1 day'
+        where id = ${preview.preview_id}`);
+      expect(await pendingNames()).toEqual([]);
+      expect(await approveDeletion(ctx.claims, preview.preview_id!)).toEqual({
+        ok: false,
+        error: "This request expired. Ask the agent to make a new one.",
+      });
+      expect(await stored(CARA)).toBeDefined();
+    });
+
+    it("refuses another owner's contact and another owner's approval", async () => {
       expect(await previewDeleteContacts(ctx, [FOREIGN])).toMatchObject({
         preview_id: null,
         problems: [{ id: FOREIGN, error: "Contact not found." }],
       });
+      const preview = await previewDeleteContacts(ctx, [CARA]);
+      await requestDeleteContacts(ctx, preview.preview_id!);
+      expect(await approveDeletion({ sub: OTHER }, preview.preview_id!)).toMatchObject({ ok: false });
+      expect(await stored(CARA)).toBeDefined();
     });
   });
 
@@ -327,6 +484,24 @@ describe("agent write tools", () => {
     });
   });
 
+  describe("approving a merge", () => {
+    it("locks the contact, so an edit committed meanwhile is the merge's before value", async () => {
+      const [reply] = await dbAdmin
+        .insert(submissions)
+        .values({ bookId: B, payload: { full_name: "Ana Reyes", city: "Eugene" }, matchedContactId: ANA })
+        .returning({ id: submissions.id });
+      let approval: Promise<unknown> | undefined;
+      await dbAdmin.transaction(async (tx) => {
+        await tx.update(contacts).set({ city: "Bend" }).where(eq(contacts.id, ANA));
+        approval = resolveReviewItem(ctx, { id: reply.id, action: "approve" });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      });
+      await approval;
+      const [event] = await eventsOf(ANA);
+      expect(event.diff).toMatchObject({ before: { city: "Bend" }, after: { city: "Eugene" } });
+    });
+  });
+
   describe("undo_agent_change", () => {
     it("restores the replaced values as a new agent change", async () => {
       const result = await update({ id: ANA, fields: { postal_code: "97211-3417" } });
@@ -347,6 +522,27 @@ describe("agent write tools", () => {
         ok: false,
       });
       expect((await stored(ANA)).postalCode).toBe("97211-3417");
+    });
+
+    it("refuses to restore an email another contact took since", async () => {
+      const result = await update({ id: ANA, fields: { email: "ana.new@wt.test" } });
+      await dbAdmin.insert(contacts).values({ bookId: B, fullName: "Copy", email: "ana@wt.test" });
+      expect(await undoAgentChange(ctx.claims, result.event_id!, { source: "owner" })).toEqual({
+        ok: false,
+        error: "You already have a contact with this email, so the old email can't come back.",
+      });
+      expect((await stored(ANA)).email).toBe("ana.new@wt.test");
+    });
+
+    it("can't be pointed at an owner event: only agent events carry contact_updated_at", async () => {
+      await expect(
+        dbAdmin.insert(contactEvents).values({
+          contactId: ANA,
+          source: "owner",
+          diff: { before: { city: "X" }, after: { city: "Y" } },
+          contactUpdatedAt: sql`now()`,
+        }),
+      ).rejects.toThrow();
     });
 
     it("refuses a create, an owner change, and another owner's event", async () => {
@@ -377,19 +573,58 @@ describe("agent write tools", () => {
       await applyBulkUpdate(ctx, preview.preview_id!);
       await dbAdmin.update(contacts).set({ notes: "hand edit" }).where(eq(contacts.id, CARA));
       const deletion = await previewDeleteContacts(ctx, [DEV]);
-      await applyDeleteContacts(ctx, deletion.preview_id!);
+      await requestDeleteContacts(ctx, deletion.preview_id!);
+      await approveDeletion(ctx.claims, deletion.preview_id!);
 
       const feed = await listAgentChanges(ctx.claims);
       expect(feed.map((entry) => entry.kind)).toEqual(["deleted", "bulk"]);
       const [deleted, bulk] = feed;
       expect(deleted).toMatchObject({ names: ["Dev Patel"], tokenName: "Claude Code" });
-      expect(bulk).toMatchObject({ kind: "bulk", tokenName: "Claude Code" });
+      expect(bulk).toMatchObject({ kind: "bulk", tokenName: "Claude Code", count: 2 });
       const byName = Object.fromEntries(
         (bulk.kind === "bulk" ? bulk.changes : []).map((change) => [change.contactName, change]),
       );
       expect(byName["Ana Reyes"]).toMatchObject({ summary: "Added country US", undo: { canUndo: true } });
       expect(byName["Cara Diaz"]).toMatchObject({ undo: { canUndo: false, reason: "Changed since" } });
       expect(await listAgentChanges({ sub: OTHER })).toEqual([]);
+    });
+
+    it("pages by entry, so a 150-contact bulk counts once and older changes stay listed", async () => {
+      const older = await update({ id: ANA, fields: { city: "Salem" } });
+      await dbAdmin.execute(sql`
+        insert into public.contacts (book_id, full_name, first_name, city)
+        select ${B}, 'Bulk ' || g, 'Bulk', 'Old' from generate_series(1, 150) g`);
+      const bulkIds = (
+        await dbAdmin.select({ id: contacts.id }).from(contacts).where(eq(contacts.city, "Old"))
+      ).map((row) => row.id);
+      expect(bulkIds).toHaveLength(150);
+      const preview = await previewBulkUpdate(
+        ctx,
+        bulkIds.map((id) => ({ id, request: toPatchRequest({ city: "New" }) })),
+      );
+      await applyBulkUpdate(ctx, preview.preview_id!);
+      const newer = await update({ id: DEV, fields: { city: "Ottawa" } });
+
+      const feed = await listAgentChanges(ctx.claims, { limit: 3 });
+      expect(feed.map((entry) => (entry.kind === "change" ? entry.eventId : entry.kind))).toEqual([
+        newer.event_id,
+        "bulk",
+        older.event_id,
+      ]);
+      expect(feed[1]).toMatchObject({ count: 150 });
+      expect(feed[1].kind === "bulk" && feed[1].changes).toHaveLength(150);
+
+      await dbAdmin.update(contacts).set({ notes: "hand edit" }).where(inArray(contacts.id, bulkIds.slice(0, 3)));
+      expect(await undoAgentBatch(ctx.claims, preview.preview_id!, { source: "owner" })).toEqual({
+        undone: 147,
+        skipped: 3,
+      });
+      const cities = await dbAdmin
+        .select({ city: contacts.city, n: sql<number>`count(*)::int` })
+        .from(contacts)
+        .where(inArray(contacts.id, bulkIds))
+        .groupBy(contacts.city);
+      expect(Object.fromEntries(cities.map((row) => [row.city, row.n]))).toEqual({ Old: 147, New: 3 });
     });
   });
 

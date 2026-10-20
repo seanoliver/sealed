@@ -115,5 +115,7 @@ export const agentPreviews = pgTable("agent_previews", {
   items: jsonb("items").notNull().$type<unknown[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  requestedAt: timestamp("requested_at", { withTimezone: true }),
   appliedAt: timestamp("applied_at", { withTimezone: true }),
+  discardedAt: timestamp("discarded_at", { withTimezone: true }),
 });

@@ -12,7 +12,11 @@ create table public.agent_previews (
   ),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null check (expires_at > created_at),
-  applied_at timestamptz
+  -- A delete runs only after the owner approves it on the Agents page.
+  requested_at timestamptz check (requested_at is null or kind = 'delete'),
+  applied_at timestamptz,
+  discarded_at timestamptz,
+  check (applied_at is null or discarded_at is null)
 );
 create index agent_previews_user_idx on public.agent_previews (user_id, created_at desc);
 create index agent_previews_token_idx on public.agent_previews (agent_token_id);
@@ -29,7 +33,9 @@ alter table public.contact_events
   -- Cascade, not set null: a user delete removes contacts in the same statement,
   -- and a set-null update on a doomed event fails its contact foreign key.
   add column agent_token_id uuid references public.agent_tokens (id) on delete cascade,
-  add column agent_preview_id uuid references public.agent_previews (id) on delete cascade,
+  -- No foreign key: applied previews are pruned after 30 days, and the id
+  -- must keep grouping a bulk apply's events.
+  add column agent_preview_id uuid,
   add column contact_updated_at timestamptz,
   add constraint contact_events_agent_check check (
     source = 'agent'

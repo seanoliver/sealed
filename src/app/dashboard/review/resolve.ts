@@ -192,7 +192,8 @@ export async function approveMergeAs(
             eq(contacts.bookId, book.id),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!existing) return { kind: "no_match" };
 
       // Absent keys stay untouched and "" counts as absent: a permalink payload

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupUser,
   clearRateLimits,
+  contactExists,
   getContactPostalCode,
   getUserIdByEmail,
   seedBook,
@@ -166,6 +167,47 @@ test("shows agent edits in the feed and undoes one", async () => {
   await page.goto(`/dashboard/contacts/${hollowayId}`);
   await expect(page.getByText("Agent: Claude Code on MacBook")).toBeVisible();
   await page.goto("/dashboard/agents");
+});
+
+async function requestDeletion(ids: string[]) {
+  const preview = await toolResult("preview_delete_contacts", { ids });
+  const asked = await toolResult("request_delete_contacts", { preview_id: preview.preview_id });
+  expect(asked.status).toBe("pending");
+}
+
+test("an agent's delete waits for the owner, who can discard it", async () => {
+  await requestDeletion([adaId]);
+  expect(await contactExists(adaId)).toBe(true);
+
+  await page.reload();
+  const pending = page.getByRole("list", { name: "Waiting for you" }).getByRole("listitem").first();
+  await expect(pending).toContainText("Pending deletion: 1 contact");
+  await expect(pending).toContainText("Claude Code on MacBook");
+  await pending.getByText("Show the contact").click();
+  await expect(pending.getByText("Ada Lovelace")).toBeVisible();
+
+  await shoot("pending-desktop-light", { width: 1280, dark: false });
+  await shoot("pending-desktop-dark", { width: 1280, dark: true });
+  await shoot("pending-phone-light", { width: 390, dark: false });
+  await shoot("pending-phone-dark", { width: 390, dark: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ colorScheme: "light" });
+
+  await pending.getByRole("button", { name: "Discard" }).click();
+  await expect(page.getByText("Pending deletion")).toHaveCount(0);
+  expect(await contactExists(adaId)).toBe(true);
+});
+
+test("the owner approves an agent's delete after a confirm", async () => {
+  await requestDeletion([priyaId]);
+  await page.reload();
+  const pending = page.getByRole("list", { name: "Waiting for you" }).getByRole("listitem").first();
+  await pending.getByRole("button", { name: "Delete 1 contact" }).click();
+  await expect(pending).toContainText("Delete 1 contact for good?");
+  await pending.getByRole("button", { name: "Yes, delete" }).click();
+  await expect(page.getByText("Pending deletion")).toHaveCount(0);
+  await expect(page.getByText("Deleted 1 contact")).toBeVisible();
+  expect(await contactExists(priyaId)).toBe(false);
 });
 
 test("revokes a token after a confirm, and the agent loses access", async () => {

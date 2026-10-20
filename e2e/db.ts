@@ -348,3 +348,8 @@ export async function getContactPostalCode(contactId: string): Promise<string | 
   const rows = await db`select postal_code from public.contacts where id = ${contactId}`;
   return rows[0].postal_code;
 }
+
+export async function contactExists(contactId: string): Promise<boolean> {
+  const rows = await db`select 1 from public.contacts where id = ${contactId}`;
+  return rows.length > 0;
+}

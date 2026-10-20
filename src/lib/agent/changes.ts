@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   recordContactEvent,
   snapshotToRow,
@@ -95,7 +95,15 @@ export type ChangeEntry = {
 
 export type FeedEntry =
   | ({ kind: "change"; tokenName: string | null } & ChangeEntry)
-  | { kind: "bulk"; previewId: string; tokenName: string | null; at: Date; changes: ChangeEntry[] }
+  | {
+      kind: "bulk";
+      previewId: string;
+      tokenName: string | null;
+      at: Date;
+      /** Contacts in the apply, from its preview, since `changes` can leave some out. */
+      count: number;
+      changes: ChangeEntry[];
+    }
   | { kind: "deleted"; previewId: string; tokenName: string | null; at: Date; names: string[] };
 
 const CHANGED_SINCE = "Changed since";
@@ -107,42 +115,61 @@ function undoState(row: { hasBefore: boolean; current: boolean; undone: boolean 
   return { canUndo: true };
 }
 
+const groupKey = sql<string>`coalesce(${contactEvents.agentPreviewId}, ${contactEvents.id})`;
+
+/** Newest first; a bulk apply is one entry and counts once toward `limit`. */
 export async function listAgentChanges(
   claims: SessionClaims,
-  { limit = 100 }: { limit?: number } = {},
+  { limit = 50 }: { limit?: number } = {},
 ): Promise<FeedEntry[]> {
   const { events, deletes } = await withRls(claims, async (tx) => {
-    const events = await tx
-      .select({
-        id: contactEvents.id,
-        contactId: contactEvents.contactId,
-        diff: contactEvents.diff,
-        at: contactEvents.createdAt,
-        previewId: contactEvents.agentPreviewId,
-        tokenName: agentTokens.name,
-        contact: {
-          fullName: contacts.fullName,
-          partnerName: contacts.partnerName,
-          kidsNames: contacts.kidsNames,
-          firstName: contacts.firstName,
-          lastName: contacts.lastName,
-          partnerFirstName: contacts.partnerFirstName,
-          partnerLastName: contacts.partnerLastName,
-          kids: contacts.kids,
-        },
-        hasBefore: sql<boolean>`${contactEvents.diff} ? 'before'`,
-        current: sql<boolean>`coalesce(${contacts.updatedAt} = ${contactEvents.contactUpdatedAt}, false)`,
-        undone: sql<boolean>`exists (
-          select 1 from public.contact_events u
-          where u.contact_id = ${contactEvents.contactId}
-            and u.diff ->> 'undo_of' = ${contactEvents.id}::text)`,
-      })
+    const groups = await tx
+      .select({ key: groupKey })
       .from(contactEvents)
-      .innerJoin(contacts, eq(contacts.id, contactEvents.contactId))
-      .leftJoin(agentTokens, eq(agentTokens.id, contactEvents.agentTokenId))
       .where(eq(contactEvents.source, "agent"))
-      .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id))
+      .groupBy(groupKey)
+      .orderBy(desc(sql`max(${contactEvents.createdAt})`))
       .limit(limit);
+    const events =
+      groups.length === 0
+        ? []
+        : await tx
+            .select({
+              id: contactEvents.id,
+              contactId: contactEvents.contactId,
+              diff: contactEvents.diff,
+              at: contactEvents.createdAt,
+              previewId: contactEvents.agentPreviewId,
+              previewCount: sql<number | null>`jsonb_array_length(${agentPreviews.items})`,
+              tokenName: agentTokens.name,
+              contact: {
+                fullName: contacts.fullName,
+                partnerName: contacts.partnerName,
+                kidsNames: contacts.kidsNames,
+                firstName: contacts.firstName,
+                lastName: contacts.lastName,
+                partnerFirstName: contacts.partnerFirstName,
+                partnerLastName: contacts.partnerLastName,
+                kids: contacts.kids,
+              },
+              hasBefore: sql<boolean>`${contactEvents.diff} ? 'before'`,
+              current: sql<boolean>`coalesce(${contacts.updatedAt} = ${contactEvents.contactUpdatedAt}, false)`,
+              undone: sql<boolean>`exists (
+                select 1 from public.contact_events u
+                where u.contact_id = ${contactEvents.contactId}
+                  and u.diff ->> 'undo_of' = ${contactEvents.id}::text)`,
+            })
+            .from(contactEvents)
+            .innerJoin(contacts, eq(contacts.id, contactEvents.contactId))
+            .leftJoin(agentTokens, eq(agentTokens.id, contactEvents.agentTokenId))
+            .leftJoin(agentPreviews, eq(agentPreviews.id, contactEvents.agentPreviewId))
+            .where(
+              and(
+                eq(contactEvents.source, "agent"),
+                inArray(groupKey, groups.map((group) => group.key)),
+              ),
+            )
+            .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id));
     const deletes = await tx
       .select({
         id: agentPreviews.id,
@@ -154,7 +181,7 @@ export async function listAgentChanges(
       .leftJoin(agentTokens, eq(agentTokens.id, agentPreviews.agentTokenId))
       .where(and(eq(agentPreviews.kind, "delete"), isNotNull(agentPreviews.appliedAt)))
       .orderBy(desc(agentPreviews.appliedAt))
-      .limit(20);
+      .limit(limit);
     return { events, deletes };
   });
 
@@ -183,11 +210,13 @@ export async function listAgentChanges(
       previewId: event.previewId,
       tokenName: event.tokenName,
       at: event.at,
+      count: event.previewCount ?? 0,
       changes: [change],
     };
     bulks.set(event.previewId, entry);
     feed.push(entry);
   }
+  for (const bulk of bulks.values()) bulk.count = Math.max(bulk.count, bulk.changes.length);
   for (const preview of deletes) {
     feed.push({
       kind: "deleted",
@@ -197,7 +226,28 @@ export async function listAgentChanges(
       names: (preview.items as { name?: string }[]).map((item) => item.name ?? "Unnamed"),
     });
   }
-  return feed.sort((a, b) => b.at.getTime() - a.at.getTime());
+  feed.sort((a, b) => b.at.getTime() - a.at.getTime());
+  return feed.slice(0, limit);
+}
+
+/** Undo every change of one bulk apply that can still be undone. */
+export async function undoAgentBatch(
+  claims: SessionClaims,
+  previewId: string,
+  actor: Actor,
+): Promise<{ undone: number; skipped: number }> {
+  const events = await withRls(claims, (tx) =>
+    tx
+      .select({ id: contactEvents.id })
+      .from(contactEvents)
+      .where(and(eq(contactEvents.source, "agent"), eq(contactEvents.agentPreviewId, previewId)))
+      .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id)),
+  );
+  let undone = 0;
+  for (const event of events) {
+    if ((await undoAgentChange(claims, event.id, actor)).ok) undone += 1;
+  }
+  return { undone, skipped: events.length - undone };
 }
 
 export async function undoAgentChange(
