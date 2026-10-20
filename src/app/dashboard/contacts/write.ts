@@ -283,7 +283,6 @@ export type PatchOutcome = {
   diff?: ContactDiff;
   eventId?: string;
   emailRequest?: { id: string; changes: EmailChange };
-  /** An open email change was withdrawn and nothing replaced it. */
   emailWithdrawn?: boolean;
 };
 
