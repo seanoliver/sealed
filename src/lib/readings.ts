@@ -1,7 +1,4 @@
-/**
- * Pinyin readings for names written in Chinese characters. Pure string logic,
- * safe for client components: generation (pinyin-pro) lives in pinyin.ts.
- */
+// Client components import this module: never import pinyin-pro here.
 
 /** Han run → one syllable per character, or a single reading over the whole run. */
 export type Readings = Record<string, string[]>;
@@ -32,7 +29,6 @@ const SYLLABLE = new RegExp(`^(?:${INITIAL}${FINAL}|${BARE_FINAL})r?$`);
 const LONGEST = "zhuangr".length;
 const SEPARATORS = /[\s\-'’·.]+/;
 
-/** Base letter of one pinyin character: tone marks, ü and tone digits fold away. */
 function baseLetter(char: string): string {
   return char
     .normalize("NFD")
@@ -42,10 +38,6 @@ function baseLetter(char: string): string {
     .replace(/[^a-z]/g, "");
 }
 
-/**
- * One split of a token into syllables per count. Joined pinyin needs an
- * apostrophe before a, o or e, so splits with fewer of those win ("nàna" → nà na).
- */
 function tokenSplits(token: string): Map<number, string[]> {
   const units = chars(token.normalize("NFC"));
   const bases = units.map(baseLetter);
@@ -55,6 +47,7 @@ function tokenSplits(token: string): Map<number, string[]> {
   from[units.length] = new Map([[0, { parts: [], bare: 0 }]]);
   for (let start = units.length - 1; start >= 0; start--) {
     const here = new Map<number, Split>();
+    // Joined pinyin needs an apostrophe before a, o or e: fewer of those wins ("nàna" → nà na).
     const bare = start > 0 && /^[aoe]/.test(bases[start]) ? 1 : 0;
     for (let end = Math.min(units.length, start + LONGEST); end > start; end--) {
       if (!SYLLABLE.test(bases.slice(start, end).join(""))) continue;
@@ -71,10 +64,6 @@ function tokenSplits(token: string): Map<number, string[]> {
   return new Map([...from[0]].map(([n, split]) => [n, split.parts]));
 }
 
-/**
- * The owner's reading split into exactly `count` syllables, keeping their
- * tone marks and capitals ("Céng Yǔtóng" → Céng, Yǔ, tóng), or null.
- */
 export function splitReading(reading: string, count: number): string[] | null {
   const tokens = reading.trim().split(SEPARATORS).filter((t) => t !== "");
   if (tokens.length === 0 || count < 1) return null;
@@ -93,7 +82,6 @@ export function splitReading(reading: string, count: number): string[] | null {
   return options.get(count) ?? null;
 }
 
-/** Readings from the owner's override for one stored name, or {} when it can't be placed. */
 export function overrideReadings({
   name,
   reading,
@@ -124,7 +112,6 @@ export function overrideReadings({
     : {};
 }
 
-/** Syllables for a run: an exact entry, else a per-character entry that contains it. */
 export function lookupRun(readings: Readings, run: string): string[] | null {
   const exact = readings[run];
   if (exact) return exact;
@@ -161,15 +148,12 @@ export function nameSegments(text: string, readings: Readings): NameSegment[] {
   });
 }
 
-/**
- * The reading the override field suggests, in the name's character order. A
- * capital starts a word, so "Zēng Yǔ tóng" reads "Zēng Yǔtóng".
- */
 export function readingText(name: string, readings: Readings): string | null {
   const words = hanRuns(name)
     .filter((run) => run.han)
     .map((run) => lookupRun(readings, run.text));
   if (words.length === 0 || words.some((w) => w === null)) return null;
+  // A capital starts a word: Zēng, Yǔ, tóng → "Zēng Yǔtóng".
   return (words as string[][])
     .map((syllables) =>
       syllables.reduce(
@@ -180,17 +164,14 @@ export function readingText(name: string, readings: Readings): string | null {
     .join(" ");
 }
 
-/** Lowercase letters only, tones and ü folded: "Zhāng Wěi" and "zhang wei" both → "zhangwei". */
 export function pinyinKey(text: string): string {
   return chars(text).map(baseLetter).join("");
 }
 
-/** A search that could be pinyin: Latin letters, tone marks, spaces, digits or apostrophes only. */
 export function isPinyinQuery(query: string): boolean {
   return /^[\p{Script=Latin}\p{M}\s'’0-9-]+$/u.test(query.normalize("NFD")) && pinyinKey(query) !== "";
 }
 
-/** Whether a pinyin search finds one of these names through their readings. */
 export function matchesReading({
   names,
   readings,

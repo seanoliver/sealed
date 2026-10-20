@@ -20,7 +20,6 @@ type HouseholdFieldsProps = {
   enabled: Pick<EnabledFields, "partner_name" | "kids_names">;
   errors?: HouseholdFieldErrors;
   audience?: "recipient" | "owner";
-  /** Owner-only extras under a person's name, given their name as typed. */
   renderAfterName?: (person: "primary" | "partner", fullName: string) => ReactNode;
 };
 

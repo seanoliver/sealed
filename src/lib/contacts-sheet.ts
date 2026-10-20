@@ -52,7 +52,6 @@ export interface SheetRow {
   needsAttention: boolean;
   attention: { recipient: Recipient; status: SendStatus }[];
   answers: TwoAnswers | null;
-  /** Pinyin for the names in Chinese characters, built on the server. */
   readings: Readings;
   updatedAtIso: string;
   updatedAtLabel: string;
@@ -267,7 +266,6 @@ const MARK_END = "\u0002";
 // split() with a capture group alternates plain and marked text.
 const MARKED = /\u0001(.*?)\u0002/;
 
-/** Answer lines that hold a name, so they can show its reading. */
 export const NAME_LINE_LABELS: ReadonlySet<string> = new Set(["Name", "Partner"]);
 
 const OTHER_FIELDS = [

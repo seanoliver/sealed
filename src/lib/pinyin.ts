@@ -2,7 +2,6 @@ import "server-only";
 import { pinyin } from "pinyin-pro";
 import { hanRuns, lookupRun, overrideReadings, type Readings } from "@/lib/readings";
 
-// Capitalization only: pinyin-pro's surname mode already reads these right.
 const COMPOUND_SURNAMES = new Set([
   "欧阳", "司马", "诸葛", "上官", "司徒", "东方", "皇甫", "尉迟", "公孙", "慕容",
   "令狐", "夏侯", "长孙", "宇文", "轩辕", "端木", "澹台", "呼延", "独孤", "南宫",
@@ -11,13 +10,10 @@ const COMPOUND_SURNAMES = new Set([
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/**
- * One syllable per character with tone marks, reading the start of the run as
- * a surname (曾 zēng, 单 shàn). Characters pinyin-pro can't read get "".
- */
 function syllables(run: string): string[] {
   const chars = Array.from(run);
   const result = pinyin(run, { type: "array", toneType: "symbol", surname: "head" });
+  // pinyin-pro echoes back characters it can't read; those become "".
   return result.length === chars.length
     ? result.map((s, i) => (s === chars[i] ? "" : s))
     : chars.map((char) => {
@@ -26,7 +22,6 @@ function syllables(run: string): string[] {
       });
 }
 
-/** A full name in Chinese order: the surname and the given name each start with a capital. */
 function personSyllables(run: string): string[] {
   const parts = syllables(run);
   const surname = COMPOUND_SURNAMES.has(Array.from(run).slice(0, 2).join("")) ? 2 : 1;
@@ -52,8 +47,8 @@ function add(readings: Readings, run: string, value: string[]) {
 
 function addPerson(readings: Readings, person: Person) {
   if (singleHanRun(person.first) && singleHanRun(person.last)) {
-    // Split names keep the surname reading: generate in Chinese order.
     const lastLength = Array.from(person.last).length;
+    // One call over last+first: generated apart, the surname loses its reading (单 shàn).
     const parts = syllables(person.last + person.first);
     const word = (s: string[]) => s.map((x, i) => (i === 0 ? capitalize(x) : x));
     add(readings, person.last, word(parts.slice(0, lastLength)));
@@ -64,10 +59,6 @@ function addPerson(readings: Readings, person: Person) {
   }
 }
 
-/**
- * Readings for every Han run in a contact's names. The owner's overrides come
- * first; everything else is generated.
- */
 export function contactReadings({
   people,
   extra = [],
@@ -76,6 +67,7 @@ export function contactReadings({
   extra?: readonly (string | null | undefined)[];
 }): Readings {
   const readings: Readings = {};
+  // Overrides first: add() never replaces a reading that is already there.
   for (const person of people) {
     Object.assign(readings, overrideReadings({ name: person.full, reading: person.override }));
   }
@@ -120,7 +112,6 @@ export function readingsForContact(
   });
 }
 
-/** Generated readings only, for the override field's suggestion. */
 export function generatedReadings(contact: ContactNames): Readings {
   return readingsForContact({ ...contact, nameReading: null, partnerNameReading: null });
 }

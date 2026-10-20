@@ -1,10 +1,10 @@
 # Pinyin readings for names in Chinese characters
 
-**Date:** 2026-10-19
-**Status:** Current
-**Prompted by:** Feature build
-**Last verified:** `775a567` on 2026-10-19
-**Related:** Issue #110
+- **Date:** 2026-10-19
+- **Status:** Current
+- **Prompted by:** Feature build
+- **Last verified:** `775a567` on 2026-10-19
+- **Related:** Issue #110
 
 ## Question
 

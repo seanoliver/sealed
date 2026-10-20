@@ -26,7 +26,6 @@ type ContactFormProps = {
   ) => Promise<ContactFormState>;
   defaults: ContactFormValues;
   household: HouseholdValues;
-  /** Saved pinyin overrides and the generated readings they correct. */
   readings?: { values: ReadingValues; generated: Readings };
   /** Present on the edit page; posted as a hidden field. */
   contactId?: string;

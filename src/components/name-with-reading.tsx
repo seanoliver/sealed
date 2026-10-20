@@ -2,10 +2,7 @@ import { Fragment } from "react";
 import { nameSegments, type Readings } from "@/lib/readings";
 import { cn } from "@/lib/utils";
 
-/**
- * A name with pinyin over each Chinese character. Owner-only: never use it on
- * recipient pages, in emails, exports or anything printed.
- */
+/** Owner-only: never render on recipient pages, in emails, exports or print. */
 export function NameWithReading({
   text,
   readings,

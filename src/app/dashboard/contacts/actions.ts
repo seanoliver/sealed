@@ -65,10 +65,10 @@ function readReadings(
     name_reading: stored?.nameReading ?? "",
     partner_name_reading: stored?.partnerNameReading ?? "",
   };
-  // The field only renders for names with Chinese characters; absent keeps what's stored.
   return Object.fromEntries(
     READING_FIELDS.map((field) => [
       field,
+      // Absent is not empty: a field the form didn't render keeps the stored reading.
       formData.has(field) ? String(formData.get(field)) : storedValues[field],
     ]),
   ) as ReadingValues;
@@ -494,7 +494,6 @@ export async function patchContact(
       const row = {
         ...contactDetailsToRow(parsed.data),
         ...household,
-        // A reading belongs to the name it was written for.
         ...(household && household.fullName !== existing.fullName ? { nameReading: null } : {}),
         ...(household && household.partnerName !== existing.partnerName
           ? { partnerNameReading: null }

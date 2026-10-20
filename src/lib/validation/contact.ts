@@ -59,10 +59,7 @@ export const contactDetailsSchema = contactSchema.omit({
 });
 export type ContactDetailsInput = z.infer<typeof contactDetailsSchema>;
 
-/**
- * The owner's pinyin for a name. Owner-only: kept out of CONTACT_FIELDS so it
- * never reaches CSV export, import or any recipient schema.
- */
+/** Owner-only: never add to CONTACT_FIELDS, which feeds CSV export, import and recipient schemas. */
 export const READING_FIELDS = ["name_reading", "partner_name_reading"] as const;
 export type ReadingField = (typeof READING_FIELDS)[number];
 export type ReadingValues = Record<ReadingField, string>;

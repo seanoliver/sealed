@@ -12,10 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 import { READING_MAX, type ReadingField as Field } from "@/lib/validation/contact";
 
-/**
- * The owner's correction to the generated pinyin for one name. Shows only
- * while the name has Chinese characters or a saved reading.
- */
 export function ReadingField({
   field,
   personName,
