@@ -110,6 +110,9 @@ test("the recipient form follows the country, checks the postcode and previews t
   await expect(preview).toContainText("1427 Linden Avenue, Apt 3B");
   await expect(preview).toContainText("No country line: Sean mails from the US.");
   await expect(preview).not.toContainText("UNITED STATES");
+  await expect(preview).toContainText("Portland, OR 97214");
+  await expect(preview).not.toContainText("in capitals");
+  await expect(preview.locator("[data-uppercased]")).toHaveCount(0);
 
   // The preview follows the name fields too.
   await page.locator("#first_name").fill("Augusta");

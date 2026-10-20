@@ -42,6 +42,10 @@ const RECORDS = data as unknown as Record<string, CountryRecord>;
 
 const fieldSet = (letters: string) => new Set(letters.split("") as FormatField[]);
 
+// Sean's call (#99): US envelopes print the city as typed. The state is already
+// a two-letter code, so the data's "CS" rule has nothing else to do.
+const UPPER_OVERRIDES: Record<string, string> = { US: "" };
+
 const cache = new Map<string, Country>();
 
 /** Metadata for a two-letter code, or null for anything else. */
@@ -57,7 +61,7 @@ export function getCountry(code: string | null | undefined): Country | null {
     fmt: record.f ?? "%N%n%O%n%A%n%C",
     lfmt: record.lf ?? null,
     require: fieldSet(record.r ?? "AC"),
-    upper: fieldSet(record.u ?? "C"),
+    upper: fieldSet(UPPER_OVERRIDES[code] ?? record.u ?? "C"),
     zip: record.z ? new RegExp(`^(?:${record.z})$`, "i") : null,
     zipExample: record.x ?? null,
     zipNameType: record.zn ?? "postal",

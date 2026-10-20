@@ -28,7 +28,18 @@ describe("envelopeLines", () => {
         },
         { ...US, name: "Ada Lovelace" },
       ),
-    ).toEqual(["Ada Lovelace", "1427 Linden Avenue, Apt 3B", "PORTLAND, OR 97214"]);
+    ).toEqual(["Ada Lovelace", "1427 Linden Avenue, Apt 3B", "Portland, OR 97214"]);
+  });
+
+  it("prints a US city as typed, so nothing on the line is marked as changed", () => {
+    const envelope = formatEnvelope(
+      { ...blank, addressLine1: "1 Main St", city: "Portland", stateRegion: "OR", postalCode: "97214", countryCode: "US" },
+      US,
+    );
+    expect(envelope?.lines).toEqual([
+      { text: "1 Main St", uppercased: false },
+      { text: "Portland, OR 97214", uppercased: false },
+    ]);
   });
 
   it("adds the country in capitals when mailing to the US from elsewhere", () => {
@@ -246,7 +257,7 @@ describe("envelopeLines", () => {
         { ...blank, addressLine1: "1 Main St", city: "Portland", countryCode: "US" },
         US,
       ),
-    ).toEqual(["1 Main St", "PORTLAND"]);
+    ).toEqual(["1 Main St", "Portland"]);
   });
 
   it("formats a blank country as the sender's country", () => {
@@ -261,7 +272,7 @@ describe("envelopeLines", () => {
         },
         US,
       ),
-    ).toEqual(["1 Main St", "PORTLAND, OR 97214"]);
+    ).toEqual(["1 Main St", "Portland, OR 97214"]);
   });
 
   it("prints unrecognized country text as typed, in the old order", () => {

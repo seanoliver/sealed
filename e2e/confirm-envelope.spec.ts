@@ -94,7 +94,7 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   ).toBeVisible();
   const envelope = page.locator("address");
   await expect(envelope).toHaveText(
-    "Cora Confirm1428 Alder StPORTLAND, OR 97214",
+    "Cora Confirm1428 Alder StPortland, OR 97214",
   );
   expect(await page.content()).not.toContain("Hidden Partner");
 

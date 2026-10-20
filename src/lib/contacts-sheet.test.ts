@@ -183,7 +183,7 @@ describe("twoAnswers", () => {
     expect(answers.saved.lines).toEqual([
       {
         label: null,
-        parts: [{ text: "4410 Fremont Ave N, SEATTLE, WA 98103", changed: false }],
+        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103", changed: false }],
       },
     ]);
     expect(answers.incoming.lines).toEqual([
@@ -192,7 +192,7 @@ describe("twoAnswers", () => {
         parts: [
           { text: "4410 Fremont Ave N, ", changed: false },
           { text: "Apt 2", changed: true },
-          { text: ", SEATTLE, WA 98103", changed: false },
+          { text: ", Seattle, WA 98103", changed: false },
         ],
       },
     ]);
@@ -215,7 +215,7 @@ describe("twoAnswers", () => {
       label: "Email",
       parts: [{ text: "satya@new.test", changed: true }],
     });
-    expect(answers.incoming.lines[0]?.parts[1]).toEqual({ text: "TACOMA", changed: true });
+    expect(answers.incoming.lines[0]?.parts[1]).toEqual({ text: "Tacoma", changed: true });
   });
 
   it("lists the parts when there is no street line", () => {
@@ -262,7 +262,7 @@ describe("twoAnswers", () => {
     expect(answers.incoming.lines).toEqual([
       {
         label: null,
-        parts: [{ text: "4410 Fremont Ave N, SEATTLE, WA 98103", changed: false }],
+        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103", changed: false }],
       },
       { label: "Line 2", parts: [{ text: "(removed)", changed: true }] },
       { label: "Kids", parts: [{ text: "(removed)", changed: true }] },
