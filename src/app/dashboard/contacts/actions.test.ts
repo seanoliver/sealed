@@ -4,7 +4,9 @@ import { requireUser } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts } from "@/lib/db/schema";
 import { SAME_PARTNER_EMAIL } from "@/lib/validation/contact";
+import { mintAgentToken } from "@/lib/agent/tokens";
 import { createContact, patchContact, updateContact } from "./actions";
+import { patchContactAs } from "./write";
 
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -17,10 +19,19 @@ const C = "20000000-0000-4000-8000-0000000c5001";
 const stored = async () =>
   (await dbAdmin.select().from(contacts).where(eq(contacts.id, C)))[0];
 
-function editForm(fields: Record<string, string>) {
+const version = async () =>
+  (
+    await dbAdmin
+      .select({ version: sql<string>`${contacts.updatedAt}::text` })
+      .from(contacts)
+      .where(eq(contacts.id, C))
+  )[0].version;
+
+async function editForm(fields: Record<string, string>) {
   const form = new FormData();
   for (const [key, value] of Object.entries({
     id: C,
+    version: await version(),
     first_name: "Ana",
     last_name: "Reyes",
     email: "ana@ce.test",
@@ -46,6 +57,7 @@ describe("owner edits of the partner's email", () => {
 
   afterAll(async () => {
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);
+    await dbAdmin.execute(sql`delete from public.agent_tokens where user_id = ${U}`);
   });
 
   it("patches the partner's email", async () => {
@@ -71,22 +83,44 @@ describe("owner edits of the partner's email", () => {
     ).resolves.toHaveProperty("error");
   });
 
+  it("refuses a form opened before an agent's edit, keeping the agent's value", async () => {
+    const stale = await editForm({ city: "Oslo" });
+    const { summary } = await mintAgentToken(U, { name: "ce agent", scopes: ["write"] });
+    const agentEdit = await patchContactAs(
+      { sub: U },
+      C,
+      { values: { city: "Bergen" } },
+      { source: "agent", tokenId: summary.id },
+    );
+    expect(agentEdit.ok).toBe(true);
+    await expect(updateContact({}, stale)).resolves.toMatchObject({
+      error: "This contact changed since you opened it. Reload to see the latest.",
+    });
+    expect((await stored()).city).toBe("Bergen");
+  });
+
+  it("doesn't write a save that changes nothing", async () => {
+    const before = await version();
+    await expect(updateContact({}, await editForm({}))).resolves.toMatchObject({ saved: true });
+    expect(await version()).toBe(before);
+  });
+
   it("keeps the stored partner email when the edit form doesn't post one", async () => {
-    await expect(updateContact({}, editForm({ city: "Oslo" }))).resolves.toMatchObject({
+    await expect(updateContact({}, await editForm({ city: "Oslo" }))).resolves.toMatchObject({
       saved: true,
     });
     expect(await stored()).toMatchObject({ city: "Oslo", partnerEmail: "mark@ce.test" });
   });
 
   it("saves or clears the partner email when the form posts one", async () => {
-    await updateContact({}, editForm({ partner_email: "mark@new.test" }));
+    await updateContact({}, await editForm({ partner_email: "mark@new.test" }));
     expect((await stored()).partnerEmail).toBe("mark@new.test");
-    await updateContact({}, editForm({ partner_email: "" }));
+    await updateContact({}, await editForm({ partner_email: "" }));
     expect((await stored()).partnerEmail).toBeNull();
   });
 
   it("refuses a posted partner email that repeats the email, on that field", async () => {
-    const state = await updateContact({}, editForm({ partner_email: "Ana@ce.test" }));
+    const state = await updateContact({}, await editForm({ partner_email: "Ana@ce.test" }));
     expect(state).toMatchObject({ fieldErrors: { partner_email: SAME_PARTNER_EMAIL } });
     expect(state.error).toBeUndefined();
     expect((await stored()).partnerEmail).toBe("mark@ce.test");
@@ -94,12 +128,12 @@ describe("owner edits of the partner's email", () => {
 
   it("shows an invalid partner email on that field", async () => {
     await expect(
-      updateContact({}, editForm({ partner_email: "not-an-email" })),
+      updateContact({}, await editForm({ partner_email: "not-an-email" })),
     ).resolves.toMatchObject({ fieldErrors: { partner_email: "Invalid email address" } });
   });
 
   it("saves the partner email on a new contact", async () => {
-    const form = editForm({ email: "bo@ce.test", partner_email: "cy@ce.test" });
+    const form = await editForm({ email: "bo@ce.test", partner_email: "cy@ce.test" });
     form.delete("id");
     form.set("first_name", "Bo");
     await createContact({}, form);
@@ -111,7 +145,7 @@ describe("owner edits of the partner's email", () => {
   });
 
   it("refuses a new contact whose partner email repeats the email, on that field", async () => {
-    const form = editForm({ email: "di@ce.test", partner_email: "DI@ce.test" });
+    const form = await editForm({ email: "di@ce.test", partner_email: "DI@ce.test" });
     form.delete("id");
     await expect(createContact({}, form)).resolves.toMatchObject({
       fieldErrors: { partner_email: SAME_PARTNER_EMAIL },

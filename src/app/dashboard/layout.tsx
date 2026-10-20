@@ -23,6 +23,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
           </Link>
           <Link href="/dashboard" className={navLinkClasses}>Contacts</Link>
           <Link href="/dashboard/review" className={navLinkClasses}>Review</Link>
+          <Link href="/dashboard/agents" className={navLinkClasses}>Agents</Link>
           <Link href="/dashboard/settings" className={navLinkClasses}>Settings</Link>
           <form action="/auth/signout" method="post" className="ml-auto">
             <button type="submit" className="h-9 rounded-lg border border-input bg-card px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted">Sign out</button>

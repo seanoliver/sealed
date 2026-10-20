@@ -47,7 +47,7 @@ export default async function ContactDetailPage({
   const detail = await getContactWithEvents(claims, id);
   // RLS makes another user's contact indistinguishable from a missing one.
   if (!detail) notFound();
-  const { contact, events } = detail;
+  const { contact, version, events } = detail;
   const readings = await readingsForContact(contact);
 
   return (
@@ -67,6 +67,7 @@ export default async function ContactDetailPage({
         <ContactForm
           action={updateContact}
           contactId={contact.id}
+          version={version}
           submitLabel="Save changes"
           household={householdPrefill(contact)}
           defaults={{
@@ -107,7 +108,9 @@ export default async function ContactDetailPage({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-foreground">
-                    {sourceLabels[event.source] ?? event.source}
+                    {event.source === "agent"
+                      ? `Agent: ${event.agentName ?? "removed token"}`
+                      : (sourceLabels[event.source] ?? event.source)}
                   </span>
                   <time
                     dateTime={event.createdAt.toISOString()}

@@ -99,7 +99,8 @@ select is_empty(
        ('submissions',    'authenticated', 'UPDATE'),
        ('submissions',    'authenticated', 'DELETE'),
        ('email_sends',    'authenticated', 'SELECT'),
-       ('contact_events', 'authenticated', 'SELECT'))
+       ('contact_events', 'authenticated', 'SELECT'),
+       ('agent_previews', 'authenticated', 'SELECT'))
      select 'unexpected: ' || tbl || ' ' || rol || ' ' || priv
        from (select * from actual except select * from expected) u
      union all

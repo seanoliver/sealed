@@ -43,15 +43,12 @@ const eslintConfig = defineConfig([
       "src/lib/queries/public-book.ts",
       // ... and its integration test, which seeds fixtures as admin.
       "src/lib/queries/public-book.test.ts",
-      // Sanctioned: contact CRUD writes go through withRls; dbAdmin is used
-      // ONLY to append contact_events audit rows after a successful RLS
-      // write (contact_events is client-unwritable by design — no insert
-      // policy or grant for `authenticated`).
-      "src/app/dashboard/contacts/actions.ts",
-      // Sanctioned: same audit-append pattern — review approvals write
-      // contacts/submissions through withRls and use dbAdmin ONLY for the
-      // contact_events row (source 'submission') after the RLS write.
-      "src/app/dashboard/review/actions.ts",
+      // Sanctioned for contact_events audit appends only. Contact writes in
+      // this file must stay on withRls; lint no longer checks them here.
+      "src/app/dashboard/contacts/write.ts",
+      // Sanctioned for agent_previews only, scoped by the token's user. Contact
+      // writes in this file must stay on withRls; lint no longer checks them here.
+      "src/lib/agent/requests.ts",
       // ... and the concurrency guardrail test, which seeds fixtures and
       // asserts post-conditions as admin (the replayed approve transactions
       // themselves run through withRls).

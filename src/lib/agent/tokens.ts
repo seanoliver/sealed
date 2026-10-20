@@ -6,6 +6,7 @@ import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { agentTokens } from "@/lib/db/schema";
+import { discardTokenRequests } from "./requests";
 import { AGENT_SCOPES, type AgentScope } from "./scopes";
 
 export const AGENT_TOKEN_PREFIX = "sealed_pat_";
@@ -90,14 +91,16 @@ export async function listAgentTokens(claims: SessionClaims): Promise<AgentToken
 
 // Validate `id` as a UUID first: any other string makes Postgres throw instead of returning false.
 export async function revokeAgentToken(claims: SessionClaims, id: string): Promise<boolean> {
-  const rows = await withRls(claims, (tx) =>
-    tx
+  return withRls(claims, async (tx) => {
+    const rows = await tx
       .update(agentTokens)
       .set({ revokedAt: sql`now()` })
       .where(and(eq(agentTokens.id, id), isNull(agentTokens.revokedAt)))
-      .returning({ id: agentTokens.id }),
-  );
-  return rows.length > 0;
+      .returning({ id: agentTokens.id });
+    if (rows.length === 0) return false;
+    await discardTokenRequests(tx, id);
+    return true;
+  });
 }
 
 export type AgentPrincipal = {

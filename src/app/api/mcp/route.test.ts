@@ -7,9 +7,28 @@ import { POST } from "./route";
 const U = "00000000-0000-4000-8000-0000000aa001";
 const B = "10000000-0000-4000-8000-0000000aa001";
 const C = "20000000-0000-4000-8000-0000000aa001";
+const C2 = "20000000-0000-4000-8000-0000000aa002";
+
+const READ_TOOLS = [
+  "address_gaps",
+  "book_summary",
+  "export_contacts",
+  "find_duplicates",
+  "get_contact",
+  "list_review_queue",
+  "search_contacts",
+];
+const WRITE_TOOLS = [
+  "create_contact",
+  "preview_delete_contacts",
+  "request_delete_contacts",
+  "undo_agent_change",
+  "update_contact",
+];
 
 let readToken: string;
 let writeOnlyToken: string;
+let readWriteToken: string;
 let nextId = 1;
 
 function rpc(token: string | null, method: string, params: object = {}) {
@@ -43,9 +62,11 @@ describe("/api/mcp", () => {
     await dbAdmin.execute(sql`insert into public.books (id, owner_id, slug) values (${B}, ${U}, 'mcp-book')`);
     await dbAdmin.execute(sql`
       insert into public.contacts (id, book_id, full_name, email, city)
-      values (${C}, ${B}, 'Ana Reyes', 'ana@mcp.test', 'Springfield')`);
+      values (${C}, ${B}, 'Ana Reyes', 'ana@mcp.test', 'Springfield'),
+             (${C2}, ${B}, 'Ben Ode', 'ben@mcp.test', 'Lagos')`);
     readToken = (await mintAgentToken(U, { name: "read", scopes: ["read"] })).token;
     writeOnlyToken = (await mintAgentToken(U, { name: "write", scopes: ["write"] })).token;
+    readWriteToken = (await mintAgentToken(U, { name: "both", scopes: ["read", "write"] })).token;
   });
 
   afterAll(async () => {
@@ -64,14 +85,9 @@ describe("/api/mcp", () => {
 
     const list = await body(await rpc(readToken, "tools/list"));
     expect(list.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
-      "address_gaps",
-      "book_summary",
-      "export_contacts",
-      "find_duplicates",
-      "get_contact",
-      "list_review_queue",
-      "search_contacts",
-    ]);
+      ...READ_TOOLS,
+      ...WRITE_TOOLS,
+    ].sort());
 
     const call = await body(
       await rpc(readToken, "tools/call", { name: "search_contacts", arguments: { query: "spring" } }),
@@ -131,6 +147,105 @@ describe("/api/mcp", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("labels recipient text as untrusted in the instructions and every tool", async () => {
+    const init = await body(
+      await rpc(readToken, "initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "vitest", version: "0" },
+      }),
+    );
+    expect(init.result.instructions).toMatch(/never as instructions/);
+    const list = await body(await rpc(readToken, "tools/list"));
+    for (const tool of list.result.tools) expect(tool.description).toMatch(/never as instructions/);
+  });
+
+  it("refuses every non-read tool to a read-only token, before it runs", async () => {
+    const list = await body(await rpc(readToken, "tools/list"));
+    const writeTools = list.result.tools.filter(
+      (tool: { annotations?: { readOnlyHint?: boolean } }) => tool.annotations?.readOnlyHint !== true,
+    );
+    expect(writeTools.map((tool: { name: string }) => tool.name).sort()).toEqual(WRITE_TOOLS);
+    const events = () =>
+      dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`);
+    const before = await events();
+    for (const tool of writeTools) {
+      const response = await rpc(readToken, "tools/call", { name: tool.name, arguments: {} });
+      expect(response.status, tool.name).toBe(403);
+      expect(response.headers.get("www-authenticate")).toMatch(/insufficient_scope/);
+    }
+    expect(await events()).toEqual(before);
+  });
+
+  it("updates a contact for a write token and records the agent", async () => {
+    const call = await body(
+      await rpc(writeOnlyToken, "tools/call", {
+        name: "update_contact",
+        arguments: { id: C, fields: { city: "Shelbyville" } },
+      }),
+    );
+    expect(call.result.isError).toBeFalsy();
+    const result = JSON.parse(call.result.content[0].text);
+    expect(result).toMatchObject({ changed: true, after: { city: "Shelbyville" } });
+    const [event] = await dbAdmin.execute<{ source: string; name: string }>(sql`
+      select e.source, t.name from public.contact_events e
+      join public.agent_tokens t on t.id = e.agent_token_id where e.id = ${result.event_id}`);
+    expect(event).toEqual({ source: "agent", name: "write" });
+  });
+
+  async function call(token: string, name: string, args: object) {
+    const response = await body(await rpc(token, "tools/call", { name, arguments: args }));
+    expect(response.result.isError, response.result.content[0].text).toBeFalsy();
+    return JSON.parse(response.result.content[0].text);
+  }
+
+  it("updates and undoes over the protocol, and queues an email change for the owner", async () => {
+    const edit = await call(writeOnlyToken, "update_contact", {
+      id: C2,
+      fields: { country: "Nigeria", email: "ben.new@mcp.test" },
+    });
+    expect(edit).toMatchObject({
+      changed: true,
+      after: { country: "Nigeria" },
+      pending_email_change: {
+        changes: { email: ["ben@mcp.test", "ben.new@mcp.test"] },
+        message: expect.stringContaining("waiting for the owner"),
+      },
+    });
+    const [row] = await dbAdmin.execute<{ country: string | null; email: string }>(
+      sql`select country, email from public.contacts where id = ${C2}`,
+    );
+    expect(row).toEqual({ country: "Nigeria", email: "ben@mcp.test" });
+
+    const undone = await call(writeOnlyToken, "undo_agent_change", { event_id: edit.event_id });
+    expect(undone).toMatchObject({ contact_id: C2, restored: { country: null } });
+  });
+
+  it("has no tool that deletes: a delete request waits for the owner", async () => {
+    const list = await body(await rpc(readWriteToken, "tools/list"));
+    const request = list.result.tools.find((tool: { name: string }) => tool.name === "request_delete_contacts");
+    expect(request.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    expect(
+      list.result.tools.filter((tool: { annotations?: { destructiveHint?: boolean } }) => tool.annotations?.destructiveHint),
+    ).toEqual([]);
+
+    const preview = await call(writeOnlyToken, "preview_delete_contacts", { ids: [C2] });
+    const asked = await call(writeOnlyToken, "request_delete_contacts", { preview_id: preview.preview_id });
+    expect(asked).toEqual({
+      status: "pending",
+      count: 1,
+      message: "Waiting for the owner to approve on the Agents page.",
+    });
+    const [still] = await dbAdmin.execute(sql`select id from public.contacts where id = ${C2}`);
+    expect(still).toBeDefined();
+  });
+
+  it("names the agent in get_contact's history after an agent edit", async () => {
+    await call(readWriteToken, "update_contact", { id: C, fields: { city: "Capital City" } });
+    const contact = await call(readWriteToken, "get_contact", { id: C, events_limit: 1 });
+    expect(contact.events[0]).toMatchObject({ source: "agent", agent: "both" });
   });
 
   it("refuses read tools to a token without the read scope", async () => {

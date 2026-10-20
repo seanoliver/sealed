@@ -1,8 +1,8 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
-import { books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
+import { agentTokens, books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
 import type { FailureReason } from "@/lib/email/resend";
 import { combineSends, type RecipientSend } from "@/lib/contacts-sheet";
 import { type StoredNames } from "@/lib/names";
@@ -219,7 +219,8 @@ export async function listContacts(
 
 export type ContactDetail = {
   contact: typeof contacts.$inferSelect;
-  events: (typeof contactEvents.$inferSelect)[];
+  version: string;
+  events: (typeof contactEvents.$inferSelect & { agentName: string | null })[];
 };
 
 /**
@@ -234,20 +235,22 @@ export async function getContactWithEvents(
   id: string,
 ): Promise<ContactDetail | undefined> {
   return withRls(claims, async (tx) => {
-    const [contact] = await tx
-      .select()
+    const [row] = await tx
+      .select({ contact: contacts, version: sql<string>`${contacts.updatedAt}::text` })
       .from(contacts)
       .where(eq(contacts.id, id))
       .limit(1);
-    if (!contact) return undefined;
+    if (!row) return undefined;
+    const { contact, version } = row;
 
     const events = await tx
-      .select()
+      .select({ ...getTableColumns(contactEvents), agentName: agentTokens.name })
       .from(contactEvents)
+      .leftJoin(agentTokens, eq(agentTokens.id, contactEvents.agentTokenId))
       .where(eq(contactEvents.contactId, id))
       .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id))
       .limit(100);
 
-    return { contact, events };
+    return { contact, version, events };
   });
 }

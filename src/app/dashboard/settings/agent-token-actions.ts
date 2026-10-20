@@ -23,7 +23,7 @@ export async function createAgentToken(input: AgentTokenInput): Promise<CreateAg
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   try {
     const created = await mintAgentToken(claims.sub, parsed.data);
-    revalidatePath("/dashboard/settings");
+    revalidatePath("/dashboard/agents");
     return created;
   } catch (err) {
     logDbError("[at] [createAgentToken] insert failed", err);
@@ -39,6 +39,6 @@ export async function revokeAgentToken({ id }: { id: string }): Promise<{ error?
   const claims = await requireUser();
   if (!z.uuid().safeParse(id).success) return { error: "Token not found" };
   if (!(await revokeOwnToken(claims, id))) return { error: "Token not found or already revoked" };
-  revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard/agents");
   return {};
 }

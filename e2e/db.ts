@@ -343,3 +343,18 @@ function generateHash(token: string): Buffer {
 export async function setContactAddressLine2(contactId: string, line2: string): Promise<void> {
   await db`update public.contacts set address_line2 = ${line2} where id = ${contactId}`;
 }
+
+export async function getContactPostalCode(contactId: string): Promise<string | null> {
+  const rows = await db`select postal_code from public.contacts where id = ${contactId}`;
+  return rows[0].postal_code;
+}
+
+export async function getContactCity(contactId: string): Promise<string | null> {
+  const rows = await db`select city from public.contacts where id = ${contactId}`;
+  return rows[0].city;
+}
+
+export async function contactExists(contactId: string): Promise<boolean> {
+  const rows = await db`select 1 from public.contacts where id = ${contactId}`;
+  return rows.length > 0;
+}
