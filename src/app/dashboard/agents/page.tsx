@@ -70,7 +70,12 @@ async function loadView(claims: SessionClaims) {
     tokenName: request.tokenName ?? "Removed token",
     when: timeFrom(request.requestedAt, now),
     expires: timeFrom(request.expiresAt, now),
-    names: request.names,
+    contacts: request.contacts.map(({ agentEdit, ...contact }) => ({
+      ...contact,
+      agentEdit: agentEdit
+        ? `Edited by this agent ${timeFrom(agentEdit.at, now)}: ${agentEdit.summary}`
+        : null,
+    })),
   }));
   return {
     tokens: tokenItems,

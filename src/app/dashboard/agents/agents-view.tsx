@@ -30,7 +30,13 @@ export type PendingItem = {
   tokenName: string;
   when: string;
   expires: string;
-  names: string[];
+  contacts: {
+    name: string;
+    email: string | null;
+    partnerEmail: string | null;
+    address: string;
+    agentEdit: string | null;
+  }[];
 };
 
 export type TokenItem = {
@@ -406,7 +412,8 @@ function PendingDeletion({ request }: { request: PendingItem }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const count = contactCount(request.names.length);
+  const count = contactCount(request.contacts.length);
+  const edited = request.contacts.filter((contact) => contact.agentEdit !== null).length;
 
   function run(action: typeof approvePendingDeletion) {
     setError(null);
@@ -425,14 +432,32 @@ function PendingDeletion({ request }: { request: PendingItem }) {
           Asked {request.when} by {request.tokenName} · expires {request.expires}
         </span>
       </div>
-      <details className="group text-sm text-foreground">
+      {edited > 0 ? (
+        <p className="text-sm font-medium text-destructive">
+          This agent edited {edited === request.contacts.length && edited === 1 ? "this contact" : `${edited} of them`}{" "}
+          before asking. Check the details below before deleting.
+        </p>
+      ) : null}
+      <details className="group text-sm text-foreground" open={edited > 0}>
         <summary className="cursor-pointer list-none font-semibold text-primary [&::-webkit-details-marker]:hidden">
-          <span className="group-open:hidden">Show {request.names.length === 1 ? "the contact" : `all ${request.names.length}`}</span>
+          <span className="group-open:hidden">
+            Show {request.contacts.length === 1 ? "the contact" : `all ${request.contacts.length}`}
+          </span>
           <span className="hidden group-open:inline">Hide</span>
         </summary>
-        <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-3">
-          {request.names.map((name, index) => (
-            <li key={index}>{name}</li>
+        <ul className="mt-2 flex flex-col gap-2 border-l-2 border-border pl-3">
+          {request.contacts.map((contact, index) => (
+            <li key={index} className="flex flex-col gap-0.5">
+              <span className="font-medium">{contact.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {[contact.email, contact.partnerEmail, contact.address]
+                  .filter((part) => (part ?? "") !== "")
+                  .join(" · ") || "No email or address"}
+              </span>
+              {contact.agentEdit ? (
+                <span className="text-xs font-medium text-destructive">{contact.agentEdit}</span>
+              ) : null}
+            </li>
           ))}
         </ul>
       </details>
@@ -532,9 +557,9 @@ function BulkRow({ item }: { item: Extract<FeedItem, { kind: "bulk" }> }) {
 
   return (
     <li className={rowClasses}>
-      <details className="group">
-        <summary className="flex cursor-pointer list-none flex-col gap-2 lg:flex-row lg:items-center lg:justify-between [&::-webkit-details-marker]:hidden">
-          <span className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-3">
+        <details className="group min-w-0 flex-1">
+          <summary className="flex cursor-pointer list-none flex-col gap-0.5 [&::-webkit-details-marker]:hidden">
             <span className="text-sm text-foreground">
               <strong className="font-semibold">Bulk: {contactCount(item.count)}</strong>
               {" · "}
@@ -544,38 +569,33 @@ function BulkRow({ item }: { item: Extract<FeedItem, { kind: "bulk" }> }) {
             <span className="text-xs text-muted-foreground">
               {item.when} · {item.tokenName}
             </span>
-          </span>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              undoAll();
-            }}
-            disabled={undoable === 0 || pending}
-            title={undoable === 0 ? "Nothing left to undo" : undefined}
-            className={cn(outlineButton, "self-start lg:self-auto")}
-          >
-            {pending ? "Undoing…" : "Undo all"}
-          </button>
-        </summary>
-        {message ? (
-          <p role="status" className="mt-2 text-xs text-muted-foreground">
-            {message}
-          </p>
-        ) : null}
-        <ul className="mt-2 flex flex-col border-l-2 border-border pl-3">
-          {item.changes.map((change) => (
-            <li key={change.eventId} className="py-2">
-              <ChangeLine change={change} meta={change.when} />
-            </li>
-          ))}
-        </ul>
-        {item.count > item.changes.length ? (
-          <p className="text-xs text-muted-foreground">
-            {item.count - item.changes.length} more were deleted since.
-          </p>
-        ) : null}
-      </details>
+          </summary>
+          <ul className="mt-2 flex flex-col border-l-2 border-border pl-3">
+            {item.changes.map((change) => (
+              <li key={change.eventId} className="py-2">
+                <ChangeLine change={change} meta={change.when} />
+              </li>
+            ))}
+          </ul>
+          {item.count > item.changes.length ? (
+            <p className="text-xs text-muted-foreground">
+              {item.count - item.changes.length} more were deleted since.
+            </p>
+          ) : null}
+        </details>
+        <button
+          type="button"
+          onClick={undoAll}
+          disabled={undoable === 0 || pending}
+          title={undoable === 0 ? "Nothing left to undo" : undefined}
+          className={cn(outlineButton, "shrink-0 self-start")}
+        >
+          {pending ? "Undoing…" : "Undo all"}
+        </button>
+      </div>
+      <p role="status" className={cn("text-xs text-muted-foreground", message && "mt-2")}>
+        {message}
+      </p>
     </li>
   );
 }

@@ -8,7 +8,7 @@ import { isUniqueViolation } from "@/lib/db/errors";
 import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { householdPrefill, type Kid, type StoredNames } from "@/lib/names";
+import { type Kid, type StoredNames } from "@/lib/names";
 import {
   CONTACT_FIELDS,
   contactDetailsSchema,
@@ -17,7 +17,8 @@ import {
   SAME_PARTNER_EMAIL,
   samePartnerEmail,
 } from "@/lib/validation/contact";
-import { householdSchema, type HouseholdInput } from "@/lib/validation/household";
+import { draftFromNames, draftToValues, validateHousehold } from "@/lib/contacts-sheet";
+import { type HouseholdInput, type HouseholdValues } from "@/lib/validation/household";
 
 /**
  * Never re-export these from a "use server" module: they trust the `claims`
@@ -162,24 +163,29 @@ export type PatchRequest = {
   names?: NamePatch;
 };
 
-function mergeNames(existing: ContactRow, names: NamePatch): unknown {
-  const prefill = householdPrefill(storedNames(existing));
-  const merged = {
-    first_name: prefill.first_name,
-    last_name: prefill.last_name,
-    partner_first_name: prefill.partner?.first,
-    partner_last_name: prefill.partner?.last,
-    kids: prefill.kids,
-    ...names,
-  };
-  const partnerRemoved = names.partner_first_name === null;
-  return {
-    ...merged,
-    last_name: merged.last_name ?? undefined,
-    partner_first_name: merged.partner_first_name?.trim() ? merged.partner_first_name : undefined,
-    partner_last_name: partnerRemoved ? undefined : (merged.partner_last_name ?? undefined),
-    kids: merged.kids ?? undefined,
-  };
+/** Same household rules as the sheet's name editor: unedited surnames follow last_name. */
+function mergeNames(existing: ContactRow, names: NamePatch): HouseholdValues {
+  const draft = draftFromNames(storedNames(existing));
+  if ("first_name" in names) draft.first_name = names.first_name ?? "";
+  if ("last_name" in names) draft.last_name = names.last_name ?? "";
+  if ("partner_first_name" in names && (names.partner_first_name ?? "").trim() === "") {
+    draft.partner = null;
+  } else if ("partner_first_name" in names || "partner_last_name" in names) {
+    const kept = draft.partner;
+    draft.partner = {
+      first: names.partner_first_name ?? kept?.first ?? "",
+      last: "partner_last_name" in names ? (names.partner_last_name ?? "") : (kept?.last ?? ""),
+      lastEdited: "partner_last_name" in names || (kept?.lastEdited ?? false),
+    };
+  }
+  if ("kids" in names) {
+    draft.kids = (names.kids ?? []).map((kid) => ({
+      first: kid.first,
+      last: kid.last ?? "",
+      lastEdited: kid.last !== undefined,
+    }));
+  }
+  return draftToValues(draft);
 }
 
 export type PatchPlan =
@@ -192,9 +198,9 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
     return { kind: "invalid", error: NAMES_CHANGED };
   }
   if (request.names && Object.keys(request.names).length > 0) {
-    const parsed = householdSchema().safeParse(mergeNames(existing, request.names));
-    if (!parsed.success) {
-      return { kind: "invalid", error: parsed.error.issues[0]?.message ?? "Invalid name" };
+    const parsed = validateHousehold(mergeNames(existing, request.names));
+    if (!parsed.ok) {
+      return { kind: "invalid", error: Object.values(parsed.errors)[0] ?? "Invalid name" };
     }
     household = parsed.data;
   }

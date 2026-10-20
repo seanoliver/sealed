@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   recordContactEvent,
+  recordContactEvents,
   snapshotToRow,
   updatedAtText,
   DUPLICATE_EMAIL,
@@ -233,19 +234,64 @@ export async function undoAgentBatch(
   claims: SessionClaims,
   previewId: string,
   actor: Actor,
-): Promise<{ undone: number; skipped: number }> {
-  const events = await withRls(claims, (tx) =>
-    tx
-      .select({ id: contactEvents.id })
-      .from(contactEvents)
-      .where(and(eq(contactEvents.source, "agent"), eq(contactEvents.agentPreviewId, previewId)))
-      .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id)),
-  );
-  let undone = 0;
-  for (const event of events) {
-    if ((await undoAgentChange(claims, event.id, actor)).ok) undone += 1;
+): Promise<WriteResult<{ undone: number; skipped: number }>> {
+  type Undone = { eventId: string; contactId: string; diff: Diff; updatedAt: string };
+  let result: { undone: Undone[]; total: number };
+  try {
+    result = await withRls(claims, async (tx) => {
+      const events = await tx
+        .select({
+          id: contactEvents.id,
+          contactId: contactEvents.contactId,
+          diff: contactEvents.diff,
+          version: sql<string | null>`${contactEvents.contactUpdatedAt}::text`,
+          undone: sql<boolean>`exists (
+            select 1 from public.contact_events u
+            where u.contact_id = ${contactEvents.contactId}
+              and u.diff ->> 'undo_of' = ${contactEvents.id}::text)`,
+        })
+        .from(contactEvents)
+        .where(and(eq(contactEvents.source, "agent"), eq(contactEvents.agentPreviewId, previewId)));
+      if (events.length === 0) return { undone: [], total: 0 };
+      const locked = await tx
+        .select({ id: contacts.id, version: updatedAtText })
+        .from(contacts)
+        .where(inArray(contacts.id, events.map((event) => event.contactId)))
+        .orderBy(contacts.id)
+        .for("update");
+      const current = new Map(locked.map((row) => [row.id, row.version]));
+      const undone: Undone[] = [];
+      for (const event of events.toSorted((a, b) => a.contactId.localeCompare(b.contactId))) {
+        const diff = asDiff(event.diff);
+        if (event.undone || !diff.before || current.get(event.contactId) !== event.version) continue;
+        const [saved] = await tx
+          .update(contacts)
+          .set(snapshotToRow(diff.before))
+          .where(eq(contacts.id, event.contactId))
+          .returning({ updatedAt: updatedAtText });
+        undone.push({ eventId: event.id, contactId: event.contactId, diff, updatedAt: saved.updatedAt });
+      }
+      return { undone, total: events.length };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err, "contacts_book_email_unique")) {
+      return { ok: false, error: `Nothing was undone: ${DUPLICATE_EMAIL.toLowerCase()}.` };
+    }
+    logDbError("[ag] [undoAgentBatch] failed", err);
+    return { ok: false, error: `Nothing was undone. ${GENERIC_ERROR}` };
   }
-  return { undone, skipped: events.length - undone };
+  await recordContactEvents(
+    result.undone.map(({ eventId, contactId, diff, updatedAt }) => ({
+      contactId,
+      diff: { before: diff.after ?? {}, after: diff.before, undo_of: eventId },
+      contactUpdatedAt: updatedAt,
+    })),
+    actor,
+  );
+  return {
+    ok: true,
+    value: { undone: result.undone.length, skipped: result.total - result.undone.length },
+  };
 }
 
 export async function undoAgentChange(

@@ -14,9 +14,10 @@ import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { isUniqueViolation } from "@/lib/db/errors";
-import { agentPreviews, agentTokens, books, contacts } from "@/lib/db/schema";
+import { agentPreviews, agentTokens, books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
 import { householdLine, pickStoredNames } from "@/lib/names";
+import { summarizeDiff } from "./changes";
 import { type AgentContext } from "./write";
 
 export const MAX_PREVIEW_CONTACTS = 500;
@@ -228,6 +229,8 @@ export async function previewDeleteContacts(
   };
 }
 
+const EXPIRED = "This preview expired. Make a new preview.";
+
 const open = and(isNull(agentPreviews.appliedAt), isNull(agentPreviews.discardedAt));
 const live = and(open, gt(agentPreviews.expiresAt, sql`now()`));
 
@@ -235,20 +238,25 @@ type Claimed<T> = { ok: true; items: T[] } | { ok: false; error: string };
 
 /** Mark the preview applied first, so two concurrent applies can't both run it. */
 async function claimPreview<T>(mine: SQL | undefined, alreadyFinished: string): Promise<Claimed<T>> {
-  const [claimed] = await dbAdmin
-    .update(agentPreviews)
-    .set({ appliedAt: sql`now()` })
-    .where(and(mine, live))
-    .returning({ items: agentPreviews.items });
-  if (claimed) return { ok: true, items: claimed.items as T[] };
-  const [preview] = await dbAdmin
-    .select({ appliedAt: agentPreviews.appliedAt, discardedAt: agentPreviews.discardedAt })
-    .from(agentPreviews)
-    .where(mine)
-    .limit(1);
-  if (!preview) return { ok: false, error: "Preview not found. Make a new preview." };
-  if (preview.appliedAt || preview.discardedAt) return { ok: false, error: alreadyFinished };
-  return { ok: false, error: "This preview expired. Make a new preview." };
+  try {
+    const [claimed] = await dbAdmin
+      .update(agentPreviews)
+      .set({ appliedAt: sql`now()` })
+      .where(and(mine, live))
+      .returning({ items: agentPreviews.items });
+    if (claimed) return { ok: true, items: claimed.items as T[] };
+    const [preview] = await dbAdmin
+      .select({ appliedAt: agentPreviews.appliedAt, discardedAt: agentPreviews.discardedAt })
+      .from(agentPreviews)
+      .where(mine)
+      .limit(1);
+    if (!preview) return { ok: false, error: "Preview not found. Make a new preview." };
+    if (preview.appliedAt || preview.discardedAt) return { ok: false, error: alreadyFinished };
+    return { ok: false, error: EXPIRED };
+  } catch (err) {
+    logDbError("[ag] [claimPreview] failed", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
 }
 
 async function releasePreview(previewId: string) {
@@ -292,6 +300,7 @@ async function lockUnchanged(tx: RlsTx, items: { id: string; updatedAt: string }
     .select({ id: contacts.id, updatedAt: updatedAtText })
     .from(contacts)
     .where(inArray(contacts.id, items.map((item) => item.id)))
+    .orderBy(contacts.id)
     .for("update");
   const fresh = new Map(rows.map((row) => [row.id, row.updatedAt]));
   const stale = items.filter((item) => fresh.get(item.id) !== item.updatedAt).map((item) => item.id);
@@ -389,7 +398,7 @@ export async function requestDeleteContacts(
   if (preview.appliedAt) return { ok: false, error: "The owner already deleted these contacts." };
   if (preview.discardedAt) return { ok: false, error: "The owner discarded this deletion." };
   if (preview.requestedAt) return { ok: false, error: `Already requested. ${AWAITING_OWNER}` };
-  return { ok: false, error: "This preview expired. Make a new preview." };
+  return { ok: false, error: EXPIRED };
 }
 
 const pendingFor = (claims: SessionClaims, previewId: string) =>
@@ -409,7 +418,7 @@ export async function approveDeletion(
     "This deletion was already approved or discarded.",
   );
   if (!claimed.ok) {
-    return claimed.error.startsWith("This preview expired")
+    return claimed.error === EXPIRED
       ? { ok: false, error: "This request expired. Ask the agent to make a new one." }
       : claimed;
   }
@@ -438,29 +447,45 @@ export async function discardDeletion(
   claims: SessionClaims,
   previewId: string,
 ): Promise<ApplyResult<Record<string, never>>> {
-  const [discarded] = await dbAdmin
-    .update(agentPreviews)
-    .set({ discardedAt: sql`now()` })
-    .where(and(pendingFor(claims, previewId), open))
-    .returning({ id: agentPreviews.id });
+  let discarded: { id: string } | undefined;
+  try {
+    [discarded] = await dbAdmin
+      .update(agentPreviews)
+      .set({ discardedAt: sql`now()` })
+      .where(and(pendingFor(claims, previewId), open))
+      .returning({ id: agentPreviews.id });
+  } catch (err) {
+    logDbError("[ag] [discardDeletion] failed", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
   if (!discarded) return { ok: false, error: "This deletion was already approved or discarded." };
   await shrinkPreview(previewId, { keepIds: false });
   return { ok: true, value: {} };
 }
+
+export type PendingContact = {
+  name: string;
+  email: string | null;
+  partnerEmail: string | null;
+  address: string;
+  /** The requesting agent's latest edit, so a renamed contact still stands out. */
+  agentEdit: { at: Date; summary: string } | null;
+};
 
 export type PendingDeletion = {
   previewId: string;
   tokenName: string | null;
   requestedAt: Date;
   expiresAt: Date;
-  names: string[];
+  contacts: PendingContact[];
 };
 
 export async function listPendingDeletions(claims: SessionClaims): Promise<PendingDeletion[]> {
-  const rows = await withRls(claims, (tx) =>
-    tx
+  return withRls(claims, async (tx) => {
+    const rows = await tx
       .select({
         previewId: agentPreviews.id,
+        tokenId: agentPreviews.agentTokenId,
         tokenName: agentTokens.name,
         requestedAt: agentPreviews.requestedAt,
         expiresAt: agentPreviews.expiresAt,
@@ -469,11 +494,41 @@ export async function listPendingDeletions(claims: SessionClaims): Promise<Pendi
       .from(agentPreviews)
       .leftJoin(agentTokens, eq(agentTokens.id, agentPreviews.agentTokenId))
       .where(and(eq(agentPreviews.kind, "delete"), isNotNull(agentPreviews.requestedAt), live))
-      .orderBy(desc(agentPreviews.requestedAt)),
-  );
-  return rows.map(({ items, requestedAt, ...row }) => ({
-    ...row,
-    requestedAt: requestedAt!,
-    names: (items as { name?: string }[]).map((item) => item.name ?? "Unnamed"),
-  }));
+      .orderBy(desc(agentPreviews.requestedAt));
+    return Promise.all(
+      rows.map(async ({ items, requestedAt, tokenId, ...row }) => {
+        const listed = items as DeleteItem[];
+        const edits = await tx
+          .selectDistinctOn([contactEvents.contactId], {
+            contactId: contactEvents.contactId,
+            at: contactEvents.createdAt,
+            diff: contactEvents.diff,
+          })
+          .from(contactEvents)
+          .where(
+            and(
+              eq(contactEvents.source, "agent"),
+              eq(contactEvents.agentTokenId, tokenId),
+              inArray(contactEvents.contactId, listed.map((item) => item.id)),
+            ),
+          )
+          .orderBy(contactEvents.contactId, desc(contactEvents.createdAt));
+        const byContact = new Map(edits.map((edit) => [edit.contactId, edit]));
+        return {
+          ...row,
+          requestedAt: requestedAt!,
+          contacts: listed.map((item) => {
+            const edit = byContact.get(item.id);
+            return {
+              name: item.name,
+              email: item.email,
+              partnerEmail: item.partnerEmail,
+              address: item.address,
+              agentEdit: edit ? { at: edit.at, summary: summarizeDiff(edit.diff) } : null,
+            };
+          }),
+        };
+      }),
+    );
+  });
 }

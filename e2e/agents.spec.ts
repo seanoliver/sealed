@@ -164,6 +164,12 @@ test("shows agent edits in the feed and undoes one", async () => {
   await expect(postal.getByRole("button", { name: /^Undo/ })).toBeDisabled();
   expect(await getContactPostalCode(hollowayId)).toBe("97211");
 
+  const bulk = feed.getByRole("listitem").filter({ hasText: "Bulk: 2 contacts" });
+  await feed.getByText("Hide").click();
+  await expect(bulk.getByText("Country United Kingdom → GB")).toBeHidden();
+  await bulk.getByRole("button", { name: "Undo all" }).click();
+  await expect(bulk.getByRole("status")).toHaveText("Undid 2 contacts.");
+
   await page.goto(`/dashboard/contacts/${hollowayId}`);
   await expect(page.getByText("Agent: Claude Code on MacBook")).toBeVisible();
   await page.goto("/dashboard/agents");
@@ -176,6 +182,7 @@ async function requestDeletion(ids: string[]) {
 }
 
 test("an agent's delete waits for the owner, who can discard it", async () => {
+  await toolResult("update_contact", { id: adaId, fields: { first_name: "Augusta" } });
   await requestDeletion([adaId]);
   expect(await contactExists(adaId)).toBe(true);
 
@@ -183,8 +190,10 @@ test("an agent's delete waits for the owner, who can discard it", async () => {
   const pending = page.getByRole("list", { name: "Waiting for you" }).getByRole("listitem").first();
   await expect(pending).toContainText("Pending deletion: 1 contact");
   await expect(pending).toContainText("Claude Code on MacBook");
-  await pending.getByText("Show the contact").click();
-  await expect(pending.getByText("Ada Lovelace")).toBeVisible();
+  await expect(pending).toContainText("This agent edited this contact before asking.");
+  await expect(pending.getByText("Augusta Lovelace")).toBeVisible();
+  await expect(pending.getByText("ada@lovelace.test")).toBeVisible();
+  await expect(pending.getByText(/Edited by this agent just now: First name Ada → Augusta/)).toBeVisible();
 
   await shoot("pending-desktop-light", { width: 1280, dark: false });
   await shoot("pending-desktop-dark", { width: 1280, dark: true });

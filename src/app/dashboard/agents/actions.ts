@@ -27,9 +27,10 @@ export async function undoBulk({
   const claims = await requireUser();
   if (!uuid.safeParse(previewId).success) return { error: "Change not found." };
   const result = await undoAgentBatch(claims, previewId, { source: "owner" });
+  if (!result.ok) return { error: result.error };
   revalidatePath("/dashboard/agents");
   revalidatePath("/dashboard");
-  return result;
+  return result.value;
 }
 
 export async function approvePendingDeletion({
