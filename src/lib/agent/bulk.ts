@@ -115,10 +115,6 @@ function duplicateIds(ids: string[]): Problem[] {
   });
 }
 
-/**
- * Updates run one row at a time, so an email another contact holds right now is
- * refused even when that contact gives it up in the same batch (a swap).
- */
 function emailCollisions(items: UpdateItem[], held: { id: string; email: string | null }[]): Problem[] {
   const holders = new Map(held.map((row) => [row.email!.toLowerCase(), row.id]));
   const claimed = new Map<string, string>();
@@ -266,7 +262,6 @@ async function releasePreview(previewId: string) {
   }
 }
 
-/** Keep only what the feed shows: names, plus ids for updates. */
 async function shrinkPreview(previewId: string, { keepIds }: { keepIds: boolean }) {
   try {
     await dbAdmin
@@ -405,7 +400,6 @@ const pendingFor = (claims: SessionClaims, previewId: string) =>
     isNotNull(agentPreviews.requestedAt),
   );
 
-/** The owner's approval of an agent's delete request. */
 export async function approveDeletion(
   claims: SessionClaims,
   previewId: string,

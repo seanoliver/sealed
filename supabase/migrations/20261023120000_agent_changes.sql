@@ -12,7 +12,6 @@ create table public.agent_previews (
   ),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null check (expires_at > created_at),
-  -- A delete runs only after the owner approves it on the Agents page.
   requested_at timestamptz check (requested_at is null or kind = 'delete'),
   applied_at timestamptz,
   discarded_at timestamptz,

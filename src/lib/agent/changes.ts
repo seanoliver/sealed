@@ -100,7 +100,6 @@ export type FeedEntry =
       previewId: string;
       tokenName: string | null;
       at: Date;
-      /** Contacts in the apply, from its preview, since `changes` can leave some out. */
       count: number;
       changes: ChangeEntry[];
     }
@@ -230,7 +229,6 @@ export async function listAgentChanges(
   return feed.slice(0, limit);
 }
 
-/** Undo every change of one bulk apply that can still be undone. */
 export async function undoAgentBatch(
   claims: SessionClaims,
   previewId: string,
