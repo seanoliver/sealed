@@ -1,26 +1,31 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   createContactAs,
   DETAIL_FIELDS,
+  mergeNames,
   NAME_FIELDS,
   parseDetails,
   patchContactAs,
-  type Actor,
+  type AgentActor,
+  type ContactDiff,
   type DetailField,
+  type EmailChange,
   type NamePatch,
   type PatchRequest,
 } from "@/app/dashboard/contacts/write";
-import { approveMergeAs, approveNewAs, rejectAs } from "@/app/dashboard/review/resolve";
 import { type SessionClaims } from "@/lib/auth";
-import { withRls } from "@/lib/db";
-import { submissions } from "@/lib/db/schema";
-import { householdSchema } from "@/lib/validation/household";
+import { validateHousehold } from "@/lib/contacts-sheet";
 
 export type AgentContext = { claims: SessionClaims; tokenId: string };
 
-export const agentActor = (ctx: AgentContext): Actor => ({ source: "agent", tokenId: ctx.tokenId });
+export const agentActor = (ctx: AgentContext): AgentActor => ({
+  source: "agent",
+  tokenId: ctx.tokenId,
+});
+
+const EMAIL_WAITING =
+  "The email change is waiting for the owner to approve on the Agents page; the other fields are saved.";
 
 export class ToolError extends Error {}
 
@@ -81,16 +86,40 @@ export const updateContactInput = z.object({
   fields: contactFieldsInput,
 });
 
+export type UpdateContactResult = {
+  id: string;
+  changed: boolean;
+  before?: ContactDiff["before"];
+  after?: ContactDiff["after"];
+  event_id?: string | null;
+  pending_email_change?: { request_id: string; changes: EmailChange; message: string };
+};
+
 export async function updateContact(
   ctx: AgentContext,
   input: z.output<typeof updateContactInput>,
-) {
-  const result = await patchContactAs(ctx.claims, input.id, toPatchRequest(input.fields), agentActor(ctx));
+): Promise<UpdateContactResult> {
+  const result = await patchContactAs(
+    ctx.claims,
+    input.id,
+    toPatchRequest(input.fields),
+    agentActor(ctx),
+    { holdEmails: true },
+  );
   if (!result.ok) throw new ToolError(result.error);
-  const { diff, eventId } = result.value;
+  const { diff, eventId, emailRequest } = result.value;
+  const pending = emailRequest
+    ? {
+        pending_email_change: {
+          request_id: emailRequest.id,
+          changes: emailRequest.changes,
+          message: EMAIL_WAITING,
+        },
+      }
+    : {};
   return diff
-    ? { id: input.id, changed: true, before: diff.before, after: diff.after, event_id: eventId ?? null }
-    : { id: input.id, changed: false };
+    ? { id: input.id, changed: true, before: diff.before, after: diff.after, event_id: eventId ?? null, ...pending }
+    : { id: input.id, changed: false, ...pending };
 }
 
 export const createContactInput = z.object({
@@ -102,17 +131,12 @@ export async function createContact(
   input: z.output<typeof createContactInput>,
 ) {
   const { fields } = input;
-  const household = householdSchema().safeParse({
-    first_name: fields.first_name,
-    last_name: fields.last_name ?? undefined,
-    partner_first_name: fields.partner_first_name?.trim() ? fields.partner_first_name : undefined,
-    partner_last_name: fields.partner_last_name ?? undefined,
-    kids: fields.kids ?? undefined,
-  });
-  if (!household.success) {
-    throw new ToolError(household.error.issues[0]?.message ?? "Invalid name");
+  const request = toPatchRequest(fields);
+  const household = validateHousehold(mergeNames(null, request.names ?? {}));
+  if (!household.ok) {
+    throw new ToolError(Object.values(household.errors)[0] ?? "Invalid name");
   }
-  const details = parseDetails(toPatchRequest(fields).values ?? {});
+  const details = parseDetails(request.values ?? {});
   if (!details.success) throw new ToolError(details.error);
   const result = await createContactAs(
     ctx.claims,
@@ -123,54 +147,8 @@ export async function createContact(
   return { id: result.value.id, event_id: result.value.eventId ?? null };
 }
 
-export const resolveReviewItemInput = z.object({
-  id: z.uuid().describe("Submission id from list_review_queue."),
-  action: z
-    .enum(["approve", "reject"])
-    .describe(
-      "approve: merge the reply into its matched contact, or add it as a new contact when it matched none. reject: discard it.",
-    ),
-});
-
-export async function resolveReviewItem(
-  ctx: AgentContext,
-  input: z.output<typeof resolveReviewItemInput>,
-) {
-  if (input.action === "reject") {
-    const result = await rejectAs(ctx.claims, input.id);
-    if (!result.ok) throw new ToolError(result.error);
-    return { id: input.id, status: "rejected" };
-  }
-  const [submission] = await withRls(ctx.claims, (tx) =>
-    tx
-      .select({ matchedContactId: submissions.matchedContactId })
-      .from(submissions)
-      .where(and(eq(submissions.id, input.id), eq(submissions.status, "pending")))
-      .limit(1),
-  );
-  const approve = submission?.matchedContactId ? approveMergeAs : approveNewAs;
-  const result = await approve(ctx.claims, input.id, agentActor(ctx));
-  if (!result.ok) throw new ToolError(result.error);
-  return {
-    id: input.id,
-    status: "approved",
-    contact_id: result.contactId ?? null,
-    event_id: result.eventId ?? null,
-  };
-}
-
-const changeInput = z.object({ id: z.uuid(), fields: contactFieldsInput });
-
-export const previewBulkUpdateInput = z.object({
-  changes: z
-    .array(changeInput)
-    .min(1)
-    .max(500)
-    .describe("One entry per contact (max 500), each with only the fields to change."),
-});
-
-export const applyPreviewInput = z.object({
-  preview_id: z.uuid().describe("preview_id from the matching preview tool."),
+export const requestDeleteInput = z.object({
+  preview_id: z.uuid().describe("preview_id from preview_delete_contacts."),
 });
 
 export const previewDeleteContactsInput = z.object({

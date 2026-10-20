@@ -19,12 +19,9 @@ const READ_TOOLS = [
   "search_contacts",
 ];
 const WRITE_TOOLS = [
-  "apply_bulk_update",
   "create_contact",
-  "preview_bulk_update",
   "preview_delete_contacts",
   "request_delete_contacts",
-  "resolve_review_item",
   "undo_agent_change",
   "update_contact",
 ];
@@ -204,24 +201,26 @@ describe("/api/mcp", () => {
     return JSON.parse(response.result.content[0].text);
   }
 
-  it("applies a bulk update by its preview_id, then undoes one change", async () => {
-    const preview = await call(writeOnlyToken, "preview_bulk_update", {
-      changes: [{ id: C2, fields: { country: "Nigeria" } }],
+  it("updates and undoes over the protocol, and queues an email change for the owner", async () => {
+    const edit = await call(writeOnlyToken, "update_contact", {
+      id: C2,
+      fields: { country: "Nigeria", email: "ben.new@mcp.test" },
     });
-    expect(preview).toMatchObject({ count: 1, items: [{ id: C2, after: { country: "Nigeria" } }] });
-    const applied = await call(writeOnlyToken, "apply_bulk_update", { preview_id: preview.preview_id });
-    expect(applied.applied).toBe(1);
-    const [row] = await dbAdmin.execute<{ country: string | null }>(
-      sql`select country from public.contacts where id = ${C2}`,
+    expect(edit).toMatchObject({
+      changed: true,
+      after: { country: "Nigeria" },
+      pending_email_change: {
+        changes: { email: ["ben@mcp.test", "ben.new@mcp.test"] },
+        message: expect.stringContaining("waiting for the owner"),
+      },
+    });
+    const [row] = await dbAdmin.execute<{ country: string | null; email: string }>(
+      sql`select country, email from public.contacts where id = ${C2}`,
     );
-    expect(row.country).toBe("Nigeria");
+    expect(row).toEqual({ country: "Nigeria", email: "ben@mcp.test" });
 
-    const undone = await call(writeOnlyToken, "undo_agent_change", { event_id: applied.event_ids[0] });
+    const undone = await call(writeOnlyToken, "undo_agent_change", { event_id: edit.event_id });
     expect(undone).toMatchObject({ contact_id: C2, restored: { country: null } });
-    const [after] = await dbAdmin.execute<{ country: string | null }>(
-      sql`select country from public.contacts where id = ${C2}`,
-    );
-    expect(after.country).toBeNull();
   });
 
   it("has no tool that deletes: a delete request waits for the owner", async () => {

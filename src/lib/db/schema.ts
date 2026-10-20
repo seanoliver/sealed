@@ -111,7 +111,7 @@ export const agentPreviews = pgTable("agent_previews", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(),
   agentTokenId: uuid("agent_token_id").notNull(),
-  kind: text("kind").$type<"update" | "delete">().notNull(),
+  kind: text("kind").$type<"delete" | "email">().notNull(),
   items: jsonb("items").notNull().$type<unknown[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

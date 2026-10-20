@@ -48,7 +48,7 @@ const eslintConfig = defineConfig([
       "src/app/dashboard/contacts/write.ts",
       // Sanctioned for agent_previews only, scoped by the token's user. Contact
       // writes in this file must stay on withRls; lint no longer checks them here.
-      "src/lib/agent/bulk.ts",
+      "src/lib/agent/requests.ts",
       // ... and the concurrency guardrail test, which seeds fixtures and
       // asserts post-conditions as admin (the replayed approve transactions
       // themselves run through withRls).

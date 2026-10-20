@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, getTableColumns } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -11,7 +11,7 @@ import {
   parseSubmissionPayload,
   withoutBlanks,
 } from "@/lib/validation/submission";
-import { recordContactEvent, updatedAtText, type Actor } from "../contacts/write";
+import { recordContactEvent } from "../contacts/write";
 import {
   changedFields,
   definedFields,
@@ -39,8 +39,6 @@ export type ResolveResult =
   | { ok: true; contactId?: string; eventId?: string }
   | { ok: false; error: string };
 
-const approvalActor = (actor: Actor): Actor =>
-  actor.source === "owner" ? { source: "submission" } : actor;
 
 /**
  * Call in the contact write's transaction, after read-only checks and before any
@@ -92,12 +90,11 @@ async function loadPendingSubmission(tx: RlsTx, ownerId: string, id: string) {
 export async function approveNewAs(
   claims: SessionClaims,
   id: string,
-  actor: Actor,
 ): Promise<ResolveResult> {
   type Outcome =
     | { kind: "not_found" }
     | { kind: "invalid" }
-    | { kind: "ok"; contactId: string; after: Partial<Snapshot>; updatedAt: string };
+    | { kind: "ok"; contactId: string; after: Partial<Snapshot> };
 
   let outcome: Outcome;
   try {
@@ -114,15 +111,14 @@ export async function approveNewAs(
         return { kind: "not_found" };
       }
 
-      const [{ updatedAtText: updatedAt, ...row }] = await tx
+      const [row] = await tx
         .insert(contacts)
         .values({ bookId: book.id, ...toInsertRow(gated) })
-        .returning({ ...getTableColumns(contacts), updatedAtText });
+        .returning();
       return {
         kind: "ok",
         contactId: row.id,
         after: definedFields(rowToSnapshot(row)),
-        updatedAt,
       };
     });
   } catch (err) {
@@ -141,9 +137,8 @@ export async function approveNewAs(
     {
       contactId: outcome.contactId,
       diff: { after: outcome.after },
-      contactUpdatedAt: outcome.updatedAt,
     },
-    approvalActor(actor),
+    "submission",
   );
   return { ok: true, contactId: outcome.contactId, eventId };
 }
@@ -152,7 +147,6 @@ export async function approveNewAs(
 export async function approveMergeAs(
   claims: SessionClaims,
   id: string,
-  actor: Actor,
 ): Promise<ResolveResult> {
   type Outcome =
     | { kind: "not_found" }
@@ -162,7 +156,6 @@ export async function approveMergeAs(
         kind: "ok";
         contactId: string;
         diff: ReturnType<typeof changedFields>;
-        updatedAt?: string;
       };
 
   let outcome: Outcome;
@@ -211,19 +204,18 @@ export async function approveMergeAs(
       if (!set) {
         return { kind: "ok", contactId: existing.id, diff: undefined };
       }
-      const [{ updatedAtText: updatedAt, ...row }] = await tx
+      const [row] = await tx
         .update(contacts)
         .set(set)
         .where(
           and(eq(contacts.id, existing.id), eq(contacts.bookId, book.id)),
         )
-        .returning({ ...getTableColumns(contacts), updatedAtText });
+        .returning();
       // Diff the stored row so trigger-derived display strings are audited.
       return {
         kind: "ok",
         contactId: existing.id,
         diff: changedFields(before, rowToSnapshot(row)),
-        updatedAt,
       };
     });
   } catch (err) {
@@ -240,8 +232,8 @@ export async function approveMergeAs(
   // No audit row for a no-op merge (nothing changed).
   const eventId = outcome.diff
     ? await recordContactEvent(
-        { contactId: outcome.contactId, diff: outcome.diff, contactUpdatedAt: outcome.updatedAt },
-        approvalActor(actor),
+        { contactId: outcome.contactId, diff: outcome.diff },
+        "submission",
       )
     : undefined;
   return { ok: true, contactId: outcome.contactId, eventId };

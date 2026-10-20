@@ -1,5 +1,5 @@
-import { listPendingDeletions } from "@/lib/agent/bulk";
 import { listAgentChanges, type FeedEntry } from "@/lib/agent/changes";
+import { listPendingRequests, pruneFinishedRequests } from "@/lib/agent/requests";
 import { listAgentTokens } from "@/lib/agent/tokens";
 import { requireUser, type SessionClaims } from "@/lib/auth";
 import { AgentsView, type FeedItem, type PendingItem, type TokenItem } from "./agents-view";
@@ -31,24 +31,17 @@ function toFeedItem(entry: FeedEntry, now: number): FeedItem {
       change: { ...entry, when },
     };
   }
-  if (entry.kind === "bulk") {
-    return {
-      kind: "bulk",
-      key: entry.previewId,
-      tokenName,
-      when,
-      count: entry.count,
-      changes: entry.changes.map((change) => ({ ...change, when: timeFrom(change.at, now) })),
-    };
-  }
   return { kind: "deleted", key: entry.previewId, tokenName, when, names: entry.names };
 }
 
+const EMAIL_LABELS = { email: "Email", partner_email: "Partner email" } as const;
+
 async function loadView(claims: SessionClaims) {
+  await pruneFinishedRequests(claims.sub);
   const [tokens, feed, pending] = await Promise.all([
     listAgentTokens(claims),
     listAgentChanges(claims),
-    listPendingDeletions(claims),
+    listPendingRequests(claims),
   ]);
   const now = Date.now();
   const tokenItems: TokenItem[] = tokens
@@ -65,18 +58,36 @@ async function loadView(claims: SessionClaims) {
             ? "expired"
             : `expires ${timeFrom(token.expiresAt, now)}`,
     }));
-  const pendingItems: PendingItem[] = pending.map((request) => ({
-    previewId: request.previewId,
-    tokenName: request.tokenName ?? "Removed token",
-    when: timeFrom(request.requestedAt, now),
-    expires: timeFrom(request.expiresAt, now),
-    contacts: request.contacts.map(({ agentEdit, ...contact }) => ({
-      ...contact,
-      agentEdit: agentEdit
-        ? `Edited by this agent ${timeFrom(agentEdit.at, now)}: ${agentEdit.summary}`
-        : null,
-    })),
-  }));
+  const pendingItems: PendingItem[] = pending.map((request) => {
+    const base = {
+      previewId: request.previewId,
+      tokenName: request.tokenName ?? "Removed token",
+      when: timeFrom(request.requestedAt, now),
+      expires: timeFrom(request.expiresAt, now),
+    };
+    if (request.kind === "email") {
+      return {
+        ...base,
+        kind: "email",
+        contactName: request.contactName,
+        changes: Object.entries(request.changes).map(([field, [from, to]]) => ({
+          label: EMAIL_LABELS[field as keyof typeof EMAIL_LABELS],
+          from,
+          to,
+        })),
+      };
+    }
+    return {
+      ...base,
+      kind: "delete",
+      contacts: request.contacts.map(({ agentEdit, ...contact }) => ({
+        ...contact,
+        agentEdit: agentEdit
+          ? `Edited by this agent ${timeFrom(agentEdit.at, now)}: ${agentEdit.summary}`
+          : null,
+      })),
+    };
+  });
   return {
     tokens: tokenItems,
     feed: feed.map((entry) => toFeedItem(entry, now)),

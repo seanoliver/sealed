@@ -1,10 +1,9 @@
 import "server-only";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import {
+  insertAgentEvent,
   recordContactEvent,
-  recordContactEvents,
   snapshotToRow,
-  updatedAtText,
   DUPLICATE_EMAIL,
   GENERIC_ERROR,
   type Actor,
@@ -96,14 +95,6 @@ export type ChangeEntry = {
 
 export type FeedEntry =
   | ({ kind: "change"; tokenName: string | null } & ChangeEntry)
-  | {
-      kind: "bulk";
-      previewId: string;
-      tokenName: string | null;
-      at: Date;
-      count: number;
-      changes: ChangeEntry[];
-    }
   | { kind: "deleted"; previewId: string; tokenName: string | null; at: Date; names: string[] };
 
 const CHANGED_SINCE = "Changed since";
@@ -115,61 +106,42 @@ function undoState(row: { hasBefore: boolean; current: boolean; undone: boolean 
   return { canUndo: true };
 }
 
-const groupKey = sql<string>`coalesce(${contactEvents.agentPreviewId}, ${contactEvents.id})`;
-
-/** Newest first; a bulk apply is one entry and counts once toward `limit`. */
+/** Newest first: single agent changes, and deletions the owner approved. */
 export async function listAgentChanges(
   claims: SessionClaims,
   { limit = 50 }: { limit?: number } = {},
 ): Promise<FeedEntry[]> {
   const { events, deletes } = await withRls(claims, async (tx) => {
-    const groups = await tx
-      .select({ key: groupKey })
+    const events = await tx
+      .select({
+        id: contactEvents.id,
+        contactId: contactEvents.contactId,
+        diff: contactEvents.diff,
+        at: contactEvents.createdAt,
+        tokenName: agentTokens.name,
+        contact: {
+          fullName: contacts.fullName,
+          partnerName: contacts.partnerName,
+          kidsNames: contacts.kidsNames,
+          firstName: contacts.firstName,
+          lastName: contacts.lastName,
+          partnerFirstName: contacts.partnerFirstName,
+          partnerLastName: contacts.partnerLastName,
+          kids: contacts.kids,
+        },
+        hasBefore: sql<boolean>`${contactEvents.diff} ? 'before'`,
+        current: sql<boolean>`coalesce(${contacts.updatedAt} = ${contactEvents.contactUpdatedAt}, false)`,
+        undone: sql<boolean>`exists (
+          select 1 from public.contact_events u
+          where u.contact_id = ${contactEvents.contactId}
+            and u.diff ->> 'undo_of' = ${contactEvents.id}::text)`,
+      })
       .from(contactEvents)
+      .innerJoin(contacts, eq(contacts.id, contactEvents.contactId))
+      .leftJoin(agentTokens, eq(agentTokens.id, contactEvents.agentTokenId))
       .where(eq(contactEvents.source, "agent"))
-      .groupBy(groupKey)
-      .orderBy(desc(sql`max(${contactEvents.createdAt})`))
+      .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id))
       .limit(limit);
-    const events =
-      groups.length === 0
-        ? []
-        : await tx
-            .select({
-              id: contactEvents.id,
-              contactId: contactEvents.contactId,
-              diff: contactEvents.diff,
-              at: contactEvents.createdAt,
-              previewId: contactEvents.agentPreviewId,
-              previewCount: sql<number | null>`jsonb_array_length(${agentPreviews.items})`,
-              tokenName: agentTokens.name,
-              contact: {
-                fullName: contacts.fullName,
-                partnerName: contacts.partnerName,
-                kidsNames: contacts.kidsNames,
-                firstName: contacts.firstName,
-                lastName: contacts.lastName,
-                partnerFirstName: contacts.partnerFirstName,
-                partnerLastName: contacts.partnerLastName,
-                kids: contacts.kids,
-              },
-              hasBefore: sql<boolean>`${contactEvents.diff} ? 'before'`,
-              current: sql<boolean>`coalesce(${contacts.updatedAt} = ${contactEvents.contactUpdatedAt}, false)`,
-              undone: sql<boolean>`exists (
-                select 1 from public.contact_events u
-                where u.contact_id = ${contactEvents.contactId}
-                  and u.diff ->> 'undo_of' = ${contactEvents.id}::text)`,
-            })
-            .from(contactEvents)
-            .innerJoin(contacts, eq(contacts.id, contactEvents.contactId))
-            .leftJoin(agentTokens, eq(agentTokens.id, contactEvents.agentTokenId))
-            .leftJoin(agentPreviews, eq(agentPreviews.id, contactEvents.agentPreviewId))
-            .where(
-              and(
-                eq(contactEvents.source, "agent"),
-                inArray(groupKey, groups.map((group) => group.key)),
-              ),
-            )
-            .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id));
     const deletes = await tx
       .select({
         id: agentPreviews.id,
@@ -185,114 +157,31 @@ export async function listAgentChanges(
     return { events, deletes };
   });
 
-  const feed: FeedEntry[] = [];
-  const bulks = new Map<string, Extract<FeedEntry, { kind: "bulk" }>>();
-  for (const event of events) {
-    const change: ChangeEntry = {
+  const feed: FeedEntry[] = [
+    ...events.map((event) => ({
+      kind: "change" as const,
+      tokenName: event.tokenName,
       eventId: event.id,
       contactId: event.contactId,
       contactName: householdLine(pickStoredNames(event.contact)),
       summary: summarizeDiff(event.diff),
       at: event.at,
       undo: undoState(event),
-    };
-    if (event.previewId === null) {
-      feed.push({ kind: "change", tokenName: event.tokenName, ...change });
-      continue;
-    }
-    const bulk = bulks.get(event.previewId);
-    if (bulk) {
-      bulk.changes.push(change);
-      continue;
-    }
-    const entry = {
-      kind: "bulk" as const,
-      previewId: event.previewId,
-      tokenName: event.tokenName,
-      at: event.at,
-      count: event.previewCount ?? 0,
-      changes: [change],
-    };
-    bulks.set(event.previewId, entry);
-    feed.push(entry);
-  }
-  for (const bulk of bulks.values()) bulk.count = Math.max(bulk.count, bulk.changes.length);
-  for (const preview of deletes) {
-    feed.push({
-      kind: "deleted",
+    })),
+    ...deletes.map((preview) => ({
+      kind: "deleted" as const,
       previewId: preview.id,
       tokenName: preview.tokenName,
       at: preview.at!,
       names: (preview.items as { name?: string }[]).map((item) => item.name ?? "Unnamed"),
-    });
-  }
+    })),
+  ];
   feed.sort((a, b) => b.at.getTime() - a.at.getTime());
   return feed.slice(0, limit);
 }
 
-export async function undoAgentBatch(
-  claims: SessionClaims,
-  previewId: string,
-  actor: Actor,
-): Promise<WriteResult<{ undone: number; skipped: number }>> {
-  type Undone = { eventId: string; contactId: string; diff: Diff; updatedAt: string };
-  let result: { undone: Undone[]; total: number };
-  try {
-    result = await withRls(claims, async (tx) => {
-      const events = await tx
-        .select({
-          id: contactEvents.id,
-          contactId: contactEvents.contactId,
-          diff: contactEvents.diff,
-          version: sql<string | null>`${contactEvents.contactUpdatedAt}::text`,
-          undone: sql<boolean>`exists (
-            select 1 from public.contact_events u
-            where u.contact_id = ${contactEvents.contactId}
-              and u.diff ->> 'undo_of' = ${contactEvents.id}::text)`,
-        })
-        .from(contactEvents)
-        .where(and(eq(contactEvents.source, "agent"), eq(contactEvents.agentPreviewId, previewId)));
-      if (events.length === 0) return { undone: [], total: 0 };
-      const locked = await tx
-        .select({ id: contacts.id, version: updatedAtText })
-        .from(contacts)
-        .where(inArray(contacts.id, events.map((event) => event.contactId)))
-        .orderBy(contacts.id)
-        .for("update");
-      const current = new Map(locked.map((row) => [row.id, row.version]));
-      const undone: Undone[] = [];
-      for (const event of events.toSorted((a, b) => a.contactId.localeCompare(b.contactId))) {
-        const diff = asDiff(event.diff);
-        if (event.undone || !diff.before || current.get(event.contactId) !== event.version) continue;
-        const [saved] = await tx
-          .update(contacts)
-          .set(snapshotToRow(diff.before))
-          .where(eq(contacts.id, event.contactId))
-          .returning({ updatedAt: updatedAtText });
-        undone.push({ eventId: event.id, contactId: event.contactId, diff, updatedAt: saved.updatedAt });
-      }
-      return { undone, total: events.length };
-    });
-  } catch (err) {
-    if (isUniqueViolation(err, "contacts_book_email_unique")) {
-      return { ok: false, error: `Nothing was undone: ${DUPLICATE_EMAIL.toLowerCase()}.` };
-    }
-    logDbError("[ag] [undoAgentBatch] failed", err);
-    return { ok: false, error: `Nothing was undone. ${GENERIC_ERROR}` };
-  }
-  await recordContactEvents(
-    result.undone.map(({ eventId, contactId, diff, updatedAt }) => ({
-      contactId,
-      diff: { before: diff.after ?? {}, after: diff.before, undo_of: eventId },
-      contactUpdatedAt: updatedAt,
-    })),
-    actor,
-  );
-  return {
-    ok: true,
-    value: { undone: result.undone.length, skipped: result.total - result.undone.length },
-  };
-}
+const touchesEmail = (diff: Diff) =>
+  ["email", "partner_email"].some((field) => field in (diff.before ?? {}));
 
 export async function undoAgentChange(
   claims: SessionClaims,
@@ -301,7 +190,7 @@ export async function undoAgentChange(
 ): Promise<WriteResult<{ contactId: string; eventId?: string; restored: Record<string, unknown> }>> {
   type Outcome =
     | { kind: "refused"; error: string }
-    | { kind: "ok"; contactId: string; diff: Diff; updatedAt: string };
+    | { kind: "ok"; contactId: string; diff: Diff; eventId?: string };
   let outcome: Outcome;
   try {
     outcome = await withRls(claims, async (tx): Promise<Outcome> => {
@@ -325,6 +214,12 @@ export async function undoAgentChange(
           error: "This change added the contact. Delete the contact instead of undoing it.",
         };
       }
+      if (actor.source === "agent" && touchesEmail(diff)) {
+        return {
+          kind: "refused",
+          error: "Only the owner can undo an email change, on the Agents page.",
+        };
+      }
       const [contact] = await tx
         .select({
           current: sql<boolean>`coalesce(${contacts.updatedAt} = (
@@ -340,12 +235,18 @@ export async function undoAgentChange(
             "This contact changed after the agent's edit, so undoing it would overwrite newer values. Edit the contact instead.",
         };
       }
-      const [saved] = await tx
+      await tx
         .update(contacts)
         .set(snapshotToRow(diff.before))
-        .where(eq(contacts.id, event.contactId))
-        .returning({ updatedAt: updatedAtText });
-      return { kind: "ok", contactId: event.contactId, diff, updatedAt: saved.updatedAt };
+        .where(eq(contacts.id, event.contactId));
+      const undo = { before: diff.after ?? {}, after: diff.before, undo_of: eventId };
+      if (actor.source !== "agent") return { kind: "ok", contactId: event.contactId, diff };
+      const undoId = await insertAgentEvent(tx, {
+        contactId: event.contactId,
+        diff: undo,
+        tokenId: actor.tokenId,
+      });
+      return { kind: "ok", contactId: event.contactId, diff, eventId: undoId };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
@@ -356,14 +257,16 @@ export async function undoAgentChange(
   }
   if (outcome.kind === "refused") return { ok: false, error: outcome.error };
 
-  const newEventId = await recordContactEvent(
-    {
-      contactId: outcome.contactId,
-      diff: { before: outcome.diff.after ?? {}, after: outcome.diff.before, undo_of: eventId },
-      contactUpdatedAt: outcome.updatedAt,
-    },
-    actor,
-  );
+  const newEventId =
+    actor.source === "agent"
+      ? outcome.eventId
+      : await recordContactEvent(
+          {
+            contactId: outcome.contactId,
+            diff: { before: outcome.diff.after ?? {}, after: outcome.diff.before, undo_of: eventId },
+          },
+          "owner",
+        );
   return {
     ok: true,
     value: { contactId: outcome.contactId, eventId: newEventId, restored: outcome.diff.before! },

@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { approveDeletion, discardDeletion } from "@/lib/agent/bulk";
-import { undoAgentBatch, undoAgentChange } from "@/lib/agent/changes";
+import { undoAgentChange } from "@/lib/agent/changes";
+import { approveRequest, discardRequest } from "@/lib/agent/requests";
 import { requireUser } from "@/lib/auth";
 
 const uuid = z.uuid();
@@ -19,42 +19,28 @@ export async function undoChange({ eventId }: { eventId: string }): Promise<{ er
   return {};
 }
 
-export async function undoBulk({
-  previewId,
-}: {
-  previewId: string;
-}): Promise<{ error?: string; undone?: number; skipped?: number }> {
-  const claims = await requireUser();
-  if (!uuid.safeParse(previewId).success) return { error: "Change not found." };
-  const result = await undoAgentBatch(claims, previewId, { source: "owner" });
-  if (!result.ok) return { error: result.error };
-  revalidatePath("/dashboard/agents");
-  revalidatePath("/dashboard");
-  return result.value;
-}
-
-export async function approvePendingDeletion({
+export async function approvePendingRequest({
   previewId,
 }: {
   previewId: string;
 }): Promise<{ error?: string }> {
   const claims = await requireUser();
   if (!uuid.safeParse(previewId).success) return { error: "Request not found." };
-  const result = await approveDeletion(claims, previewId);
+  const result = await approveRequest(claims, previewId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/dashboard/agents");
   revalidatePath("/dashboard");
   return {};
 }
 
-export async function discardPendingDeletion({
+export async function discardPendingRequest({
   previewId,
 }: {
   previewId: string;
 }): Promise<{ error?: string }> {
   const claims = await requireUser();
   if (!uuid.safeParse(previewId).success) return { error: "Request not found." };
-  const result = await discardDeletion(claims, previewId);
+  const result = await discardRequest(claims, previewId);
   if (!result.ok) return { error: result.error };
   revalidatePath("/dashboard/agents");
   return {};

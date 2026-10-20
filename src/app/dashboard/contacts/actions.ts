@@ -226,7 +226,7 @@ export async function updateContact(
   if (invalid) return invalid;
 
   const diff = changedFields(rowToSnapshot(before), rowToSnapshot({ ...before, ...row }));
-  if (diff) await recordContactEvent({ contactId: id, diff }, { source: "owner" });
+  if (diff) await recordContactEvent({ contactId: id, diff }, "owner");
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contacts/${id}`);

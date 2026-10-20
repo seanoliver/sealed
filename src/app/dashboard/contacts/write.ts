@@ -1,14 +1,14 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
-import { withRls } from "@/lib/db";
+import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
 import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
-import { type Kid, type StoredNames } from "@/lib/names";
+import { householdLine, pickStoredNames, type Kid, type StoredNames } from "@/lib/names";
 import {
   CONTACT_FIELDS,
   contactDetailsSchema,
@@ -17,7 +17,12 @@ import {
   SAME_PARTNER_EMAIL,
   samePartnerEmail,
 } from "@/lib/validation/contact";
-import { draftFromNames, draftToValues, validateHousehold } from "@/lib/contacts-sheet";
+import {
+  draftFromNames,
+  draftToValues,
+  validateHousehold,
+  type HouseholdDraft,
+} from "@/lib/contacts-sheet";
 import { type HouseholdInput, type HouseholdValues } from "@/lib/validation/household";
 
 /**
@@ -163,9 +168,11 @@ export type PatchRequest = {
   names?: NamePatch;
 };
 
+const BLANK_DRAFT: HouseholdDraft = { first_name: "", last_name: "", partner: null, kids: [] };
+
 /** Same household rules as the sheet's name editor: unedited surnames follow last_name. */
-function mergeNames(existing: ContactRow, names: NamePatch): HouseholdValues {
-  const draft = draftFromNames(storedNames(existing));
+export function mergeNames(existing: ContactRow | null, names: NamePatch): HouseholdValues {
+  const draft = existing ? draftFromNames(storedNames(existing)) : structuredClone(BLANK_DRAFT);
   if ("first_name" in names) draft.first_name = names.first_name ?? "";
   if ("last_name" in names) draft.last_name = names.last_name ?? "";
   if ("partner_first_name" in names && (names.partner_first_name ?? "").trim() === "") {
@@ -215,53 +222,49 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
   return { kind: "ok", row, before, after, diff: changedFields(before, after) };
 }
 
-export type Actor =
-  | { source: "owner" | "submission" }
-  | { source: "agent"; tokenId: string; previewId?: string };
+export type AgentActor = { source: "agent"; tokenId: string };
+export type Actor = { source: "owner" } | AgentActor;
+type OwnerSource = "owner" | "submission";
 
-export type EventInput = {
-  contactId: string;
-  diff: Record<string, unknown>;
-  contactUpdatedAt?: string;
-};
+export type EventInput = { contactId: string; diff: Record<string, unknown> };
 
 /**
- * Never throws: the contact write already committed, so an error here would
- * report a saved change as failed. Failures are logged instead.
+ * Owner history, appended after the owner's write commits. Never throws: an
+ * error here would report a saved change as failed, so it is logged instead.
  */
-export async function recordContactEvents(
-  events: EventInput[],
-  actor: Actor,
-): Promise<(string | undefined)[]> {
-  if (events.length === 0) return [];
-  const agent = actor.source === "agent" ? actor : undefined;
+export async function recordContactEvent(
+  { contactId, diff }: EventInput,
+  source: OwnerSource,
+): Promise<string | undefined> {
   try {
-    const rows = await dbAdmin
+    const [row] = await dbAdmin
       .insert(contactEvents)
-      .values(
-        events.map(({ contactId, diff, contactUpdatedAt }) => ({
-          contactId,
-          source: actor.source,
-          diff,
-          agentTokenId: agent?.tokenId,
-          agentPreviewId: agent?.previewId,
-          contactUpdatedAt:
-            agent && contactUpdatedAt !== undefined
-              ? sql`${contactUpdatedAt}::timestamptz`
-              : undefined,
-        })),
-      )
+      .values({ contactId, source, diff })
       .returning({ id: contactEvents.id });
-    return rows.map((row) => row.id);
+    return row.id;
   } catch (err) {
-    logDbError("[ct] [recordContactEvents] audit insert failed", err);
-    return events.map(() => undefined);
+    logDbError("[ct] [recordContactEvent] audit insert failed", err);
+    return undefined;
   }
 }
 
-export async function recordContactEvent(event: EventInput, actor: Actor) {
-  const [id] = await recordContactEvents([event], actor);
-  return id;
+/**
+ * An agent's history row, inside the transaction that wrote the contact, so
+ * both commit or neither does. RLS lets the owner insert only agent rows for
+ * their own live token, stamped with the contact's current updated_at.
+ */
+export async function insertAgentEvent(
+  tx: RlsTx,
+  { contactId, diff, tokenId, previewId }: EventInput & { tokenId: string; previewId?: string },
+): Promise<string> {
+  // Only the granted columns: a drizzle insert would also list id and created_at.
+  const [event] = await tx.execute<{ id: string }>(sql`
+    insert into public.contact_events
+      (contact_id, source, diff, agent_token_id, agent_preview_id, contact_updated_at)
+    values (${contactId}, 'agent', ${JSON.stringify(diff)}::jsonb, ${tokenId}, ${previewId ?? null},
+      (select c.updated_at from public.contacts c where c.id = ${contactId}))
+    returning id`);
+  return event.id;
 }
 
 /** Postgres text keeps microseconds; a JS Date would round them off. */
@@ -272,16 +275,32 @@ export const GENERIC_ERROR = "Something went wrong. Please try again.";
 
 export type WriteResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
+export const EMAIL_FIELDS = ["email", "partner_email"] as const;
+export type EmailField = (typeof EMAIL_FIELDS)[number];
+export type EmailChange = Partial<Record<EmailField, [string | null, string | null]>>;
+export const EMAIL_REQUEST_TTL_DAYS = 7;
+
+export type PatchOutcome = {
+  diff?: ContactDiff;
+  eventId?: string;
+  emailRequest?: { id: string; changes: EmailChange };
+};
+
+/**
+ * `holdEmails`: an agent's change to an existing email is queued for the
+ * owner's approval instead of saved; the other fields save at once.
+ */
 export async function patchContactAs(
   claims: SessionClaims,
   id: string,
   request: PatchRequest,
   actor: Actor,
-): Promise<WriteResult<{ diff?: ContactDiff; eventId?: string }>> {
+  { holdEmails = false }: { holdEmails?: boolean } = {},
+): Promise<WriteResult<PatchOutcome>> {
   type Outcome =
     | { kind: "missing" }
     | { kind: "invalid"; error: string }
-    | { kind: "saved"; diff?: ContactDiff; updatedAt?: string };
+    | ({ kind: "saved" } & PatchOutcome);
   let outcome: Outcome;
   try {
     outcome = await withRls(claims, async (tx): Promise<Outcome> => {
@@ -298,16 +317,68 @@ export async function patchContactAs(
         .limit(1)
         .for("update");
       if (!existing) return { kind: "missing" };
-      const plan = planPatch(existing, request);
+      let plan = planPatch(existing, request);
       if (plan.kind === "invalid") return plan;
+
+      const held: EmailChange = {};
+      if (holdEmails && plan.diff) {
+        for (const field of EMAIL_FIELDS) {
+          if (field in plan.diff.after) {
+            held[field] = [plan.diff.before[field] as string | null, plan.diff.after[field] as string | null];
+          }
+        }
+      }
+      const holding = Object.keys(held).length > 0;
+      if (holding) {
+        for (const [field, [, proposed]] of Object.entries(held)) {
+          if (proposed === null) continue;
+          const [taken] = await tx
+            .select({ id: contacts.id })
+            .from(contacts)
+            .where(
+              and(
+                eq(contacts.bookId, book.id),
+                sql`lower(${contacts.email}) = lower(${proposed})`,
+                sql`${contacts.id} <> ${id}`,
+              ),
+            )
+            .limit(1);
+          if (taken) return { kind: "invalid", error: `${DUPLICATE_EMAIL} (${field.replace("_", " ")}).` };
+        }
+        const values = Object.fromEntries(
+          Object.entries(request.values ?? {}).filter(([field]) => !(field in held)),
+        );
+        plan = planPatch(existing, { ...request, values });
+        if (plan.kind === "invalid") return plan;
+      }
+
+      let eventId: string | undefined;
       // A no-op save must not bump updated_at.
-      if (!plan.diff) return { kind: "saved" };
-      const [saved] = await tx
-        .update(contacts)
-        .set(plan.row)
-        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
-        .returning({ updatedAt: updatedAtText });
-      return { kind: "saved", diff: plan.diff, updatedAt: saved.updatedAt };
+      if (plan.diff) {
+        await tx
+          .update(contacts)
+          .set(plan.row)
+          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+        if (actor.source === "agent") {
+          eventId = await insertAgentEvent(tx, { contactId: id, diff: plan.diff, tokenId: actor.tokenId });
+        }
+      }
+      let emailRequest: PatchOutcome["emailRequest"];
+      if (holding && actor.source === "agent") {
+        const [{ version }] = await tx
+          .select({ version: updatedAtText })
+          .from(contacts)
+          .where(eq(contacts.id, id));
+        const items = [{ id, name: householdLine(pickStoredNames(existing)), updatedAt: version, changes: held }];
+        const [queued] = await tx.execute<{ id: string }>(sql`
+          insert into public.agent_previews
+            (user_id, agent_token_id, kind, items, requested_at, expires_at)
+          values (${claims.sub}, ${actor.tokenId}, 'email', ${JSON.stringify(items)}::jsonb, now(),
+            now() + make_interval(days => ${EMAIL_REQUEST_TTL_DAYS}::int))
+          returning id`);
+        emailRequest = { id: queued.id, changes: held };
+      }
+      return { kind: "saved", diff: plan.diff, eventId, emailRequest };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
@@ -318,13 +389,14 @@ export async function patchContactAs(
   }
   if (outcome.kind === "missing") return { ok: false, error: "Contact not found." };
   if (outcome.kind === "invalid") return { ok: false, error: outcome.error };
-  const eventId = outcome.diff
-    ? await recordContactEvent(
-        { contactId: id, diff: outcome.diff, contactUpdatedAt: outcome.updatedAt },
-        actor,
-      )
-    : undefined;
-  return { ok: true, value: { diff: outcome.diff, eventId } };
+  const { diff, emailRequest } = outcome;
+  const eventId =
+    actor.source === "agent"
+      ? outcome.eventId
+      : diff
+        ? await recordContactEvent({ contactId: id, diff }, "owner")
+        : undefined;
+  return { ok: true, value: { diff, eventId, emailRequest } };
 }
 
 export async function createContactAs(
@@ -333,7 +405,8 @@ export async function createContactAs(
   actor: Actor,
 ): Promise<WriteResult<{ id: string; eventId?: string }>> {
   const row = { ...householdToRow(input.household), ...contactDetailsToRow(input.details) };
-  let inserted: { id: string; updatedAt: string } | undefined;
+  const diff = { after: definedFields(rowToSnapshot(row)) };
+  let inserted: { id: string; eventId?: string } | undefined;
   try {
     inserted = await withRls(claims, async (tx) => {
       // Resolve the book inside the RLS tx — never trust a client bookId.
@@ -346,8 +419,10 @@ export async function createContactAs(
       const [created] = await tx
         .insert(contacts)
         .values({ bookId: book.id, ...row })
-        .returning({ id: contacts.id, updatedAt: updatedAtText });
-      return created;
+        .returning({ id: contacts.id });
+      if (actor.source !== "agent") return created;
+      const eventId = await insertAgentEvent(tx, { contactId: created.id, diff, tokenId: actor.tokenId });
+      return { ...created, eventId };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
@@ -357,13 +432,9 @@ export async function createContactAs(
     return { ok: false, error: GENERIC_ERROR };
   }
   if (!inserted) return { ok: false, error: "Set up your address book first." };
-  const eventId = await recordContactEvent(
-    {
-      contactId: inserted.id,
-      diff: { after: definedFields(rowToSnapshot(row)) },
-      contactUpdatedAt: inserted.updatedAt,
-    },
-    actor,
-  );
+  const eventId =
+    actor.source === "agent"
+      ? inserted.eventId
+      : await recordContactEvent({ contactId: inserted.id, diff }, "owner");
   return { ok: true, value: { id: inserted.id, eventId } };
 }

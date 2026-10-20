@@ -19,7 +19,7 @@ export async function approveNew(
   const id = String(formData.get("id") ?? "");
   if (!uuidSchema.safeParse(id).success) return { error: NOT_FOUND };
 
-  const result = await approveNewAs(claims, id, { source: "owner" });
+  const result = await approveNewAs(claims, id);
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/dashboard");
@@ -37,7 +37,7 @@ export async function approveMerge(
   const id = String(formData.get("id") ?? "");
   if (!uuidSchema.safeParse(id).success) return { error: NOT_FOUND };
 
-  const result = await approveMergeAs(claims, id, { source: "owner" });
+  const result = await approveMergeAs(claims, id);
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/dashboard");

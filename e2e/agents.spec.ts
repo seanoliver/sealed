@@ -3,6 +3,8 @@ import {
   cleanupUser,
   clearRateLimits,
   contactExists,
+  getContactCity,
+  getContactEmails,
   getContactPostalCode,
   getUserIdByEmail,
   seedBook,
@@ -119,14 +121,7 @@ test("creates a token on the Agents page and shows it once", async () => {
 });
 
 test("shows agent edits in the feed and undoes one", async () => {
-  const preview = await toolResult("preview_bulk_update", {
-    changes: [
-      { id: adaId, fields: { country: "GB" } },
-      { id: priyaId, fields: { partner_email: "daniel@okafor.test" } },
-    ],
-  });
-  expect(preview.count).toBe(2);
-  await toolResult("apply_bulk_update", { preview_id: preview.preview_id });
+  await toolResult("update_contact", { id: adaId, fields: { country: "GB" } });
   const edit = await toolResult("update_contact", {
     id: hollowayId,
     fields: { postal_code: "97211-3417" },
@@ -138,42 +133,30 @@ test("shows agent edits in the feed and undoes one", async () => {
   const postal = feed.getByRole("listitem").filter({ hasText: "Postal code 97211 → 97211-3417" });
   await expect(postal).toContainText("Jen & Mark Holloway");
   await expect(postal).toContainText("Claude Code on MacBook");
-  await expect(feed.getByText("Bulk: 2 contacts")).toBeVisible();
-
-  await shoot("desktop-light", { width: 1280, dark: false });
-  await shoot("desktop-dark", { width: 1280, dark: true });
-  await shoot("phone-light", { width: 390, dark: false });
-  await shoot("phone-dark", { width: 390, dark: true });
-  if (screenshotDir) {
-    await page.getByRole("tab", { name: "Connect" }).click();
-    await shoot("phone-connect-light", { width: 390, dark: false });
-    await page.getByRole("tab", { name: "Recent changes" }).click();
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.emulateMedia({ colorScheme: "light" });
-  }
-
-  await feed.getByText("See all").click();
   await expect(feed.getByText("Country United Kingdom → GB")).toBeVisible();
-
-  await expect(
-    feed.getByRole("button", { name: "Undo Country United Kingdom → GB for Ada Lovelace" }),
-  ).toBeEnabled();
 
   await postal.getByRole("button", { name: /^Undo/ }).click();
   await expect(postal).toContainText("Already undone");
   await expect(postal.getByRole("button", { name: /^Undo/ })).toBeDisabled();
   expect(await getContactPostalCode(hollowayId)).toBe("97211");
 
-  const bulk = feed.getByRole("listitem").filter({ hasText: "Bulk: 2 contacts" });
-  await feed.getByText("Hide").click();
-  await expect(bulk.getByText("Country United Kingdom → GB")).toBeHidden();
-  await bulk.getByRole("button", { name: "Undo all" }).click();
-  await expect(bulk.getByRole("status")).toHaveText("Undid 2 contacts.");
-
   await page.goto(`/dashboard/contacts/${hollowayId}`);
   await expect(page.getByText("Agent: Claude Code on MacBook")).toBeVisible();
+});
+
+test("refuses a contact form saved after an agent changed the contact", async () => {
+  await page.goto(`/dashboard/contacts/${hollowayId}`);
+  await page.getByLabel("City").fill("Salem");
+  await toolResult("update_contact", { id: hollowayId, fields: { city: "Eugene" } });
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByText("This contact changed since you opened it. Reload to see the latest."),
+  ).toBeVisible();
+  expect((await getContactCity(hollowayId))).toBe("Eugene");
   await page.goto("/dashboard/agents");
 });
+
+const waiting = () => page.getByRole("list", { name: "Waiting for you" });
 
 async function requestDeletion(ids: string[]) {
   const preview = await toolResult("preview_delete_contacts", { ids });
@@ -181,36 +164,69 @@ async function requestDeletion(ids: string[]) {
   expect(asked.status).toBe("pending");
 }
 
-test("an agent's delete waits for the owner, who can discard it", async () => {
+test("an agent's email change waits for the owner, who can discard or approve it", async () => {
+  const queued = await toolResult("update_contact", {
+    id: priyaId,
+    fields: { email: "priya@new.test" },
+  });
+  expect(queued.pending_email_change.message).toContain("waiting for the owner");
+  expect((await getContactEmails(priyaId)).email).toBe("priya@raman.test");
+
   await toolResult("update_contact", { id: adaId, fields: { first_name: "Augusta" } });
   await requestDeletion([adaId]);
-  expect(await contactExists(adaId)).toBe(true);
 
   await page.reload();
-  const pending = page.getByRole("list", { name: "Waiting for you" }).getByRole("listitem").first();
-  await expect(pending).toContainText("Pending deletion: 1 contact");
-  await expect(pending).toContainText("Claude Code on MacBook");
-  await expect(pending).toContainText("This agent edited this contact before asking.");
-  await expect(pending.getByText("Augusta Lovelace")).toBeVisible();
-  await expect(pending.getByText("ada@lovelace.test")).toBeVisible();
-  await expect(pending.getByText(/Edited by this agent just now: First name Ada → Augusta/)).toBeVisible();
+  const email = waiting().getByRole("listitem").filter({ hasText: "Email change" });
+  await expect(email).toContainText("Email change: Priya Raman & Daniel Okafor");
+  await expect(email).toContainText("Email: priya@raman.test → priya@new.test");
+  const deletion = waiting().getByRole("listitem").filter({ hasText: "Pending deletion" }).first();
+  await expect(deletion).toContainText("This agent edited this contact before asking.");
+  await expect(deletion.getByText("ada@lovelace.test")).toBeVisible();
 
+  await shoot("desktop-light", { width: 1280, dark: false });
+  await shoot("desktop-dark", { width: 1280, dark: true });
+  await shoot("phone-light", { width: 390, dark: false });
+  await shoot("phone-dark", { width: 390, dark: true });
   await shoot("pending-desktop-light", { width: 1280, dark: false });
   await shoot("pending-desktop-dark", { width: 1280, dark: true });
   await shoot("pending-phone-light", { width: 390, dark: false });
   await shoot("pending-phone-dark", { width: 390, dark: true });
+  if (screenshotDir) {
+    await page.getByRole("tab", { name: "Connect" }).click();
+    await shoot("phone-connect-light", { width: 390, dark: false });
+    await page.getByRole("tab", { name: /Recent changes/ }).click();
+  }
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.emulateMedia({ colorScheme: "light" });
 
-  await pending.getByRole("button", { name: "Discard" }).click();
-  await expect(page.getByText("Pending deletion")).toHaveCount(0);
-  expect(await contactExists(adaId)).toBe(true);
+  await email.getByRole("button", { name: "Discard" }).click();
+  await expect(waiting().getByText("Email change")).toHaveCount(0);
+  expect((await getContactEmails(priyaId)).email).toBe("priya@raman.test");
+
+  await toolResult("update_contact", { id: priyaId, fields: { email: "priya@new.test" } });
+  await page.reload();
+  const again = waiting().getByRole("listitem").filter({ hasText: "Email change" });
+  await again.getByRole("button", { name: "Change email" }).click();
+  const yes = again.getByRole("button", { name: "Yes, change it" });
+  await expect(yes).toBeFocused();
+  await again.getByRole("button", { name: "Cancel" }).click();
+  await expect(again.getByRole("button", { name: "Change email" })).toBeFocused();
+  await again.getByRole("button", { name: "Change email" }).click();
+  await again.getByRole("button", { name: "Yes, change it" }).click();
+  await expect(waiting().getByText("Email change")).toHaveCount(0);
+  expect((await getContactEmails(priyaId)).email).toBe("priya@new.test");
+  await expect(page.getByText("Email priya@raman.test → priya@new.test")).toBeVisible();
 });
 
-test("the owner approves an agent's delete after a confirm", async () => {
+test("an agent's delete waits for the owner, who can discard or approve it", async () => {
+  const deletion = waiting().getByRole("listitem").filter({ hasText: "Pending deletion" });
+  await deletion.getByRole("button", { name: "Discard" }).click();
+  await expect(page.getByText("Pending deletion")).toHaveCount(0);
+  expect(await contactExists(adaId)).toBe(true);
+
   await requestDeletion([priyaId]);
   await page.reload();
-  const pending = page.getByRole("list", { name: "Waiting for you" }).getByRole("listitem").first();
+  const pending = waiting().getByRole("listitem").filter({ hasText: "Pending deletion" });
   await pending.getByRole("button", { name: "Delete 1 contact" }).click();
   await expect(pending).toContainText("Delete 1 contact for good?");
   await pending.getByRole("button", { name: "Yes, delete" }).click();
