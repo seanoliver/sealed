@@ -10,7 +10,9 @@ import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
 import { checkAddress, contactSchema, withoutSamePartnerEmail } from "@/lib/validation/contact";
 
-const importSchema = z.array(contactSchema).max(1000);
+const importSchema = z
+  .array(contactSchema.extend({ country: z.string().trim().min(1).max(120).optional() }))
+  .max(1000);
 
 export type ImportResult =
   | { imported: number; skipped: number }
@@ -45,6 +47,7 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
           valid.map((d) => ({
             bookId: book.id,
             ...contactInputToRow(withoutSamePartnerEmail(d)),
+            legacyCountry: d.country_code ? null : (d.country ?? null),
           })),
         )
         // Targets the partial unique index contacts_book_email_unique

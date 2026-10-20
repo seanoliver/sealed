@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition, type ChangeEvent } from "react";
 import { countryName } from "@/lib/address";
-import { parseContactsCsv, type CsvRowError } from "@/lib/csv/import";
-import { type ContactInput } from "@/lib/validation/contact";
+import { parseContactsCsv, type CsvRowError, type ImportRow } from "@/lib/csv/import";
 import { importContacts } from "./actions";
 
 /**
@@ -18,8 +17,9 @@ const MAX_FILE_BYTES = 750 * 1024;
 const PREVIEW_ROWS = 20;
 
 type Preview = {
-  ready: ContactInput[];
+  ready: ImportRow[];
   errors: CsvRowError[];
+  warnings: CsvRowError[];
   /** In-file duplicate emails removed client-side (first occurrence kept). */
   duplicates: number;
 };
@@ -31,12 +31,12 @@ type Done = { imported: number; skipped: number };
  * column is citext, so this mirrors how the DB's unique index would collide).
  * Rows without an email are always kept.
  */
-function dedupeByEmail(rows: ContactInput[]): {
-  ready: ContactInput[];
+function dedupeByEmail(rows: ImportRow[]): {
+  ready: ImportRow[];
   duplicates: number;
 } {
   const seen = new Set<string>();
-  const ready: ContactInput[] = [];
+  const ready: ImportRow[] = [];
   let duplicates = 0;
   for (const row of rows) {
     const key = row.email?.toLowerCase();
@@ -75,9 +75,9 @@ export function ImportForm() {
       return;
     }
     const text = await file.text();
-    const { valid, errors } = parseContactsCsv(text);
+    const { valid, errors, warnings } = parseContactsCsv(text);
     const { ready, duplicates } = dedupeByEmail(valid);
-    setPreview({ ready, errors, duplicates });
+    setPreview({ ready, errors, warnings, duplicates });
   }
 
   function onConfirm() {
@@ -201,6 +201,19 @@ export function ImportForm() {
             </div>
           ) : null}
 
+          {preview.warnings.length > 0 ? (
+            <div className="rounded-lg border border-border bg-secondary/50 p-4 text-sm text-foreground">
+              <p className="font-medium">Check {preview.warnings.length === 1 ? "this row" : "these rows"}:</p>
+              <ul className="mt-2 max-h-64 list-inside list-disc overflow-y-auto">
+                {preview.warnings.map((warning) => (
+                  <li key={`${warning.row}-${warning.message}`}>
+                    Row {warning.row}: {warning.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {preview.ready.length > 0 ? (
             <>
               <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm ">
@@ -238,7 +251,13 @@ export function ImportForm() {
                         <td className={tdClasses}>{row.partner_name ?? "—"}</td>
                         <td className={tdClasses}>{row.email ?? "—"}</td>
                         <td className={tdClasses}>{row.city ?? "—"}</td>
-                        <td className={tdClasses}>{row.country_code ? countryName(row.country_code) : "—"}</td>
+                        <td className={tdClasses}>
+                          {row.country_code
+                            ? countryName(row.country_code)
+                            : row.country
+                              ? `${row.country} (not on the list)`
+                              : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

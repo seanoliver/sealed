@@ -169,6 +169,20 @@ describe("contactsToCsv", () => {
     ]);
   });
 
+  it("round-trips country codes, names and unrecognized country text", () => {
+    const csv = contactsToCsv([
+      { full_name: "Ada", country_code: "GB", country: "United Kingdom", envelope: "Ada\n1 Lane\nUNITED KINGDOM" },
+      { full_name: "Nemo", country_code: null, country: "Atlantis", envelope: "Nemo" },
+    ]);
+    const { valid, errors, warnings } = parseContactsCsv(csv);
+    expect(errors).toEqual([]);
+    expect(valid).toEqual([
+      { full_name: "Ada", country_code: "GB" },
+      { full_name: "Nemo", country: "Atlantis" },
+    ]);
+    expect(warnings.map((warning) => warning.row)).toEqual([2]);
+  });
+
   it("round-trip: formula-prefixed cells come back with the added quote", () => {
     // Documented tradeoff: injection protection wins over losslessness.
     // A cell that started with =, +, -, @, tab, or CR gains a leading '

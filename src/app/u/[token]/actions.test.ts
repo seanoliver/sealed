@@ -153,6 +153,30 @@ describe("submitTokenUpdate", () => {
     });
   });
 
+  it("refuses a postcode that doesn't fit the country and keeps the link", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const result = await submitTokenUpdate(
+      token,
+      {},
+      prefilledForm(contact, { country_code: "NL", postal_code: "1016" }),
+    );
+    expect(result).toMatchObject({
+      fieldErrors: { postal_code: "A Dutch postcode is four digits and two letters, like 1234 AB." },
+    });
+    expect((await stored()).postalCode).toBeNull();
+  });
+
+  it("leaves a field the form didn't post as stored", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await dbAdmin.execute(sql`update public.contacts set state_region = 'Avon' where id = ${C}`);
+    const form = prefilledForm(contact, { country_code: "GB", postal_code: "BS6 5QT" });
+    form.delete("state_region");
+    await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+    expect(await stored()).toMatchObject({ stateRegion: "Avon", countryCode: "GB", city: "Oslo" });
+  });
+
   it("saves the details of a legacy contact over the kid cap when the names are untouched", async () => {
     const contact = { fullName: "Jen Holloway", kidsNames: TWELVE_KIDS };
     const token = await seed(contact);

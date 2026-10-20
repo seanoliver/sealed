@@ -330,12 +330,41 @@ describe("countries and postcodes", () => {
     expect(valid.map((row) => row.country_code)).toEqual(["GB", "US", "NL", "CN", undefined]);
   });
 
-  it("reports a country it doesn't know as a row error", () => {
-    const { valid, errors } = parseContactsCsv(["name,country", "Ada,Atlantis", "Bea,Spain"].join("\n"));
-    expect(valid.map((row) => row.full_name)).toEqual(["Bea"]);
-    expect(errors).toEqual([
-      { row: 1, message: 'country: "Atlantis" isn\'t a country we know. Use its English name or two-letter code.' },
+  it("keeps a country it doesn't know as text, with a warning", () => {
+    const { valid, errors, warnings } = parseContactsCsv(
+      ["name,country", "Ada,Atlantis", "Bea,Spain"].join("\n"),
+    );
+    expect(errors).toEqual([]);
+    expect(valid).toEqual([
+      { full_name: "Ada", country: "Atlantis" },
+      { full_name: "Bea", country_code: "ES" },
     ]);
+    expect(warnings).toEqual([
+      { row: 1, message: 'country: "Atlantis" isn\'t a country we know. It\'s saved as typed for you to fix.' },
+    ]);
+  });
+
+  it("prefers the code column and flags a name column that disagrees", () => {
+    const { valid, warnings } = parseContactsCsv(
+      ["name,country_code,country", "Ada,GB,United Kingdom", "Bea,FR,Germany"].join("\n"),
+    );
+    expect(valid.map((row) => row.country_code)).toEqual(["GB", "FR"]);
+    expect(warnings).toEqual([
+      { row: 2, message: 'country_code FR and country "Germany" disagree; saved FR.' },
+    ]);
+  });
+
+  it("puts back a US ZIP's leading zero that a spreadsheet dropped", () => {
+    const { valid, errors } = parseContactsCsv(
+      ["name,country,zip", "Ada,US,2110", "Bea,US,501-1234", "Cai,DE,2110"].join("\n"),
+    );
+    expect(valid.map((row) => row.postal_code)).toEqual(["02110", "00501-1234"]);
+    expect(errors.map((error) => error.row)).toEqual([3]);
+  });
+
+  it("formats an Eircode with its space", () => {
+    const { valid } = parseContactsCsv(["name,country,postcode", "Ada,Ireland,d02x285"].join("\n"));
+    expect(valid[0]).toMatchObject({ country_code: "IE", postal_code: "D02 X285" });
   });
 
   it("formats postcodes and US states, and reports one that doesn't fit the country", () => {
