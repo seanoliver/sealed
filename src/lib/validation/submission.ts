@@ -23,7 +23,6 @@ export type EnabledFields = {
 
 // Household name keys win over legacy name keys. parseSubmissionForDisplay
 // must use the same precedence, or the review card shows another name.
-// Country text from before codes that no code matches, kept for the owner to see.
 const unmatchedCountry = { country: z.string().trim().min(1).max(120).optional() };
 
 export const householdPayloadSchema = tokenUpdateSchema

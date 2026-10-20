@@ -21,13 +21,11 @@ export type CsvRowError = {
   message: string;
 };
 
-/** `country`: text no code matched, saved as typed for the owner to fix. */
 export type ImportRow = ContactInput & { country?: string };
 
 export type ParseContactsCsvResult = {
   valid: ImportRow[];
   errors: CsvRowError[];
-  /** Rows that import, with something the owner should check. */
   warnings: CsvRowError[];
 };
 

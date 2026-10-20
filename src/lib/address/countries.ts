@@ -79,7 +79,6 @@ export const COUNTRY_OPTIONS: readonly (readonly [string, string])[] = Object.en
   ([code, record]) => [code, record.n] as const,
 );
 
-/** Every key that names a country, as [key, code]: codes, English names, aliases, "St" for "Saint". */
 export function countryKeyEntries(
   records: Record<string, { n: string }> = RECORDS,
 ): [string, string][] {

@@ -214,7 +214,6 @@ export function AddressFields({
   const layoutCode = values.country_code || (unrecognized ? null : senderCountry);
   const country = getCountry(layoutCode);
   const layout = addressLayout(layoutCode);
-  // A stored value the country has no field for stays editable until the country changes.
   const [extraFields] = useState(() =>
     ADDRESS_FIELDS.filter(
       (field) => !layout.fields.has(field) && initial.current[field].trim() !== "",

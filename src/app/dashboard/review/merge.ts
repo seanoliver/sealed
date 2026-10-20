@@ -37,7 +37,6 @@ export type Snapshot = Record<TokenUpdateField, string | null> & {
   partner_first_name: string | null;
   partner_last_name: string | null;
   kids: Kid[] | null;
-  /** Country text no code matched. */
   country: string | null;
 };
 

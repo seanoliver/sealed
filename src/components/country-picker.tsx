@@ -48,7 +48,6 @@ type CountryPickerProps = {
   invalid?: boolean;
   describedBy?: string;
   placeholder?: string;
-  /** Typed text that matches no country, or null once a country is picked. */
   onUnmatchedChange?: (text: string | null) => void;
 };
 
@@ -100,7 +99,6 @@ export function CountryPicker({
     if (code !== value) onChange(code);
   }
 
-  // Leaving the field picks the best match; text that matches nothing stays, with an error.
   function settle() {
     setOpen(false);
     if (query === null) return;
