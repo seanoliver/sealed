@@ -259,3 +259,19 @@ test("Settings sets the country the owner mails from", async () => {
   await expect(preview).toContainText("No country line: you mail from the UK.");
   await expect(preview).not.toContainText("UNITED KINGDOM");
 });
+
+test("the table's Country cell is a list of countries saved as codes", async () => {
+  await ownerPage.setViewportSize({ width: 1280, height: 900 });
+  await ownerPage.goto("/dashboard");
+  const table = ownerPage.getByRole("table", { name: "Contacts" });
+  const row = table.locator("tbody tr", { hasText: "Priya Raman" });
+  await expect(row).toContainText("United Kingdom");
+  await row.locator("td").nth(3).click();
+  await ownerPage.keyboard.press("Enter");
+  const country = table.getByRole("combobox", { name: "Country" });
+  await country.selectOption("HK");
+  await country.press("Enter");
+  await expect(table.getByRole("combobox")).toHaveCount(0);
+  await expect(row).toContainText("Hong Kong");
+  expect(await getContactAddress(ukId)).toMatchObject({ country_code: "HK" });
+});

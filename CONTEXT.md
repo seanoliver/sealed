@@ -35,3 +35,11 @@ _Avoid_: Required field, custom field
 **Household builder**:
 The invite-page section where a recipient enters their own first and last name, then optionally adds a partner and up to 10 kids. Each added person has a first name and a last name that defaults to the recipient's.
 _Avoid_: Family form, name fields
+
+**Sender country**:
+The country an owner mails from, set as "I mail from" in Settings and stored as a two-letter code (default US). Envelopes to that country leave off the country line.
+_Avoid_: Home country, owner country
+
+**Envelope**:
+An address as it prints: the household line and address lines in the order the recipient's country uses, with the country name in capitals last unless it is the sender country.
+_Avoid_: Address label, mailing block
