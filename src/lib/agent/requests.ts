@@ -18,7 +18,6 @@ import { householdLine, pickStoredNames } from "@/lib/names";
 import { summarizeDiff } from "./changes";
 import { type AgentContext } from "./write";
 
-/** Changes only the owner can approve: deleting contacts, and an agent's email changes. */
 
 export const MAX_DELETE_CONTACTS = 500;
 export const PREVIEW_TTL_MINUTES = 30;
@@ -45,7 +44,6 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 const open = and(isNull(agentPreviews.appliedAt), isNull(agentPreviews.discardedAt));
 const live = and(open, gt(agentPreviews.expiresAt, sql`now()`));
 
-/** What a finished request keeps: names (and ids for email changes), for the feed. */
 export const finishedItems = sql`(
   select jsonb_agg(case when ${agentPreviews.kind} = 'email'
     then jsonb_build_object('id', e->'id', 'name', e->'name')
@@ -184,7 +182,6 @@ export const REQUEST_EXPIRED = "This request expired. Ask the agent to make a ne
 
 class Refusal extends Error {}
 
-/** Contacts whose updated_at moved since the request, locked in id order. */
 async function staleNames(tx: RlsTx, items: { id: string; name: string; updatedAt: string }[]) {
   const rows = await tx
     .select({ id: contacts.id, version: updatedAtText })
@@ -297,7 +294,6 @@ export async function discardRequest(
   }
 }
 
-/** Discard a token's open requests; runs inside the transaction that revokes it. */
 export async function discardTokenRequests(tx: RlsTx, tokenId: string) {
   await tx
     .update(agentPreviews)
@@ -310,7 +306,6 @@ export type PendingContact = {
   email: string | null;
   partnerEmail: string | null;
   address: string;
-  /** The requesting agent's latest edit, so a renamed contact still stands out. */
   agentEdit: { at: Date; summary: string } | null;
 };
 

@@ -1,7 +1,5 @@
 set lock_timeout = '5s';
 
--- Agent requests that only the owner can approve: deleting contacts, or
--- changing an existing contact's email. Agents create them through the server.
 create table public.agent_previews (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -32,7 +30,6 @@ create policy "agent_previews_resolve_own" on public.agent_previews
     and requested_at is not null and applied_at is null and discarded_at is null
   )
   with check (user_id = (select auth.uid()));
--- An agent's email change is queued in the same transaction as its other edits.
 create policy "agent_previews_queue_email" on public.agent_previews
   for insert to authenticated
   with check (

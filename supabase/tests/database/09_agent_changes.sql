@@ -34,7 +34,6 @@ begin
   execute 'set local role authenticated';
 end $$;
 
--- Constraints
 select throws_ok($$
   insert into public.contact_events (contact_id, source, diff, agent_token_id)
   values ('20000000-0000-4000-8000-0000000a8001', 'owner', '{}', '30000000-0000-4000-8000-0000000a8001')
@@ -69,7 +68,6 @@ $$, '23514', null, 'a request is applied or discarded, not both');
 
 select tests.authenticate_as('00000000-0000-4000-8000-0000000a8001');
 
--- Agent history, written by the owner's session in the agent's transaction
 select lives_ok($$
   insert into public.contact_events (contact_id, source, diff, agent_token_id, contact_updated_at)
   values ('20000000-0000-4000-8000-0000000a8001', 'agent', '{"before": {}, "after": {}}',
@@ -99,7 +97,6 @@ select throws_ok($$
   values ('20000000-0000-4000-8000-0000000a8001', 'agent', '{}', now() - interval '1 year')
 $$, '42501', null, 'agent events cannot be backdated');
 
--- Requests
 select results_eq($$ select id from public.agent_previews order by id $$,
   $$ values ('40000000-0000-4000-8000-0000000a8001'::uuid), ('40000000-0000-4000-8000-0000000a8003'::uuid) $$,
   'owners read only their own requests');

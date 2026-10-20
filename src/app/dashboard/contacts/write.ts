@@ -249,9 +249,8 @@ export async function recordContactEvent(
 }
 
 /**
- * An agent's history row, inside the transaction that wrote the contact, so
- * both commit or neither does. RLS lets the owner insert only agent rows for
- * their own live token, stamped with the contact's current updated_at.
+ * Inside the contact write's transaction, so both commit or neither does: never
+ * move this after commit.
  */
 export async function insertAgentEvent(
   tx: RlsTx,
@@ -286,10 +285,6 @@ export type PatchOutcome = {
   emailRequest?: { id: string; changes: EmailChange };
 };
 
-/**
- * `holdEmails`: an agent's change to an existing email is queued for the
- * owner's approval instead of saved; the other fields save at once.
- */
 export async function patchContactAs(
   claims: SessionClaims,
   id: string,

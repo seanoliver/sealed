@@ -67,7 +67,6 @@ async function requestEmail(id: string, email: string) {
   return result.pending_email_change!.request_id;
 }
 
-/** Runs `act` while another transaction holds an uncommitted edit of the contact. */
 async function duringConcurrentEdit<T>(contactId: string, act: () => Promise<T>): Promise<T> {
   let running: Promise<T> | undefined;
   await dbAdmin.transaction(async (tx) => {

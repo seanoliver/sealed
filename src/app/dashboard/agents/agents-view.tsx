@@ -323,7 +323,6 @@ function TokenList({ tokens }: { tokens: TokenItem[] }) {
   );
 }
 
-/** Moves focus into a confirm prompt when it opens, and back to its trigger when it closes. */
 function useConfirmFocus(confirming: boolean) {
   const confirmRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);

@@ -106,7 +106,6 @@ function undoState(row: { hasBefore: boolean; current: boolean; undone: boolean 
   return { canUndo: true };
 }
 
-/** Newest first: single agent changes, and deletions the owner approved. */
 export async function listAgentChanges(
   claims: SessionClaims,
   { limit = 50 }: { limit?: number } = {},
