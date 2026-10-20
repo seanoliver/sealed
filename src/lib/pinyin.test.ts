@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { contactReadings, generatedReadings, readingsForContact } from "./pinyin";
-import { matchesReading, nameSegments, readingText } from "./readings";
+import { contactReadings, readingsForContact } from "./pinyin";
+import { matchesReading } from "./readings";
 
 const contact = {
   fullName: "曾雨桐",
@@ -9,8 +9,6 @@ const contact = {
   partnerName: null,
   partnerFirstName: null,
   partnerLastName: null,
-  nameReading: null,
-  partnerNameReading: null,
 };
 
 const unsplit = (full: string) => ({ full, first: null, last: null });
@@ -24,8 +22,9 @@ describe("contactReadings", () => {
   });
 
   it("capitalizes a compound surname as one word", async () => {
-    const readings = await readingsForContact({ ...contact, fullName: "欧阳娜娜" });
-    expect(readingText("欧阳娜娜", readings)).toBe("Ōuyáng Nànà");
+    expect(await readingsForContact({ ...contact, fullName: "欧阳娜娜" })).toEqual({
+      欧阳娜娜: ["Ōu", "yáng", "Nà", "nà"],
+    });
   });
 
   it("reads split names in Chinese order", async () => {
@@ -36,7 +35,6 @@ describe("contactReadings", () => {
       lastName: "曾",
     });
     expect(readings).toMatchObject({ 曾: ["Zēng"], 雨桐: ["Yǔ", "tóng"] });
-    expect(readingText("雨桐 曾", readings)).toBe("Yǔtóng Zēng");
   });
 
   it("reads only the last run of an unsplit given-name-first name as a surname", async () => {
@@ -63,35 +61,14 @@ describe("contactReadings", () => {
     expect(readings).toEqual({ 李: ["Lǐ"], 华: ["Huá"] });
   });
 
-  it("lets the override win over generated pinyin", async () => {
-    const readings = await readingsForContact({ ...contact, nameReading: "Céng Yǔtóng" });
-    expect(nameSegments("曾雨桐", readings)).toEqual([
-      {
-        kind: "ruby",
-        parts: [
-          { base: "曾", rt: "Céng" },
-          { base: "雨", rt: "Yǔ" },
-          { base: "桐", rt: "tóng" },
-        ],
-      },
-    ]);
-    expect(await generatedReadings({ ...contact, nameReading: "Céng Yǔtóng" })).toEqual({
-      曾雨桐: ["Zēng", "Yǔ", "tóng"],
-    });
-  });
-
-  it("places a surname-first override on a given-name-first name", async () => {
-    const stored = { ...contact, fullName: "雨桐 曾", firstName: "雨桐", lastName: "曾" };
-    const readings = await readingsForContact({ ...stored, nameReading: "Zēng Yǔtóng" });
-    expect(readings).toMatchObject({ 曾: ["Zēng"], 雨桐: ["Yǔ", "tóng"] });
-    const asTyped = await readingsForContact({ ...stored, nameReading: "Yǔtóng Céng" });
-    expect(asTyped).toMatchObject({ 曾: ["Céng"], 雨桐: ["Yǔ", "tóng"] });
-  });
-
-  it("finds a given-name-first name by pinyin in either order", async () => {
-    const readings = await contactReadings({ people: [unsplit("华 李")] });
+  it("finds names by pinyin in either order", async () => {
+    const hua = await contactReadings({ people: [unsplit("华 李")] });
+    const wei = await contactReadings({ people: [unsplit("张伟")] });
     for (const query of ["li hua", "hua li"]) {
-      expect(matchesReading({ names: ["华 李"], readings, query })).toBe(true);
+      expect(matchesReading({ names: ["华 李"], readings: hua, query })).toBe(true);
+    }
+    for (const query of ["zhang wei", "wei zhang"]) {
+      expect(matchesReading({ names: ["张伟"], readings: wei, query })).toBe(true);
     }
   });
 

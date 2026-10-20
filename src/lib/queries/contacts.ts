@@ -34,8 +34,6 @@ export interface ContactListRow extends StoredNames {
   stateRegion: string | null;
   postalCode: string | null;
   country: string | null;
-  nameReading: string | null;
-  partnerNameReading: string | null;
   /** Factual latest-send status; the UI layers an "updated" chip on top. */
   sendStatus: SendStatus;
   /** Why the latest send failed; set only when sendStatus is "failed". */
@@ -136,8 +134,6 @@ export async function listContacts(
         stateRegion: contacts.stateRegion,
         postalCode: contacts.postalCode,
         country: contacts.country,
-        nameReading: contacts.nameReading,
-        partnerNameReading: contacts.partnerNameReading,
         literalMatch: literal ? sql<boolean>`${literal}` : sql<boolean>`true`,
         // Wrapped in sql`` because drizzle types flat partial selects from a
         // left-joined subquery as non-nullable; this is string | null.

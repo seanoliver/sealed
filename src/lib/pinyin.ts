@@ -1,11 +1,21 @@
 import "server-only";
-import { hanRuns, hasHan, lookupRun, overrideReadings, type Readings } from "@/lib/readings";
+import { hanRuns, hasHan, lookupRun, type Readings } from "@/lib/readings";
 
 type PinyinFn = typeof import("pinyin-pro").pinyin;
 
 // pinyin-pro is megabytes of dictionary: load it only once a name needs it.
 let loading: Promise<PinyinFn> | null = null;
-const loadPinyin = () => (loading ??= import("pinyin-pro").then((m) => m.pinyin));
+
+function loadPinyin(): Promise<PinyinFn> {
+  loading ??= import("pinyin-pro").then(
+    (m) => m.pinyin,
+    (err: unknown) => {
+      loading = null;
+      throw err;
+    },
+  );
+  return loading;
+}
 
 const COMPOUND_SURNAMES = new Set([
   "欧阳", "司马", "诸葛", "上官", "司徒", "东方", "皇甫", "尉迟", "公孙", "慕容",
@@ -32,18 +42,14 @@ function syllables(pinyin: PinyinFn, run: string, { surname }: { surname: boolea
       });
 }
 
+/** One run holding a whole name, surname first: 曾雨桐 → Zēng Yǔ tóng. */
 function surnameFirstRun(pinyin: PinyinFn, run: string): string[] {
   const parts = syllables(pinyin, run, { surname: true });
   const surname = COMPOUND_SURNAMES.has(Array.from(run).slice(0, 2).join("")) ? 2 : 1;
   return parts.map((s, i) => (i === 0 || i === surname ? capitalize(s) : s));
 }
 
-export type Person = {
-  full: string | null;
-  first: string | null;
-  last: string | null;
-  override?: string | null;
-};
+export type Person = { full: string | null; first: string | null; last: string | null };
 
 const singleHanRun = (text: string | null): text is string => {
   if (!text) return false;
@@ -87,25 +93,21 @@ function addPerson(pinyin: PinyinFn, readings: Readings, person: Person) {
 const personHasHan = (person: Person) =>
   hasHan(person.full) || hasHan(person.first) || hasHan(person.last);
 
-export async function contactReadings({
-  people,
-  extra = [],
-}: {
-  people: readonly Person[];
-  extra?: readonly Person[];
-}): Promise<Readings> {
-  if (![...people, ...extra].some(personHasHan)) return {};
-  const pinyin = await loadPinyin();
-  const generated: Readings = {};
-  for (const person of [...people, ...extra]) addPerson(pinyin, generated, person);
-  const readings: Readings = {};
-  for (const person of people) {
-    Object.assign(
-      readings,
-      overrideReadings({ name: person.full, reading: person.override ?? null, generated }),
-    );
+/**
+ * Generated readings for every Han run in these people's names, or {} when
+ * pinyin-pro can't load: names then show without pinyin.
+ */
+export async function contactReadings({ people }: { people: readonly Person[] }): Promise<Readings> {
+  if (!people.some(personHasHan)) return {};
+  let pinyin: PinyinFn;
+  try {
+    pinyin = await loadPinyin();
+  } catch (err) {
+    console.error(`[py] [contactReadings] pinyin-pro failed to load: ${err instanceof Error ? err.name : typeof err}`);
+    return {};
   }
-  for (const [run, value] of Object.entries(generated)) add(readings, run, value);
+  const readings: Readings = {};
+  for (const person of people) addPerson(pinyin, readings, person);
   return readings;
 }
 
@@ -116,8 +118,6 @@ type ContactNames = {
   partnerName: string | null;
   partnerFirstName: string | null;
   partnerLastName: string | null;
-  nameReading: string | null;
-  partnerNameReading: string | null;
 };
 
 export function readingsForContact(
@@ -126,23 +126,9 @@ export function readingsForContact(
 ): Promise<Readings> {
   return contactReadings({
     people: [
-      {
-        full: contact.fullName,
-        first: contact.firstName,
-        last: contact.lastName,
-        override: contact.nameReading,
-      },
-      {
-        full: contact.partnerName,
-        first: contact.partnerFirstName,
-        last: contact.partnerLastName,
-        override: contact.partnerNameReading,
-      },
+      { full: contact.fullName, first: contact.firstName, last: contact.lastName },
+      { full: contact.partnerName, first: contact.partnerFirstName, last: contact.partnerLastName },
+      ...extra,
     ],
-    extra,
   });
-}
-
-export function generatedReadings(contact: ContactNames): Promise<Readings> {
-  return readingsForContact({ ...contact, nameReading: null, partnerNameReading: null });
 }

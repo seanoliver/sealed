@@ -5,7 +5,7 @@ import { getContactWithEvents } from "@/lib/queries/contacts";
 import { ContactForm } from "@/components/contact-form";
 import { NameWithReading } from "@/components/name-with-reading";
 import { householdPrefill } from "@/lib/names";
-import { generatedReadings, readingsForContact } from "@/lib/pinyin";
+import { readingsForContact } from "@/lib/pinyin";
 import { updateContact } from "../actions";
 import { DeleteContactButton } from "./delete-contact-button";
 
@@ -48,10 +48,7 @@ export default async function ContactDetailPage({
   // RLS makes another user's contact indistinguishable from a missing one.
   if (!detail) notFound();
   const { contact, events } = detail;
-  const [readings, generated] = await Promise.all([
-    readingsForContact(contact),
-    generatedReadings(contact),
-  ]);
+  const readings = await readingsForContact(contact);
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10">
@@ -72,13 +69,6 @@ export default async function ContactDetailPage({
           contactId={contact.id}
           submitLabel="Save changes"
           household={householdPrefill(contact)}
-          readings={{
-            values: {
-              name_reading: contact.nameReading ?? "",
-              partner_name_reading: contact.partnerNameReading ?? "",
-            },
-            generated,
-          }}
           defaults={{
             full_name: contact.fullName,
             partner_name: contact.partnerName ?? "",

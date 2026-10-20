@@ -6,10 +6,7 @@ import {
   lookupRun,
   matchesReading,
   nameSegments,
-  overrideReadings,
   pinyinKey,
-  readingText,
-  splitReading,
 } from "./readings";
 
 describe("hanRuns", () => {
@@ -36,104 +33,25 @@ describe("hanRuns", () => {
   });
 });
 
-describe("splitReading", () => {
-  it("splits joined syllables and keeps tones and capitals", () => {
-    expect(splitReading("Céng Yǔtóng", 3)).toEqual(["Céng", "Yǔ", "tóng"]);
-    expect(splitReading("Zhāng Wěi", 2)).toEqual(["Zhāng", "Wěi"]);
-    expect(splitReading("Ōuyáng Nàna", 4)).toEqual(["Ōu", "yáng", "Nà", "na"]);
-  });
-
-  it("splits an ambiguous run to the count it needs", () => {
-    expect(splitReading("xian", 1)).toEqual(["xian"]);
-    expect(splitReading("xian", 2)).toEqual(["xi", "an"]);
-  });
-
-  it("accepts tone numbers, ü and v", () => {
-    expect(splitReading("lv3 nü", 2)).toEqual(["lv3", "nü"]);
-  });
-
-  it("returns null when the count can't match", () => {
-    expect(splitReading("Zhāng Wěi", 3)).toBeNull();
-    expect(splitReading("Bob", 1)).toBeNull();
-    expect(splitReading("", 1)).toBeNull();
-  });
-
-  it("stays fast on long input", () => {
-    expect(splitReading("a".repeat(200), 3)).toBeNull();
-  });
-});
-
-describe("overrideReadings", () => {
-  it("places one syllable on each character", () => {
-    expect(overrideReadings({ name: "曾雨桐", reading: "Céng Yǔtóng" })).toEqual({
-      曾雨桐: ["Céng", "Yǔ", "tóng"],
-    });
-  });
-
-  it("spreads syllables across runs in order", () => {
-    expect(overrideReadings({ name: "伟 张", reading: "Wěi Zhāng" })).toEqual({
-      伟: ["Wěi"],
-      张: ["Zhāng"],
-    });
-  });
-
-  it("takes a surname-first reading in reverse when that matches the generated one", () => {
-    const generated = { 曾: ["Zēng"], 雨桐: ["Yǔ", "tóng"] };
-    expect(overrideReadings({ name: "雨桐 曾", reading: "Zēng Yǔtóng", generated })).toEqual({
-      曾: ["Zēng"],
-      雨桐: ["Yǔ", "tóng"],
-    });
-    expect(overrideReadings({ name: "雨桐 曾", reading: "Yǔtóng Céng", generated })).toEqual({
-      雨桐: ["Yǔ", "tóng"],
-      曾: ["Céng"],
-    });
-  });
-
-  it("keeps display order when nothing tells the orders apart", () => {
-    expect(overrideReadings({ name: "雨桐 曾", reading: "Zēng Yǔtóng" })).toEqual({
-      雨桐: ["Zēng", "Yǔ"],
-      曾: ["tóng"],
-    });
-  });
-
-  it("falls back to one reading over the whole run when the count differs", () => {
-    expect(overrideReadings({ name: "张伟", reading: "Jang Way Jr" })).toEqual({
-      张伟: ["Jang Way Jr"],
-    });
-  });
-
-  it("ignores an empty override or a name without Han", () => {
-    expect(overrideReadings({ name: "张伟", reading: "  " })).toEqual({});
-    expect(overrideReadings({ name: "Ada", reading: "ah-da" })).toEqual({});
-  });
-});
-
 describe("lookupRun and nameSegments", () => {
-  const readings = { 张伟: ["Zhāng", "Wěi"], 李娜: ["Lǐ Nuo"] };
+  const readings = { 张伟: ["Zhāng", "Wěi"], 李娜: ["Lǐ", "Nà"] };
 
   it("finds a run inside a per-character entry", () => {
     expect(lookupRun(readings, "伟")).toEqual(["Wěi"]);
-    expect(lookupRun(readings, "李")).toBeNull();
+    expect(lookupRun(readings, "王")).toBeNull();
   });
 
   it("puts a syllable over each character and passes other text through", () => {
     expect(nameSegments("张伟 & 李娜 & Tom", readings)).toEqual([
       { kind: "ruby", parts: [{ base: "张", rt: "Zhāng" }, { base: "伟", rt: "Wěi" }] },
       { kind: "text", text: " & " },
-      { kind: "ruby", parts: [{ base: "李娜", rt: "Lǐ Nuo" }] },
+      { kind: "ruby", parts: [{ base: "李", rt: "Lǐ" }, { base: "娜", rt: "Nà" }] },
       { kind: "text", text: " & Tom" },
     ]);
   });
 
   it("leaves an unknown run as text", () => {
     expect(nameSegments("王芳", readings)).toEqual([{ kind: "text", text: "王芳" }]);
-  });
-});
-
-describe("readingText", () => {
-  it("joins a given name and spaces at capitals", () => {
-    expect(readingText("曾雨桐", { 曾雨桐: ["Zēng", "Yǔ", "tóng"] })).toBe("Zēng Yǔtóng");
-    expect(readingText("Ada", {})).toBeNull();
   });
 });
 
@@ -151,6 +69,20 @@ describe("pinyin search", () => {
       expect(matchesReading({ names, readings, query })).toBe(true);
     }
     expect(matchesReading({ names, readings, query: "li na" })).toBe(false);
+  });
+
+  it("matches a surname-first name given name first", () => {
+    expect(matchesReading({ names, readings, query: "wei zhang" })).toBe(true);
+    const zeng = { 曾雨桐: ["Zēng", "Yǔ", "tóng"] };
+    expect(matchesReading({ names: ["曾雨桐"], readings: zeng, query: "yutong zeng" })).toBe(true);
+    expect(matchesReading({ names: ["曾雨桐"], readings: zeng, query: "tong zeng yu" })).toBe(false);
+  });
+
+  it("matches a given-name-first name surname first", () => {
+    const readings = { 华: ["Huá"], 李: ["Lǐ"] };
+    for (const query of ["hua li", "li hua"]) {
+      expect(matchesReading({ names: ["华 李"], readings, query })).toBe(true);
+    }
   });
 
   it("ignores queries that aren't pinyin", () => {

@@ -4,7 +4,6 @@ import { useRef, useState, type ReactNode, type Ref } from "react";
 import { Plus, X } from "lucide-react";
 import { type EnabledFields } from "@/components/recipient-fields";
 import { inputClasses, labelClasses } from "@/components/recipient-field-styles";
-import { formatPerson } from "@/lib/names";
 import { cn } from "@/lib/utils";
 import {
   KIDS_MAX,
@@ -20,7 +19,6 @@ type HouseholdFieldsProps = {
   enabled: Pick<EnabledFields, "partner_name" | "kids_names">;
   errors?: HouseholdFieldErrors;
   audience?: "recipient" | "owner";
-  renderAfterName?: (person: "primary" | "partner", fullName: string) => ReactNode;
 };
 
 const errorClasses = "text-xs text-red-700 dark:text-red-300";
@@ -158,7 +156,6 @@ export function HouseholdFields({
   enabled,
   errors = {},
   audience = "recipient",
-  renderAfterName,
 }: HouseholdFieldsProps) {
   const [firstName, setFirstName] = useState(defaults.first_name);
   const [lastName, setLastName] = useState(defaults.last_name);
@@ -203,10 +200,6 @@ export function HouseholdFields({
         <FieldError id="first_name" message={errors.first_name} />
         <FieldError id="last_name" message={errors.last_name} />
       </div>
-      {renderAfterName?.(
-        "primary",
-        formatPerson({ first: firstName.trim(), last: lastName.trim() }) ?? "",
-      )}
 
       {enabled.partner_name ? (
         <input type="hidden" name="partner_section" value="1" />
@@ -250,15 +243,6 @@ export function HouseholdFields({
           }
         />
       ) : null}
-      {enabled.partner_name && partner
-        ? renderAfterName?.(
-            "partner",
-            formatPerson({
-              first: partner.first.trim(),
-              last: (partner.lastEdited ? partner.last : lastName).trim(),
-            }) ?? "",
-          )
-        : null}
 
       {enabled.kids_names
         ? kids.map((kid, i) => (

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
-import { contactDetailsToRow, householdToRow, readingsToRow } from "@/lib/db/contact-row";
+import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { sameJsonb } from "@/lib/db/jsonb";
 import { books, contactEvents, contacts } from "@/lib/db/schema";
@@ -18,10 +18,6 @@ import {
   contactDetailsSchema,
   type ContactDetailsInput,
   type ContactFormValues,
-  READING_FIELDS,
-  type ReadingValues,
-  READING_MAX,
-  readingsSchema,
   SAME_PARTNER_EMAIL,
   samePartnerEmail,
 } from "@/lib/validation/contact";
@@ -30,6 +26,7 @@ import {
   parseHouseholdForm,
   readHouseholdValues,
   type HouseholdFieldErrors,
+  type HouseholdInput,
   type HouseholdValues,
 } from "@/lib/validation/household";
 
@@ -43,7 +40,6 @@ export type ContactFormState = {
    */
   values?: ContactFormValues;
   household?: HouseholdValues;
-  readings?: ReadingValues;
   fieldErrors?: HouseholdFieldErrors;
 };
 
@@ -57,23 +53,6 @@ function readContactForm(formData: FormData): ContactFormValues {
   ) as ContactFormValues;
 }
 
-function readReadings(
-  formData: FormData,
-  { stored }: { stored?: Pick<ContactRow, "nameReading" | "partnerNameReading"> } = {},
-): ReadingValues {
-  const storedValues: ReadingValues = {
-    name_reading: stored?.nameReading ?? "",
-    partner_name_reading: stored?.partnerNameReading ?? "",
-  };
-  return Object.fromEntries(
-    READING_FIELDS.map((field) => [
-      field,
-      // Absent is not empty: a field the form didn't render keeps the stored reading.
-      formData.has(field) ? String(formData.get(field)) : storedValues[field],
-    ]),
-  ) as ReadingValues;
-}
-
 const NAME_FIELDS = [
   "first_name",
   "last_name",
@@ -81,16 +60,14 @@ const NAME_FIELDS = [
   "partner_last_name",
   "kids",
 ] as const;
-const SNAPSHOT_FIELDS = [...CONTACT_FIELDS, ...NAME_FIELDS, ...READING_FIELDS] as const;
+const SNAPSHOT_FIELDS = [...CONTACT_FIELDS, ...NAME_FIELDS] as const;
 type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 
 /** Field snapshot keyed by form/schema names, for audit diffs. */
 type Snapshot = Record<SnapshotField, string | readonly Kid[] | null>;
 
 type ContactRow = typeof contacts.$inferSelect;
-type Row = ReturnType<typeof householdToRow> &
-  ReturnType<typeof contactDetailsToRow> &
-  ReturnType<typeof readingsToRow>;
+type Row = ReturnType<typeof householdToRow> & ReturnType<typeof contactDetailsToRow>;
 
 function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
   return {
@@ -112,9 +89,11 @@ function rowToSnapshot(row: Pick<ContactRow, keyof Row>): Snapshot {
     partner_first_name: row.partnerFirstName,
     partner_last_name: row.partnerLastName,
     kids: row.kids,
-    name_reading: row.nameReading,
-    partner_name_reading: row.partnerNameReading,
   };
+}
+
+function inputToRow(details: ContactDetailsInput, household: HouseholdInput): Row {
+  return { ...householdToRow(household), ...contactDetailsToRow(details) };
 }
 
 /** Non-null fields only — keeps create diffs compact. */
@@ -144,7 +123,7 @@ function changedFields(
 }
 
 type ParsedContactForm =
-  | { ok: true; row: Row }
+  | { ok: true; details: ContactDetailsInput; household: HouseholdInput }
   | { ok: false; state: ContactFormState };
 
 type ParsedDetails =
@@ -184,43 +163,19 @@ function withStoredPartnerEmail(
     : { ...values, partner_email: existing.partnerEmail ?? "" };
 }
 
-function parseReadings(
-  readings: ReadingValues,
-): { success: true; row: ReturnType<typeof readingsToRow> } | { success: false; fieldErrors: HouseholdFieldErrors } {
-  const parsed = readingsSchema.safeParse(readings);
-  if (parsed.success) return { success: true, row: readingsToRow(parsed.data) };
-  const fieldErrors: HouseholdFieldErrors = {};
-  for (const issue of parsed.error.issues) {
-    fieldErrors[String(issue.path[0])] ??= `Keep the reading under ${READING_MAX + 1} characters.`;
-  }
-  return { success: false, fieldErrors };
-}
-
 function parseContactForm(
   formData: FormData,
-  {
-    values = readContactForm(formData),
-    readings = readReadings(formData),
-  }: { values?: ContactFormValues; readings?: ReadingValues } = {},
+  { values = readContactForm(formData) }: { values?: ContactFormValues } = {},
 ): ParsedContactForm {
   const household = parseHouseholdForm(formData);
   const details = parseDetails(values);
-  const parsedReadings = parseReadings(readings);
-  if (household.ok && details.success && parsedReadings.success) {
-    return {
-      ok: true,
-      row: {
-        ...householdToRow(household.data),
-        ...contactDetailsToRow(details.data),
-        ...parsedReadings.row,
-      },
-    };
+  if (household.ok && details.success) {
+    return { ok: true, details: details.data, household: household.data };
   }
   const detailErrors = details.success ? {} : detailsErrorState(details);
   const fieldErrors = {
     ...(household.ok ? {} : household.fieldErrors),
     ...detailErrors.fieldErrors,
-    ...(parsedReadings.success ? {} : parsedReadings.fieldErrors),
   };
   return {
     ok: false,
@@ -229,7 +184,6 @@ function parseContactForm(
       fieldErrors: Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined,
       values,
       household: household.values,
-      readings,
     },
   };
 }
@@ -265,9 +219,8 @@ export async function createContact(
   const echo = {
     values: readContactForm(formData),
     household: readHouseholdValues(formData),
-    readings: readReadings(formData),
   };
-  const { row } = parsed;
+  const row = inputToRow(parsed.details, parsed.household);
 
   let inserted: { id: string } | undefined;
   try {
@@ -320,7 +273,6 @@ export async function updateContact(
   const echo = {
     values: readContactForm(formData),
     household: readHouseholdValues(formData),
-    readings: readReadings(formData),
   };
   const id = String(formData.get("id") ?? "");
   if (!uuidSchema.safeParse(id).success) {
@@ -328,7 +280,7 @@ export async function updateContact(
   }
 
   let before: ContactRow | undefined;
-  let after: ContactRow | undefined;
+  let row: Partial<Row> | undefined;
   let invalid: ContactFormState | undefined;
   try {
     before = await withRls(claims, async (tx) => {
@@ -346,37 +298,29 @@ export async function updateContact(
         .limit(1);
       if (!existing) return undefined;
       const values = withStoredPartnerEmail(formData, echo.values, existing);
-      const readings = readReadings(formData, { stored: existing });
-      let row: Partial<Row>;
       const keepNames = isUntouchedPrefill(
         storedNames(existing),
         readHouseholdValues(formData, { kidsLimit: Infinity }),
       );
       if (keepNames) {
         const details = parseDetails(values);
-        const parsedReadings = parseReadings(readings);
         if (!details.success) {
           invalid = { ...detailsErrorState(details), ...echo };
           return existing;
         }
-        if (!parsedReadings.success) {
-          invalid = { fieldErrors: parsedReadings.fieldErrors, ...echo };
-          return existing;
-        }
-        row = { ...contactDetailsToRow(details.data), ...parsedReadings.row };
+        row = contactDetailsToRow(details.data);
       } else {
-        const parsed = parseContactForm(formData, { values, readings });
+        const parsed = parseContactForm(formData, { values });
         if (!parsed.ok) {
           invalid = parsed.state;
           return existing;
         }
-        row = parsed.row;
+        row = inputToRow(parsed.details, parsed.household);
       }
-      [after] = await tx
+      await tx
         .update(contacts)
         .set(row)
-        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
-        .returning();
+        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
       return existing;
     });
   } catch (err) {
@@ -397,7 +341,7 @@ export async function updateContact(
   }
   if (invalid) return invalid;
 
-  const diff = after && changedFields(rowToSnapshot(before), rowToSnapshot(after));
+  const diff = changedFields(rowToSnapshot(before), rowToSnapshot({ ...before, ...row }));
   if (diff) await recordContactEvent(id, diff);
 
   revalidatePath("/dashboard");
@@ -497,16 +441,15 @@ export async function patchContact(
         ...(names ? householdToRow(names) : {}),
       };
       const before = rowToSnapshot(existing);
+      const after = rowToSnapshot({ ...existing, ...row });
       // A no-op save must not bump updated_at.
-      if (!changedFields(before, rowToSnapshot({ ...existing, ...row }))) {
-        return { kind: "saved", before, after: before };
+      if (changedFields(before, after)) {
+        await tx
+          .update(contacts)
+          .set(row)
+          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
       }
-      const [updated] = await tx
-        .update(contacts)
-        .set(row)
-        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
-        .returning();
-      return { kind: "saved", before, after: rowToSnapshot(updated ?? existing) };
+      return { kind: "saved", before, after };
     });
   } catch (err) {
     if (isUniqueViolation(err, "contacts_book_email_unique")) {

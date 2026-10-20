@@ -3,17 +3,10 @@
 import { useActionState } from "react";
 import { type ContactFormState } from "@/app/dashboard/contacts/actions";
 import { HouseholdFields } from "@/components/household-fields";
-import { ReadingField } from "@/components/reading-field";
-import { type Readings } from "@/lib/readings";
-import { type ContactFormValues, type ReadingValues } from "@/lib/validation/contact";
+import { type ContactFormValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
 
 const initialState: ContactFormState = {};
-
-const BLANK_READINGS = {
-  values: { name_reading: "", partner_name_reading: "" },
-  generated: {},
-};
 
 const inputClasses =
   "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 ";
@@ -26,7 +19,6 @@ type ContactFormProps = {
   ) => Promise<ContactFormState>;
   defaults: ContactFormValues;
   household: HouseholdValues;
-  readings?: { values: ReadingValues; generated: Readings };
   /** Present on the edit page; posted as a hidden field. */
   contactId?: string;
   submitLabel: string;
@@ -80,7 +72,6 @@ export function ContactForm({
   action,
   defaults,
   household,
-  readings = BLANK_READINGS,
   contactId,
   submitLabel,
 }: ContactFormProps) {
@@ -116,18 +107,6 @@ export function ContactForm({
         enabled={{ partner_name: true, kids_names: true }}
         errors={state.fieldErrors}
         audience="owner"
-        renderAfterName={(person, fullName) => {
-          const field = person === "primary" ? "name_reading" : "partner_name_reading";
-          return (
-            <ReadingField
-              field={field}
-              personName={fullName}
-              defaultValue={(state.readings ?? readings.values)[field]}
-              generated={readings.generated}
-              error={state.fieldErrors?.[field]}
-            />
-          );
-        }}
       />
       <Field
         name="email"

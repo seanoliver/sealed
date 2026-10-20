@@ -1,6 +1,6 @@
 // Client components import this module: never import pinyin-pro here.
 
-/** Han run → one syllable per character, or a single reading over the whole run. */
+/** Han run → one syllable per character. */
 export type Readings = Record<string, string[]>;
 
 export type Run = { text: string; han: boolean };
@@ -20,15 +20,6 @@ export function hanRuns(text: string): Run[] {
 
 const chars = (text: string) => Array.from(text);
 
-const INITIAL = "(?:zh|ch|sh|[bpmfdtnlgkhjqxrzcsyw])";
-// Without an initial only a, o and e start a syllable (yi, wu, yu spell the rest).
-const BARE_FINAL = "(?:ang|eng|ai|ei|ao|ou|an|en|er|a|o|e)";
-const FINAL =
-  "(?:iang|iong|uang|ueng|ang|eng|ing|ong|ian|iao|uai|uan|ai|ei|ao|ou|an|en|in|un|ia|ie|iu|ua|uo|ui|ue|er|a|o|e|i|u)";
-const SYLLABLE = new RegExp(`^(?:${INITIAL}${FINAL}|${BARE_FINAL})r?$`);
-const LONGEST = "zhuangr".length;
-const SEPARATORS = /[\s\-'’·.]+/;
-
 function baseLetter(char: string): string {
   return char
     .normalize("NFD")
@@ -36,108 +27,6 @@ function baseLetter(char: string): string {
     .toLowerCase()
     .replace(/v/g, "u")
     .replace(/[^a-z]/g, "");
-}
-
-function tokenSplits(token: string): Map<number, string[]> {
-  const units = chars(token.normalize("NFC"));
-  const bases = units.map(baseLetter);
-  type Split = { parts: string[]; bare: number };
-  // from[i]: splits of units[i..], by syllable count.
-  const from: Map<number, Split>[] = [];
-  from[units.length] = new Map([[0, { parts: [], bare: 0 }]]);
-  for (let start = units.length - 1; start >= 0; start--) {
-    const here = new Map<number, Split>();
-    // Joined pinyin needs an apostrophe before a, o or e: fewer of those wins ("nàna" → nà na).
-    const bare = start > 0 && /^[aoe]/.test(bases[start]) ? 1 : 0;
-    for (let end = Math.min(units.length, start + LONGEST); end > start; end--) {
-      if (!SYLLABLE.test(bases.slice(start, end).join(""))) continue;
-      const syllable = units.slice(start, end).join("");
-      for (const [n, rest] of from[end]) {
-        const best = here.get(n + 1);
-        if (!best || rest.bare + bare < best.bare) {
-          here.set(n + 1, { parts: [syllable, ...rest.parts], bare: rest.bare + bare });
-        }
-      }
-    }
-    from[start] = here;
-  }
-  return new Map([...from[0]].map(([n, split]) => [n, split.parts]));
-}
-
-export function splitReading(reading: string, count: number): string[] | null {
-  const tokens = reading.trim().split(SEPARATORS).filter((t) => t !== "");
-  if (tokens.length === 0 || count < 1) return null;
-  let options = new Map<number, string[]>([[0, []]]);
-  for (const token of tokens) {
-    const splits = tokenSplits(token);
-    if (splits.size === 0) return null;
-    const next = new Map<number, string[]>();
-    for (const [total, acc] of options) {
-      for (const [n, parts] of splits) {
-        if (total + n <= count && !next.has(total + n)) next.set(total + n, [...acc, ...parts]);
-      }
-    }
-    options = next;
-  }
-  return options.get(count) ?? null;
-}
-
-export function overrideReadings({
-  name,
-  reading,
-  generated = {},
-}: {
-  name: string | null;
-  reading: string | null;
-  generated?: Readings;
-}): Readings {
-  const trimmed = reading?.trim() ?? "";
-  if (!name || trimmed === "") return {};
-  const runs = hanRuns(name).filter((run) => run.han).map((run) => run.text);
-  if (runs.length === 0) return {};
-  // Stored names put the given name first, but owners often write the reading
-  // surname first: try both orders and keep the one closer to the generated reading.
-  const orders = runs.length > 1 ? [runs, [...runs].reverse()] : [runs];
-  const candidates = orders
-    .map((order) => assignReading(trimmed, order))
-    .filter((candidate): candidate is Readings => candidate !== null);
-  if (candidates.length === 0) return {};
-  const scores = candidates.map((candidate) => agreement(candidate, generated));
-  return candidates[scores.indexOf(Math.max(...scores))];
-}
-
-function assignReading(reading: string, runs: string[]): Readings | null {
-  const lengths = runs.map((run) => chars(run).length);
-  const syllables = splitReading(reading, lengths.reduce((a, b) => a + b, 0));
-  if (syllables) {
-    let at = 0;
-    return Object.fromEntries(
-      runs.map((run, i) => {
-        const part = syllables.slice(at, at + lengths[i]);
-        at += lengths[i];
-        return [run, part];
-      }),
-    );
-  }
-  if (runs.length === 1) return { [runs[0]]: [reading] };
-  const words = reading.split(/\s+/);
-  return words.length === runs.length
-    ? Object.fromEntries(runs.map((run, i) => [run, [words[i]]]))
-    : null;
-}
-
-function agreement(candidate: Readings, generated: Readings): number {
-  let score = 0;
-  for (const [run, value] of Object.entries(candidate)) {
-    const expected = lookupRun(generated, run);
-    if (!expected) continue;
-    if (value.length === expected.length) {
-      score += value.filter((s, i) => pinyinKey(s) === pinyinKey(expected[i])).length;
-    } else if (pinyinKey(value.join("")) === pinyinKey(expected.join(""))) {
-      score += expected.length;
-    }
-  }
-  return score;
 }
 
 export function lookupRun(readings: Readings, run: string): string[] | null {
@@ -165,31 +54,20 @@ export function nameSegments(text: string, readings: Readings): NameSegment[] {
   return hanRuns(text).map((run): NameSegment => {
     const syllables = run.han ? lookupRun(readings, run.text) : null;
     if (!syllables) return { kind: "text", text: run.text };
-    const runChars = chars(run.text);
     return {
       kind: "ruby",
-      parts:
-        syllables.length === runChars.length
-          ? runChars.map((base, i) => ({ base, rt: syllables[i] }))
-          : [{ base: run.text, rt: syllables.join(" ") }],
+      parts: chars(run.text).map((base, i) => ({ base, rt: syllables[i] })),
     };
   });
 }
 
-export function readingText(name: string, readings: Readings): string | null {
-  const words = hanRuns(name)
-    .filter((run) => run.han)
-    .map((run) => lookupRun(readings, run.text));
-  if (words.length === 0 || words.some((w) => w === null)) return null;
-  // A capital starts a word: Zēng, Yǔ, tóng → "Zēng Yǔtóng".
-  return (words as string[][])
-    .map((syllables) =>
-      syllables.reduce(
-        (out, s, i) => (i > 0 && /^\p{Lu}/u.test(s) ? `${out} ${s}` : `${out}${s}`),
-        "",
-      ),
-    )
-    .join(" ");
+/** A run's syllables grouped into words: a capital starts one (Zēng, Yǔ, tóng → Zēng, Yǔtóng). */
+function words(syllables: string[]): string[] {
+  return syllables.reduce<string[]>(
+    (out, s, i) =>
+      i > 0 && /^\p{Lu}/u.test(s) ? [...out, s] : [...out.slice(0, -1), `${out.at(-1) ?? ""}${s}`],
+    [],
+  );
 }
 
 export function pinyinKey(text: string): string {
@@ -216,9 +94,13 @@ export function matchesReading({
     const runs = hanRuns(name);
     const read = (run: Run) =>
       run.han ? (lookupRun(readings, run.text) ?? []).join("") : run.text;
-    const surnameFirst = runs.filter((run) => run.han).reverse();
-    return [runs, surnameFirst].some((order) =>
-      pinyinKey(order.map(read).join(" ")).includes(want),
-    );
+    const han = runs.filter((run) => run.han).map((run) => lookupRun(readings, run.text) ?? []);
+    // Stored order, surname first ("伟 张" → zhang wei), and given name first (张伟 → wei zhang).
+    const orders = [
+      runs.map(read),
+      [...han].reverse().map((syllables) => syllables.join("")),
+      ...(han.length === 1 ? [[...words(han[0]).slice(1), ...words(han[0]).slice(0, 1)]] : []),
+    ];
+    return orders.some((order) => pinyinKey(order.join(" ")).includes(want));
   });
 }

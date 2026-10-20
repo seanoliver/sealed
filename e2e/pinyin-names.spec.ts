@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupUser,
-  getContactReadings,
   getContactRow,
   getUserIdByEmail,
   seedBook,
   seedContact,
   seedPendingReply,
   seedPermalinkSubmission,
+  seedUpdateToken,
 } from "./db";
 import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
@@ -110,37 +110,32 @@ test("a row with pinyin still edits inline", async () => {
   await expect.poll(async () => (await getContactRow(zengId)).city).toBe("Berkeley");
 });
 
-test("the owner corrects a reading on the contact page at phone width", async () => {
+test("the contact page and phone cards show pinyin, with no reading to edit", async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   try {
     await page.goto(`/dashboard/contacts/${zengId}`);
-    const reading = page.getByRole("textbox", { name: "Reading (pinyin)" });
-    await expect(reading).toHaveValue("");
-    await expect(page.getByText("Suggested: Zēng Yǔtóng.")).toBeVisible();
-
-    await reading.fill("Céng Yǔtóng");
-    await page.getByRole("button", { name: "Use suggestion" }).click();
-    await expect(reading).toHaveValue("Zēng Yǔtóng");
-    await reading.fill("Céng Yǔtóng");
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByRole("status")).toHaveText("Saved.");
-    await expect
-      .poll(() => getContactReadings(zengId))
-      .toEqual({ nameReading: "Céng Yǔtóng", partnerNameReading: null });
-
-    await page.reload();
     await expect(page.getByRole("heading", { level: 1 }).locator("rt")).toHaveText([
-      "Céng",
+      "Zēng",
       "Yǔ",
       "tóng",
     ]);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("曾雨桐");
+    await expect(page.getByText(/pinyin/i)).toHaveCount(0);
     await page.goto("/dashboard");
     await expect(
       page.getByRole("list", { name: "Contacts" }).getByRole("listitem").filter({ hasText: /曾/ }).locator("rt"),
-    ).toHaveText(["Céng", "Yǔ", "tóng"]);
+    ).toHaveText(["Zēng", "Yǔ", "tóng"]);
   } finally {
     await page.setViewportSize({ width: 1280, height: 720 });
   }
+});
+
+test("the recipient's update page never shows pinyin", async () => {
+  const token = await seedUpdateToken(zengId);
+  await page.goto(`/u/${token}`);
+  await expect(page.getByRole("textbox", { name: "First name" })).toHaveValue("曾雨桐");
+  await expect(page.locator("rt")).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText(/Zēng|Yǔ|tóng/);
 });
 
 test("replies in Chinese characters show pinyin in Two answers and on the review page", async () => {
