@@ -35,7 +35,7 @@ type DeleteItem = {
   address: string;
 };
 
-type EmailItem = { id: string; name: string; updatedAt: string; changes: EmailChange };
+type EmailItem = { id: string; name: string; changes: EmailChange };
 
 type Problem = { id: string; error: string };
 
@@ -235,9 +235,17 @@ export async function approveRequest(
         await tx.delete(contacts).where(inArray(contacts.id, items.map((item) => item.id)));
       } else {
         const [item] = request.items as EmailItem[];
-        const stale = await staleNames(tx, [item]);
-        if (stale.length > 0) throw new Refusal(changedSince(stale));
-        const [existing] = await tx.select().from(contacts).where(eq(contacts.id, item.id));
+        // Only the emails must match the request: other edits don't block it.
+        const [existing] = await tx
+          .select()
+          .from(contacts)
+          .where(eq(contacts.id, item.id))
+          .for("update");
+        const current = existing && { email: existing.email, partner_email: existing.partnerEmail };
+        const moved = Object.entries(item.changes).some(
+          ([field, [before]]) => current?.[field as keyof typeof current] !== before,
+        );
+        if (!existing || moved) throw new Refusal(changedSince([item.name]));
         const values = Object.fromEntries(
           Object.entries(item.changes).map(([field, [, proposed]]) => [field, proposed ?? ""]),
         );
@@ -330,7 +338,8 @@ export async function listPendingRequests(claims: SessionClaims): Promise<Pendin
       .from(agentPreviews)
       .leftJoin(agentTokens, eq(agentTokens.id, agentPreviews.agentTokenId))
       .where(and(isNotNull(agentPreviews.requestedAt), live))
-      .orderBy(desc(agentPreviews.requestedAt));
+      .orderBy(desc(agentPreviews.requestedAt))
+      .limit(100);
     return Promise.all(
       rows.map(async ({ items, requestedAt, tokenId, kind, ...row }): Promise<PendingRequest> => {
         const base = { ...row, requestedAt: requestedAt! };
