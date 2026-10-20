@@ -60,6 +60,7 @@ const eslintConfig = defineConfig([
       "src/app/dashboard/import/actions.test.ts",
       "src/app/dashboard/contacts/actions.test.ts",
       "src/lib/queries/contacts.test.ts",
+      "src/lib/queries/contacts-pinyin-load.test.ts",
       "src/lib/queries/submissions.test.ts",
       "src/lib/queries/export.test.ts",
       "src/app/dashboard/review/actions.test.ts",

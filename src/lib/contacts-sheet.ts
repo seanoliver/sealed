@@ -11,6 +11,7 @@ import {
 import { addressLines } from "@/lib/address";
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
+import type { Readings } from "@/lib/readings";
 import type { Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
 import {
@@ -51,6 +52,7 @@ export interface SheetRow {
   needsAttention: boolean;
   attention: { recipient: Recipient; status: SendStatus }[];
   answers: TwoAnswers | null;
+  readings: Readings;
   updatedAtIso: string;
   updatedAtLabel: string;
 }
@@ -65,7 +67,7 @@ export type PendingAnswer = {
 export function toSheetRow(
   row: ContactListRow,
   formatDate: (date: Date) => string,
-  { answer }: { answer?: PendingAnswer } = {},
+  { answer, readings = {} }: { answer?: PendingAnswer; readings?: Readings } = {},
 ): SheetRow {
   const values: SheetValues = {
     email: row.email ?? "",
@@ -102,6 +104,7 @@ export function toSheetRow(
     needsAttention: attention.length > 0,
     attention,
     answers: answer ? twoAnswers(row, answer) : null,
+    readings,
     updatedAtIso: row.updatedAt.toISOString(),
     updatedAtLabel: formatDate(row.updatedAt),
   };
@@ -262,6 +265,8 @@ const MARK_START = "\u0001";
 const MARK_END = "\u0002";
 // split() with a capture group alternates plain and marked text.
 const MARKED = /\u0001(.*?)\u0002/;
+
+export const NAME_LINE_LABELS: ReadonlySet<string> = new Set(["Name", "Partner"]);
 
 const OTHER_FIELDS = [
   ["full_name", "Name"],

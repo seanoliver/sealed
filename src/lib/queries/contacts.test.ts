@@ -81,3 +81,49 @@ describe("listContacts", () => {
     });
   });
 });
+
+describe("listContacts pinyin search", () => {
+  const PU = "00000000-0000-4000-8000-0000000c9101";
+  const PB = "10000000-0000-4000-8000-0000000c9101";
+
+  beforeAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${PB}`);
+    await dbAdmin.execute(sql`
+      insert into auth.users (id, email) values (${PU}, 'lc-pinyin@test.dev')
+      on conflict (id) do nothing`);
+    await dbAdmin.execute(sql`insert into public.books (id, owner_id, slug) values (${PB}, ${PU}, 'lc-pinyin-book')`);
+    await dbAdmin.execute(sql`
+      insert into public.contacts (book_id, full_name, partner_name) values
+        (${PB}, '张伟', '李娜'),
+        (${PB}, '曾雨桐', null),
+        (${PB}, 'Zhang Ada', null),
+        (${PB}, 'Tom Reyes', '单丽')`);
+  });
+
+  afterAll(async () => {
+    await dbAdmin.execute(sql`delete from public.books where id = ${PB}`);
+  });
+
+  const names = async (query: string) =>
+    (await listContacts({ sub: PU }, query)).map((row) => row.fullName).sort();
+
+  it("finds names in Chinese characters by pinyin, with or without tones", async () => {
+    expect(await names("zhang wei")).toEqual(["张伟"]);
+    expect(await names("zhāng")).toEqual(["张伟"]);
+    expect(await names("zhang")).toEqual(["Zhang Ada", "张伟"].sort());
+    expect(await names("li na")).toEqual(["张伟"]);
+    expect(await names("shan li")).toEqual(["Tom Reyes"]);
+  });
+
+  it("reads surnames in surname mode and matches either name order", async () => {
+    expect(await names("zeng")).toEqual(["曾雨桐"]);
+    expect(await names("ceng")).toEqual([]);
+    expect(await names("wei zhang")).toEqual(["张伟"]);
+    expect(await names("yutong zeng")).toEqual(["曾雨桐"]);
+  });
+
+  it("keeps plain substring search", async () => {
+    expect(await names("张")).toEqual(["张伟"]);
+    expect(await names("reyes")).toEqual(["Tom Reyes"]);
+  });
+});

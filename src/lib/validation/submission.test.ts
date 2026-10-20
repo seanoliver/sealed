@@ -5,6 +5,7 @@ import {
   parseSubmissionForDisplay,
   parseSubmissionPayload,
   submissionDisplaySchema,
+  submittedPeople,
   type EnabledFields,
 } from "./submission";
 
@@ -255,5 +256,51 @@ describe("parseSubmissionPayload", () => {
     ["non-object payload", ["first_name"]],
   ])("rejects %s", (_label, payload) => {
     expect(parseSubmissionPayload(payload, ALL_ON).success).toBe(false);
+  });
+});
+
+describe("submittedPeople", () => {
+  it("keeps a full name sent without first and last names", () => {
+    expect(
+      submittedPeople({ full_name: "张伟", partner_name: "李娜" }, allEnabled),
+    ).toEqual([
+      { full: "张伟", first: null, last: null },
+      { full: "李娜", first: null, last: null },
+    ]);
+  });
+
+  it("builds the full name from first and last names", () => {
+    expect(
+      submittedPeople(
+        {
+          full_name: "ignored",
+          first_name: "华",
+          last_name: "李",
+          partner_first_name: "乐乐",
+          partner_last_name: "王",
+        },
+        allEnabled,
+      ),
+    ).toEqual([
+      { full: "华 李", first: "华", last: "李" },
+      { full: "乐乐 王", first: "乐乐", last: "王" },
+    ]);
+  });
+
+  it("drops the partner when the book doesn't collect one", () => {
+    expect(
+      submittedPeople(
+        { first_name: "华", last_name: "李", partner_first_name: "乐乐", partner_last_name: "王" },
+        { ...allEnabled, partner_name: false },
+      ),
+    ).toEqual([
+      { full: "华 李", first: "华", last: "李" },
+      { full: null, first: null, last: null },
+    ]);
+  });
+
+  it("returns no one for a payload that isn't an object", () => {
+    expect(submittedPeople(["张伟"], allEnabled)).toEqual([]);
+    expect(submittedPeople(null, allEnabled)).toEqual([]);
   });
 });

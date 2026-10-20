@@ -3,7 +3,9 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { getContactWithEvents } from "@/lib/queries/contacts";
 import { ContactForm } from "@/components/contact-form";
+import { NameWithReading } from "@/components/name-with-reading";
 import { householdPrefill } from "@/lib/names";
+import { readingsForContact } from "@/lib/pinyin";
 import { updateContact } from "../actions";
 import { DeleteContactButton } from "./delete-contact-button";
 
@@ -46,12 +48,17 @@ export default async function ContactDetailPage({
   // RLS makes another user's contact indistinguishable from a missing one.
   if (!detail) notFound();
   const { contact, events } = detail;
+  const readings = await readingsForContact(contact);
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10">
       <div className="rounded-xl border border-border bg-card p-8 shadow-sm ">
         <h1 className="font-serif text-2xl leading-tight text-foreground">
-          {contact.fullName}
+          <NameWithReading
+            text={contact.fullName}
+            readings={readings}
+            className="leading-[1.7]"
+          />
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Edit this contact&apos;s details.
