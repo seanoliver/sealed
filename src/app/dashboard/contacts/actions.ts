@@ -39,6 +39,7 @@ import {
   type Row,
   rowToSnapshot,
   storedNames,
+  updatedAtText,
 } from "./write";
 
 export type ContactFormState = {
@@ -59,6 +60,8 @@ export type DeleteContactState = { error?: string };
 export type PatchContactResult = { error?: string };
 
 const uuidSchema = z.uuid();
+
+const CHANGED_SINCE_OPENED = "This contact changed since you opened it. Reload to see the latest.";
 
 function readContactForm(formData: FormData): ContactFormValues {
   return Object.fromEntries(
@@ -157,6 +160,7 @@ export async function updateContact(
     return { error: "Contact not found.", ...echo };
   }
 
+  const version = String(formData.get("version") ?? "");
   let before: ContactRow | undefined;
   let row: Partial<Row> | undefined;
   let invalid: ContactFormState | undefined;
@@ -169,12 +173,18 @@ export async function updateContact(
         .limit(1);
       if (!book) return undefined;
       // Scoped by id AND bookId (RLS backstops the same predicate).
-      const [existing] = await tx
-        .select()
+      const [locked] = await tx
+        .select({ contact: contacts, version: updatedAtText })
         .from(contacts)
         .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
-        .limit(1);
-      if (!existing) return undefined;
+        .limit(1)
+        .for("update");
+      if (!locked) return undefined;
+      const existing = locked.contact;
+      if (locked.version !== version) {
+        invalid = { error: CHANGED_SINCE_OPENED, ...echo };
+        return existing;
+      }
       const values = withStoredPartnerEmail(formData, echo.values, existing);
       const keepNames = isUntouchedPrefill(
         storedNames(existing),
@@ -195,10 +205,12 @@ export async function updateContact(
         }
         row = inputToRow(parsed.details, parsed.household);
       }
-      await tx
-        .update(contacts)
-        .set(row)
-        .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+      if (changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }))) {
+        await tx
+          .update(contacts)
+          .set(row)
+          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+      }
       return existing;
     });
   } catch (err) {

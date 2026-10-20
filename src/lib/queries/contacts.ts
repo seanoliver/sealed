@@ -219,6 +219,8 @@ export async function listContacts(
 
 export type ContactDetail = {
   contact: typeof contacts.$inferSelect;
+  /** updated_at as Postgres text, so a save can tell the row moved. */
+  version: string;
   events: (typeof contactEvents.$inferSelect & { agentName: string | null })[];
 };
 
@@ -234,12 +236,13 @@ export async function getContactWithEvents(
   id: string,
 ): Promise<ContactDetail | undefined> {
   return withRls(claims, async (tx) => {
-    const [contact] = await tx
-      .select()
+    const [row] = await tx
+      .select({ contact: contacts, version: sql<string>`${contacts.updatedAt}::text` })
       .from(contacts)
       .where(eq(contacts.id, id))
       .limit(1);
-    if (!contact) return undefined;
+    if (!row) return undefined;
+    const { contact, version } = row;
 
     const events = await tx
       .select({ ...getTableColumns(contactEvents), agentName: agentTokens.name })
@@ -249,6 +252,6 @@ export async function getContactWithEvents(
       .orderBy(desc(contactEvents.createdAt), desc(contactEvents.id))
       .limit(100);
 
-    return { contact, events };
+    return { contact, version, events };
   });
 }

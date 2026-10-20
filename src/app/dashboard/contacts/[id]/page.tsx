@@ -47,7 +47,7 @@ export default async function ContactDetailPage({
   const detail = await getContactWithEvents(claims, id);
   // RLS makes another user's contact indistinguishable from a missing one.
   if (!detail) notFound();
-  const { contact, events } = detail;
+  const { contact, version, events } = detail;
   const readings = await readingsForContact(contact);
 
   return (
@@ -67,6 +67,7 @@ export default async function ContactDetailPage({
         <ContactForm
           action={updateContact}
           contactId={contact.id}
+          version={version}
           submitLabel="Save changes"
           household={householdPrefill(contact)}
           defaults={{

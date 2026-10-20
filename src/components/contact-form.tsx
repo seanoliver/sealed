@@ -21,6 +21,8 @@ type ContactFormProps = {
   household: HouseholdValues;
   /** Present on the edit page; posted as a hidden field. */
   contactId?: string;
+  /** The contact's updated_at when the page loaded; a save refuses if it moved. */
+  version?: string;
   submitLabel: string;
 };
 
@@ -73,6 +75,7 @@ export function ContactForm({
   defaults,
   household,
   contactId,
+  version,
   submitLabel,
 }: ContactFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
@@ -101,6 +104,7 @@ export function ContactForm({
       ) : null}
 
       {contactId ? <input type="hidden" name="id" value={contactId} /> : null}
+      {version ? <input type="hidden" name="version" value={version} /> : null}
 
       <HouseholdFields
         defaults={state.household ?? household}
