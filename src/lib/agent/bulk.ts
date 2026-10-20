@@ -468,7 +468,6 @@ export type PendingContact = {
   email: string | null;
   partnerEmail: string | null;
   address: string;
-  /** The requesting agent's latest edit, so a renamed contact still stands out. */
   agentEdit: { at: Date; summary: string } | null;
 };
 

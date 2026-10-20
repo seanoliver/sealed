@@ -21,7 +21,6 @@ type ContactFormProps = {
   household: HouseholdValues;
   /** Present on the edit page; posted as a hidden field. */
   contactId?: string;
-  /** The contact's updated_at when the page loaded; a save refuses if it moved. */
   version?: string;
   submitLabel: string;
 };

@@ -219,7 +219,6 @@ export async function listContacts(
 
 export type ContactDetail = {
   contact: typeof contacts.$inferSelect;
-  /** updated_at as Postgres text, so a save can tell the row moved. */
   version: string;
   events: (typeof contactEvents.$inferSelect & { agentName: string | null })[];
 };
