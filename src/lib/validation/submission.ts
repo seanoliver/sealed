@@ -190,6 +190,28 @@ export function parseSubmissionForDisplay(
   };
 }
 
+export type SubmittedPerson = { full: string | null; first: string | null; last: string | null };
+
+/** The people a submission names, with their first and last names when it has them. */
+export function submittedPeople(payload: unknown, enabled: EnabledFields): SubmittedPerson[] {
+  const parsed = submissionDisplaySchema.safeParse(payload);
+  if (!parsed.success) return [];
+  const data = dropDisabledFields(parsed.data, enabled);
+  const person = (
+    full: string | undefined,
+    first: string | undefined,
+    last: string | undefined,
+  ): SubmittedPerson => ({
+    full: first === undefined && last === undefined ? (full ?? null) : formatPerson({ first, last }),
+    first: first ?? null,
+    last: last ?? null,
+  });
+  return [
+    person(data.full_name, data.first_name, data.last_name),
+    person(data.partner_name, data.partner_first_name, data.partner_last_name),
+  ];
+}
+
 export const CLEARABLE_FIELDS = [
   "address_line1",
   "address_line2",

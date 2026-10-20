@@ -77,6 +77,25 @@ describe("overrideReadings", () => {
     });
   });
 
+  it("takes a surname-first reading in reverse when that matches the generated one", () => {
+    const generated = { 曾: ["Zēng"], 雨桐: ["Yǔ", "tóng"] };
+    expect(overrideReadings({ name: "雨桐 曾", reading: "Zēng Yǔtóng", generated })).toEqual({
+      曾: ["Zēng"],
+      雨桐: ["Yǔ", "tóng"],
+    });
+    expect(overrideReadings({ name: "雨桐 曾", reading: "Yǔtóng Céng", generated })).toEqual({
+      雨桐: ["Yǔ", "tóng"],
+      曾: ["Céng"],
+    });
+  });
+
+  it("keeps display order when nothing tells the orders apart", () => {
+    expect(overrideReadings({ name: "雨桐 曾", reading: "Zēng Yǔtóng" })).toEqual({
+      雨桐: ["Zēng", "Yǔ"],
+      曾: ["tóng"],
+    });
+  });
+
   it("falls back to one reading over the whole run when the count differs", () => {
     expect(overrideReadings({ name: "张伟", reading: "Jang Way Jr" })).toEqual({
       张伟: ["Jang Way Jr"],

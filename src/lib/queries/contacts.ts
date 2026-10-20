@@ -175,6 +175,20 @@ export async function listContacts(
       )
       .orderBy(asc(contacts.fullName));
 
+    const pinyinMatches = pinyinTerm
+      ? await Promise.all(
+          rows.map(
+            async (row) =>
+              !row.literalMatch &&
+              matchesReading({
+                names: [row.fullName, row.partnerName],
+                readings: await readingsForContact(row),
+                query: pinyinTerm,
+              }),
+          ),
+        )
+      : [];
+
     return rows.flatMap(
       ({
         primaryStatus,
@@ -183,18 +197,8 @@ export async function listContacts(
         partnerFailureReason,
         literalMatch,
         ...row
-      }) => {
-        if (
-          pinyinTerm &&
-          !literalMatch &&
-          !matchesReading({
-            names: [row.fullName, row.partnerName],
-            readings: readingsForContact(row),
-            query: pinyinTerm,
-          })
-        ) {
-          return [];
-        }
+      }, i) => {
+        if (pinyinTerm && !literalMatch && !pinyinMatches[i]) return [];
         const sendStatuses = {
           primary: { status: toSendStatus(primaryStatus), failureReason: primaryFailureReason },
           partner: { status: toSendStatus(partnerStatus), failureReason: partnerFailureReason },

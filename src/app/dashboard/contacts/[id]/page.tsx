@@ -48,6 +48,10 @@ export default async function ContactDetailPage({
   // RLS makes another user's contact indistinguishable from a missing one.
   if (!detail) notFound();
   const { contact, events } = detail;
+  const [readings, generated] = await Promise.all([
+    readingsForContact(contact),
+    generatedReadings(contact),
+  ]);
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10">
@@ -55,7 +59,7 @@ export default async function ContactDetailPage({
         <h1 className="font-serif text-2xl leading-tight text-foreground">
           <NameWithReading
             text={contact.fullName}
-            readings={readingsForContact(contact)}
+            readings={readings}
             className="leading-[1.7]"
           />
         </h1>
@@ -73,7 +77,7 @@ export default async function ContactDetailPage({
               name_reading: contact.nameReading ?? "",
               partner_name_reading: contact.partnerNameReading ?? "",
             },
-            generated: generatedReadings(contact),
+            generated,
           }}
           defaults={{
             full_name: contact.fullName,

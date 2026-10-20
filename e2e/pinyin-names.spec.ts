@@ -6,6 +6,8 @@ import {
   getUserIdByEmail,
   seedBook,
   seedContact,
+  seedPendingReply,
+  seedPermalinkSubmission,
 } from "./db";
 import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
@@ -15,12 +17,13 @@ const ownerEmail = uniqueEmail("pinyin-owner");
 
 let page: Page;
 let zengId: string;
+let bookId: string;
 
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(120_000);
   page = await browser.newPage();
   await signupAndLogin(page, ownerEmail);
-  const bookId = await seedBook({
+  bookId = await seedBook({
     ownerId: await getUserIdByEmail(ownerEmail),
     slug: uniqueSlug("pinyin-book"),
   });
@@ -138,4 +141,44 @@ test("the owner corrects a reading on the contact page at phone width", async ()
   } finally {
     await page.setViewportSize({ width: 1280, height: 720 });
   }
+});
+
+test("replies in Chinese characters show pinyin in Two answers and on the review page", async () => {
+  const liId = await seedContact({
+    bookId,
+    fullName: "华 李",
+    email: "hua@li.example",
+    partnerEmail: "na@li.example",
+    household: { firstName: "华", lastName: "李", partnerFirstName: "娜", partnerLastName: "李" },
+  });
+  await seedPendingReply({
+    bookId,
+    contactId: liId,
+    payload: {
+      first_name: "华",
+      last_name: "李",
+      partner_first_name: "乐乐",
+      partner_last_name: "王",
+      city: "Oakland",
+    },
+    savedBy: "primary",
+  });
+  await seedPermalinkSubmission({
+    bookId,
+    payload: { first_name: "丹", last_name: "单", email: "dan@shan.example" },
+  });
+
+  await openDashboard();
+  await bodyRow(/华/).getByRole("button", { name: "Two answers" }).click();
+  const panel = page.getByRole("region", { name: /^Two answers for / });
+  await expect(panel.locator("rt").filter({ hasText: /^Huá$/ }).first()).toBeVisible();
+  await expect(panel.locator("rt").filter({ hasText: /^Lè$/ })).toHaveCount(1);
+  await expect(panel.locator("rt").filter({ hasText: /^Wáng$/ })).toHaveCount(1);
+
+  await page.goto("/dashboard/review");
+  const merge = page.getByRole("listitem").filter({ hasText: "Possible update to existing contact" });
+  await expect(merge.locator("rt").first()).toBeVisible();
+  await expect(merge.locator("rt").filter({ hasText: /^Wáng$/ }).first()).toBeVisible();
+  const fresh = page.getByRole("listitem").filter({ hasText: "New contact" });
+  await expect(fresh.locator("rt")).toHaveText(["Dān", "Shàn"]);
 });

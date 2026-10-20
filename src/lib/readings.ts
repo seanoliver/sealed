@@ -85,31 +85,60 @@ export function splitReading(reading: string, count: number): string[] | null {
 export function overrideReadings({
   name,
   reading,
+  generated = {},
 }: {
   name: string | null;
   reading: string | null;
+  generated?: Readings;
 }): Readings {
   const trimmed = reading?.trim() ?? "";
   if (!name || trimmed === "") return {};
-  const runs = hanRuns(name).filter((run) => run.han);
+  const runs = hanRuns(name).filter((run) => run.han).map((run) => run.text);
   if (runs.length === 0) return {};
-  const lengths = runs.map((run) => chars(run.text).length);
-  const syllables = splitReading(trimmed, lengths.reduce((a, b) => a + b, 0));
+  // Stored names put the given name first, but owners often write the reading
+  // surname first: try both orders and keep the one closer to the generated reading.
+  const orders = runs.length > 1 ? [runs, [...runs].reverse()] : [runs];
+  const candidates = orders
+    .map((order) => assignReading(trimmed, order))
+    .filter((candidate): candidate is Readings => candidate !== null);
+  if (candidates.length === 0) return {};
+  const scores = candidates.map((candidate) => agreement(candidate, generated));
+  return candidates[scores.indexOf(Math.max(...scores))];
+}
+
+function assignReading(reading: string, runs: string[]): Readings | null {
+  const lengths = runs.map((run) => chars(run).length);
+  const syllables = splitReading(reading, lengths.reduce((a, b) => a + b, 0));
   if (syllables) {
     let at = 0;
     return Object.fromEntries(
       runs.map((run, i) => {
         const part = syllables.slice(at, at + lengths[i]);
         at += lengths[i];
-        return [run.text, part];
+        return [run, part];
       }),
     );
   }
-  if (runs.length === 1) return { [runs[0].text]: [trimmed] };
-  const words = trimmed.split(/\s+/);
+  if (runs.length === 1) return { [runs[0]]: [reading] };
+  const words = reading.split(/\s+/);
   return words.length === runs.length
-    ? Object.fromEntries(runs.map((run, i) => [run.text, [words[i]]]))
-    : {};
+    ? Object.fromEntries(runs.map((run, i) => [run, [words[i]]]))
+    : null;
+}
+
+/** How many syllables match the generated reading, ignoring tones and case. */
+function agreement(candidate: Readings, generated: Readings): number {
+  let score = 0;
+  for (const [run, value] of Object.entries(candidate)) {
+    const expected = lookupRun(generated, run);
+    if (!expected) continue;
+    if (value.length === expected.length) {
+      score += value.filter((s, i) => pinyinKey(s) === pinyinKey(expected[i])).length;
+    } else if (pinyinKey(value.join("")) === pinyinKey(expected.join(""))) {
+      score += expected.length;
+    }
+  }
+  return score;
 }
 
 export function lookupRun(readings: Readings, run: string): string[] | null {
@@ -185,9 +214,13 @@ export function matchesReading({
   const want = pinyinKey(query);
   return names.some((name) => {
     if (!name || !hasHan(name)) return false;
-    const keys = hanRuns(name).map((run) =>
-      run.han ? (lookupRun(readings, run.text) ?? []).join("") : run.text,
+    const runs = hanRuns(name);
+    const read = (run: Run) =>
+      run.han ? (lookupRun(readings, run.text) ?? []).join("") : run.text;
+    // Either order: "zhang wei" finds 张伟 stored given name first as "伟 张".
+    const surnameFirst = runs.filter((run) => run.han).reverse();
+    return [runs, surnameFirst].some((order) =>
+      pinyinKey(order.map(read).join(" ")).includes(want),
     );
-    return pinyinKey(keys.join(" ")).includes(want);
   });
 }

@@ -13,6 +13,7 @@ import {
   CLEARABLE_FIELDS,
   DISPLAY_VALUE_MAX,
   parseSubmissionForDisplay,
+  submittedPeople,
   type EnabledFields,
 } from "@/lib/validation/submission";
 import { NameWithReading } from "@/components/name-with-reading";
@@ -72,10 +73,10 @@ type CardModel = { id: string; submittedAtLabel: string; readings: Readings } & 
   | { kind: "merge"; contactName: string; rows: DiffRow[] }
 );
 
-function toCardModel(
+async function toCardModel(
   { submission, matchedContact }: PendingSubmission,
   enabled: EnabledFields,
-): CardModel {
+): Promise<CardModel> {
   const base = {
     readings: {},
     id: submission.id,
@@ -97,18 +98,11 @@ function toCardModel(
   const present = (fields: readonly ReviewField[]) =>
     fields.filter((field) => parsed[field] !== undefined && parsed[field] !== "");
 
-  const submittedNames = [parsed.full_name, parsed.partner_name];
+  const people = submittedPeople(submission.payload, enabled);
   if (!matchedContact) {
     return {
       ...base,
-      readings: contactReadings({
-        people: submittedNames.map((full) => ({
-          full: full ?? null,
-          first: null,
-          last: null,
-          override: null,
-        })),
-      }),
+      readings: await contactReadings({ people }),
       kind: "new",
       fields: present(TOKEN_UPDATE_FIELDS).map((field) => ({
         field,
@@ -136,7 +130,7 @@ function toCardModel(
 
   return {
     ...base,
-    readings: readingsForContact(matchedContact, { extra: submittedNames }),
+    readings: await readingsForContact(matchedContact, { extra: people }),
     kind: "merge",
     contactName: matchedContact.fullName,
     rows: [
@@ -177,7 +171,9 @@ export default async function ReviewPage() {
   if (!book) redirect("/onboarding");
 
   const pending = await listPendingSubmissions(claims);
-  const cards = pending.map((item) => toCardModel(item, book.enabledFields));
+  const cards = await Promise.all(
+    pending.map((item) => toCardModel(item, book.enabledFields)),
+  );
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">

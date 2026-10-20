@@ -1,6 +1,11 @@
 import "server-only";
-import { pinyin } from "pinyin-pro";
-import { hanRuns, lookupRun, overrideReadings, type Readings } from "@/lib/readings";
+import { hanRuns, hasHan, lookupRun, overrideReadings, type Readings } from "@/lib/readings";
+
+type PinyinFn = typeof import("pinyin-pro").pinyin;
+
+// pinyin-pro is megabytes of dictionary: load it only once a name needs it.
+let loading: Promise<PinyinFn> | null = null;
+const loadPinyin = () => (loading ??= import("pinyin-pro").then((m) => m.pinyin));
 
 const COMPOUND_SURNAMES = new Set([
   "欧阳", "司马", "诸葛", "上官", "司徒", "东方", "皇甫", "尉迟", "公孙", "慕容",
@@ -9,10 +14,15 @@ const COMPOUND_SURNAMES = new Set([
 ]);
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const word = (parts: string[]) => parts.map((s, i) => (i === 0 ? capitalize(s) : s));
 
-function syllables(run: string): string[] {
+function syllables(pinyin: PinyinFn, run: string, { surname }: { surname: boolean }): string[] {
   const chars = Array.from(run);
-  const result = pinyin(run, { type: "array", toneType: "symbol", surname: "head" });
+  const result = pinyin(run, {
+    type: "array",
+    toneType: "symbol",
+    surname: surname ? "head" : "off",
+  });
   // pinyin-pro echoes back characters it can't read; those become "".
   return result.length === chars.length
     ? result.map((s, i) => (s === chars[i] ? "" : s))
@@ -22,17 +32,18 @@ function syllables(run: string): string[] {
       });
 }
 
-function personSyllables(run: string): string[] {
-  const parts = syllables(run);
+/** One run holding a whole name, surname first: 曾雨桐 → Zēng Yǔ tóng. */
+function surnameFirstRun(pinyin: PinyinFn, run: string): string[] {
+  const parts = syllables(pinyin, run, { surname: true });
   const surname = COMPOUND_SURNAMES.has(Array.from(run).slice(0, 2).join("")) ? 2 : 1;
   return parts.map((s, i) => (i === 0 || i === surname ? capitalize(s) : s));
 }
 
-type Person = {
+export type Person = {
   full: string | null;
   first: string | null;
   last: string | null;
-  override: string | null;
+  override?: string | null;
 };
 
 const singleHanRun = (text: string | null): text is string => {
@@ -41,40 +52,65 @@ const singleHanRun = (text: string | null): text is string => {
   return runs.length === 1 && runs[0].han;
 };
 
+const hanTexts = (text: string | null) =>
+  hanRuns(text ?? "").filter((run) => run.han).map((run) => run.text);
+
 function add(readings: Readings, run: string, value: string[]) {
   if (lookupRun(readings, run) === null) readings[run] = value;
 }
 
-function addPerson(readings: Readings, person: Person) {
+function addPerson(pinyin: PinyinFn, readings: Readings, person: Person) {
   if (singleHanRun(person.first) && singleHanRun(person.last)) {
     const lastLength = Array.from(person.last).length;
     // One call over last+first: generated apart, the surname loses its reading (单 shàn).
-    const parts = syllables(person.last + person.first);
-    const word = (s: string[]) => s.map((x, i) => (i === 0 ? capitalize(x) : x));
+    const parts = syllables(pinyin, person.last + person.first, { surname: true });
     add(readings, person.last, word(parts.slice(0, lastLength)));
     add(readings, person.first, word(parts.slice(lastLength)));
+  } else if (person.first !== null || person.last !== null) {
+    for (const run of hanTexts(person.last)) {
+      add(readings, run, word(syllables(pinyin, run, { surname: true })));
+    }
+    for (const run of hanTexts(person.first)) {
+      add(readings, run, word(syllables(pinyin, run, { surname: false })));
+    }
   }
-  for (const run of hanRuns(person.full ?? "")) {
-    if (run.han) add(readings, run.text, personSyllables(run.text));
+  const runs = hanTexts(person.full);
+  if (runs.length === 1) {
+    add(readings, runs[0], surnameFirstRun(pinyin, runs[0]));
+    return;
   }
+  // Stored names put the given name first ("华 李"): only the last run is the surname.
+  runs.forEach((run, i) => {
+    add(readings, run, word(syllables(pinyin, run, { surname: i === runs.length - 1 })));
+  });
 }
 
-export function contactReadings({
+const personHasHan = (person: Person) =>
+  hasHan(person.full) || hasHan(person.first) || hasHan(person.last);
+
+/**
+ * Readings for every Han run in these people's names. Owner overrides win;
+ * the rest is generated.
+ */
+export async function contactReadings({
   people,
   extra = [],
 }: {
   people: readonly Person[];
-  extra?: readonly (string | null | undefined)[];
-}): Readings {
+  extra?: readonly Person[];
+}): Promise<Readings> {
+  if (![...people, ...extra].some(personHasHan)) return {};
+  const pinyin = await loadPinyin();
+  const generated: Readings = {};
+  for (const person of [...people, ...extra]) addPerson(pinyin, generated, person);
   const readings: Readings = {};
-  // Overrides first: add() never replaces a reading that is already there.
   for (const person of people) {
-    Object.assign(readings, overrideReadings({ name: person.full, reading: person.override }));
+    Object.assign(
+      readings,
+      overrideReadings({ name: person.full, reading: person.override ?? null, generated }),
+    );
   }
-  for (const person of people) addPerson(readings, person);
-  for (const text of extra) {
-    if (text) addPerson(readings, { full: text, first: null, last: null, override: null });
-  }
+  for (const [run, value] of Object.entries(generated)) add(readings, run, value);
   return readings;
 }
 
@@ -91,8 +127,8 @@ type ContactNames = {
 
 export function readingsForContact(
   contact: ContactNames,
-  { extra = [] }: { extra?: readonly (string | null | undefined)[] } = {},
-): Readings {
+  { extra = [] }: { extra?: readonly Person[] } = {},
+): Promise<Readings> {
   return contactReadings({
     people: [
       {
@@ -112,6 +148,6 @@ export function readingsForContact(
   });
 }
 
-export function generatedReadings(contact: ContactNames): Readings {
+export function generatedReadings(contact: ContactNames): Promise<Readings> {
   return readingsForContact({ ...contact, nameReading: null, partnerNameReading: null });
 }
