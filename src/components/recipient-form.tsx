@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
+import { type AddressFieldsHandle } from "@/components/address-fields";
 import {
   RecipientFields,
   type EnabledFields,
@@ -47,6 +48,9 @@ type RecipientFormProps = {
   emailHint?: string;
   household: HouseholdValues;
   seenAt?: string;
+  ownerName: string;
+  senderCountry: string;
+  legacyCountry?: string | null;
 };
 
 export function RecipientForm({
@@ -58,15 +62,25 @@ export function RecipientForm({
   emailHint,
   household,
   seenAt,
+  ownerName,
+  senderCountry,
+  legacyCountry,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
+  const address = useRef<AddressFieldsHandle>(null);
   // React 19 resets uncontrolled inputs to defaultValue after a form action
   // completes; on error the action echoes the submitted values back so the
   // reset restores what the user typed instead of wiping the form.
   const v = state.values ?? defaults;
 
   return (
-    <form action={formAction} className="mt-6 flex flex-col gap-5">
+    <form
+      action={formAction}
+      onSubmit={(event) => {
+        if (address.current?.validate() === false) event.preventDefault();
+      }}
+      className="mt-6 flex flex-col gap-5"
+    >
       {state.error ? (
         <div
           role="alert"
@@ -84,6 +98,11 @@ export function RecipientForm({
           defaults: state.household ?? household,
           errors: state.fieldErrors,
         }}
+        ownerName={ownerName}
+        senderCountry={senderCountry}
+        legacyCountry={legacyCountry}
+        addressRef={address}
+        errorsKey={state}
       />
 
       {seenAt === undefined ? null : (

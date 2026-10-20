@@ -13,10 +13,10 @@ const addressRequest = {
   confirmUrl: "https://self-hosted.example/u/abc123/confirm",
   envelope: {
     household: "Priya Raman & Daniel Okafor",
-    address: ["1428 Alder St, Apt 3", "Portland, OR 97214"],
+    lines: ["Priya Raman & Daniel Okafor", "1428 Alder St, Apt 3", "Portland, OR 97214"],
   },
 };
-const noAddress = { ...addressRequest, envelope: { household: "Satya & Family", address: null } };
+const noAddress = { ...addressRequest, envelope: { household: "Satya & Family", lines: null } };
 
 describe("addressRequestEmail", () => {
   it("identifies Sealed in every email representation", () => {
@@ -73,7 +73,7 @@ describe("addressRequestEmail", () => {
     const { html } = addressRequestEmail({
       ...addressRequest,
       ownerName: `<script>alert("x")</script>`,
-      envelope: { household: "<b>Ana</b>", address: ['1 "Main" <St>'] },
+      envelope: { household: "<b>Ana</b>", lines: ["<b>Ana</b>", '1 "Main" <St>'] },
     });
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<b>Ana");

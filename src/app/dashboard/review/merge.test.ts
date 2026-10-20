@@ -52,6 +52,50 @@ async function merge(
   return { set, row, diff: changedFields(before, rowToSnapshot(row)) };
 }
 
+describe("country text on approval", () => {
+  const blank = rowToSnapshot({
+    fullName: "X", partnerName: null, kidsNames: null, email: null, partnerEmail: null, birthday: null,
+    addressLine1: null, addressLine2: null, district: null, city: null, stateRegion: null, postalCode: null,
+    countryCode: "US", legacyCountry: "USA", firstName: null, lastName: null, partnerFirstName: null,
+    partnerLastName: null, kids: null,
+  } as Parameters<typeof rowToSnapshot>[0]);
+
+  it("clears old country text when a reply sets or clears the code", () => {
+    expect(mergeUpdate(blank, gate({ full_name: "X", country_code: "GB" }))).toMatchObject({
+      countryCode: "GB",
+      legacyCountry: null,
+    });
+    expect(mergeUpdate(blank, gate({ full_name: "X" }), { clear: ["country_code"] })).toMatchObject({
+      countryCode: null,
+      legacyCountry: null,
+    });
+  });
+
+  it("keeps a pre-deploy reply's unmatched country text only where no code is stored", () => {
+    expect(mergeUpdate(blank, gate({ full_name: "X", country: "Atlantis" }))).toBeUndefined();
+    const noCode = { ...blank, country_code: null, country: null };
+    expect(mergeUpdate(noCode, gate({ full_name: "X", country: "Atlantis" }))).toMatchObject({
+      legacyCountry: "Atlantis",
+    });
+    expect(toInsertRow(gate({ full_name: "X", country: "Atlantis" }))).toMatchObject({
+      countryCode: null,
+      legacyCountry: "Atlantis",
+    });
+  });
+});
+
+describe("a reply that leaves a blank country blank", () => {
+  it("keeps the old text, as the token reply does", () => {
+    const legacy = rowToSnapshot({
+      fullName: "X", partnerName: null, kidsNames: null, email: null, partnerEmail: null, birthday: null,
+      addressLine1: null, addressLine2: null, district: null, city: null, stateRegion: null, postalCode: null,
+      countryCode: null, legacyCountry: "Atlantis", firstName: null, lastName: null, partnerFirstName: null,
+      partnerLastName: null, kids: null,
+    } as Parameters<typeof rowToSnapshot>[0]);
+    expect(mergeUpdate(legacy, gate({ full_name: "X" }), { clear: ["country_code"] })).toBeUndefined();
+  });
+});
+
 describe("approving a household submission", () => {
   beforeAll(async () => {
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);

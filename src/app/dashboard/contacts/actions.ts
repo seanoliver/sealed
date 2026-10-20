@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
-import { contactDetailsToRow, householdToRow } from "@/lib/db/contact-row";
+import { contactDetailsToRow, householdToRow, legacyCountryAfter } from "@/lib/db/contact-row";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
@@ -85,22 +85,39 @@ function detailsErrorState(
     : { error: details.error };
 }
 
-function withStoredPartnerEmail(
+const KEPT_WHEN_ABSENT = {
+  partner_email: "partnerEmail",
+  address_line1: "addressLine1",
+  address_line2: "addressLine2",
+  district: "district",
+  city: "city",
+  state_region: "stateRegion",
+  postal_code: "postalCode",
+  country_code: "countryCode",
+} as const;
+
+/** A field the form didn't post (hidden for the contact's country) keeps its stored value. */
+function withStoredAbsentFields(
   formData: FormData,
   values: ContactFormValues,
   existing: ContactRow,
 ): ContactFormValues {
-  return formData.has("partner_email")
-    ? values
-    : { ...values, partner_email: existing.partnerEmail ?? "" };
+  const kept = { ...values };
+  for (const [field, column] of Object.entries(KEPT_WHEN_ABSENT) as [
+    keyof typeof KEPT_WHEN_ABSENT,
+    (typeof KEPT_WHEN_ABSENT)[keyof typeof KEPT_WHEN_ABSENT],
+  ][]) {
+    if (!formData.has(field)) kept[field] = existing[column] ?? "";
+  }
+  return kept;
 }
 
 function parseContactForm(
   formData: FormData,
-  { values = readContactForm(formData) }: { values?: ContactFormValues } = {},
+  { values = readContactForm(formData), stored }: { values?: ContactFormValues; stored?: ContactRow } = {},
 ): ParsedContactForm {
   const household = parseHouseholdForm(formData);
-  const details = parseDetails(values);
+  const details = parseDetails(values, { stored });
   if (household.ok && details.success) {
     return { ok: true, details: details.data, household: household.data };
   }
@@ -185,26 +202,27 @@ export async function updateContact(
         invalid = { error: CHANGED_SINCE_OPENED, ...echo };
         return existing;
       }
-      const values = withStoredPartnerEmail(formData, echo.values, existing);
+      const values = withStoredAbsentFields(formData, echo.values, existing);
       const keepNames = isUntouchedPrefill(
         storedNames(existing),
         readHouseholdValues(formData, { kidsLimit: Infinity }),
       );
       if (keepNames) {
-        const details = parseDetails(values);
+        const details = parseDetails(values, { stored: existing });
         if (!details.success) {
           invalid = { ...detailsErrorState(details), ...echo };
           return existing;
         }
         row = contactDetailsToRow(details.data);
       } else {
-        const parsed = parseContactForm(formData, { values });
+        const parsed = parseContactForm(formData, { values, stored: existing });
         if (!parsed.ok) {
           invalid = parsed.state;
           return existing;
         }
         row = inputToRow(parsed.details, parsed.household);
       }
+      row = { ...row, legacyCountry: legacyCountryAfter(existing, row.countryCode ?? null) };
       if (changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }))) {
         await tx
           .update(contacts)

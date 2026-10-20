@@ -8,6 +8,7 @@ import {
   GENERIC_ERROR,
   type EmailChange,
 } from "@/app/dashboard/contacts/write";
+import { addressSummary, DEFAULT_SENDER_COUNTRY, rowAddress } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
@@ -79,17 +80,18 @@ export async function previewDeleteContacts(ctx: AgentContext, ids: string[]) {
     }
     return [{ id, error: "Listed more than once." }];
   });
-  const found = await withRls(ctx.claims, async (tx) => {
+  const { found, senderCountry } = await withRls(ctx.claims, async (tx) => {
     const [book] = await tx
-      .select({ id: books.id })
+      .select({ id: books.id, senderCountry: books.senderCountry })
       .from(books)
       .where(eq(books.ownerId, ctx.claims.sub))
       .limit(1);
-    if (!book) return [];
-    return tx
+    if (!book) return { found: [], senderCountry: DEFAULT_SENDER_COUNTRY };
+    const rows = await tx
       .select({ contact: contacts, updatedAt: updatedAtText })
       .from(contacts)
       .where(and(eq(contacts.bookId, book.id), inArray(contacts.id, ids)));
+    return { found: rows, senderCountry: book.senderCountry };
   });
   const byId = new Map(found.map((row) => [row.contact.id, row]));
   const items: DeleteItem[] = [];
@@ -106,9 +108,7 @@ export async function previewDeleteContacts(ctx: AgentContext, ids: string[]) {
       updatedAt: stored.updatedAt,
       email: contact.email,
       partnerEmail: contact.partnerEmail,
-      address: [contact.addressLine1, contact.city, contact.postalCode, contact.country]
-        .filter((part) => (part ?? "").trim() !== "")
-        .join(", "),
+      address: addressSummary(rowAddress(contact), { senderCountry }),
     });
   }
   if (problems.length > 0) return { preview_id: null, problems };
@@ -352,6 +352,7 @@ export async function listPendingRequests(claims: SessionClaims): Promise<Pendin
             contactId: contactEvents.contactId,
             at: contactEvents.createdAt,
             diff: contactEvents.diff,
+            countryCode: sql<string | null>`(select c.country_code from public.contacts c where c.id = ${contactEvents.contactId})`,
           })
           .from(contactEvents)
           .where(
@@ -373,7 +374,7 @@ export async function listPendingRequests(claims: SessionClaims): Promise<Pendin
               email: item.email,
               partnerEmail: item.partnerEmail,
               address: item.address,
-              agentEdit: edit ? { at: edit.at, summary: summarizeDiff(edit.diff) } : null,
+              agentEdit: edit ? { at: edit.at, summary: summarizeDiff(edit.diff, { countryCode: edit.countryCode }) } : null,
             };
           }),
         };

@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { type ContactFormState } from "@/app/dashboard/contacts/actions";
+import { AddressFields, type AddressFieldsHandle } from "@/components/address-fields";
 import { HouseholdFields } from "@/components/household-fields";
 import { type ContactFormValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
@@ -11,6 +12,8 @@ const initialState: ContactFormState = {};
 const inputClasses =
   "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 ";
 const labelClasses = "text-sm font-medium text-foreground";
+// The envelope preview's 17rem column plus its gap, so these fields line up with the address.
+const column = "lg:mr-[18.5rem]";
 
 type ContactFormProps = {
   action: (
@@ -23,6 +26,8 @@ type ContactFormProps = {
   contactId?: string;
   version?: string;
   submitLabel: string;
+  senderCountry: string;
+  legacyCountry?: string | null;
 };
 
 type FieldProps = {
@@ -76,15 +81,24 @@ export function ContactForm({
   contactId,
   version,
   submitLabel,
+  senderCountry,
+  legacyCountry,
 }: ContactFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
+  const address = useRef<AddressFieldsHandle>(null);
   // React 19 resets uncontrolled inputs to defaultValue after a form action
   // completes; on error the action echoes the submitted values back so the
   // reset restores what the user typed instead of wiping the form.
   const v = state.values ?? defaults;
 
   return (
-    <form action={formAction} className="mt-6 flex flex-col gap-5">
+    <form
+      action={formAction}
+      onSubmit={(event) => {
+        if (address.current?.validate() === false) event.preventDefault();
+      }}
+      className="mt-6 flex flex-col gap-5"
+    >
       {state.error ? (
         <div
           role="alert"
@@ -105,65 +119,57 @@ export function ContactForm({
       {contactId ? <input type="hidden" name="id" value={contactId} /> : null}
       {version ? <input type="hidden" name="version" value={version} /> : null}
 
-      <HouseholdFields
-        defaults={state.household ?? household}
-        enabled={{ partner_name: true, kids_names: true }}
-        errors={state.fieldErrors}
-        audience="owner"
-      />
-      <Field
-        name="email"
-        label="Email"
-        value={v.email}
-        type="email"
-        maxLength={320}
-      />
-      <Field
-        name="partner_email"
-        label="Partner email"
-        value={v.partner_email}
-        type="email"
-        maxLength={320}
-        hint="Optional. The partner gets their own update link."
-        error={state.fieldErrors?.partner_email}
-      />
-      <Field name="birthday" label="Birthday" value={v.birthday} type="date" />
-      <Field
-        name="address_line1"
-        label="Address line 1"
-        value={v.address_line1}
-        maxLength={200}
-      />
-      <Field
-        name="address_line2"
-        label="Address line 2"
-        value={v.address_line2}
-        maxLength={200}
-      />
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <Field name="city" label="City" value={v.city} maxLength={120} />
-        <Field
-          name="state_region"
-          label="State / region"
-          value={v.state_region}
-          maxLength={120}
+      <div className={`flex flex-col gap-5 ${column}`}>
+        <HouseholdFields
+          defaults={state.household ?? household}
+          enabled={{ partner_name: true, kids_names: true }}
+          errors={state.fieldErrors}
+          audience="owner"
         />
         <Field
-          name="postal_code"
-          label="Postal code"
-          value={v.postal_code}
-          maxLength={20}
+          name="email"
+          label="Email"
+          value={v.email}
+          type="email"
+          maxLength={320}
         />
         <Field
-          name="country"
-          label="Country"
-          value={v.country}
-          maxLength={120}
+          name="partner_email"
+          label="Partner email"
+          value={v.partner_email}
+          type="email"
+          maxLength={320}
+          hint="Optional. The partner gets their own update link."
+          error={state.fieldErrors?.partner_email}
         />
+        <Field name="birthday" label="Birthday" value={v.birthday} type="date" />
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <AddressFields
+        defaults={{
+          address_line1: v.address_line1,
+          address_line2: v.address_line2,
+          district: v.district,
+          city: v.city,
+          state_region: v.state_region,
+          postal_code: v.postal_code,
+          country_code: v.country_code,
+        }}
+        legacyCountry={legacyCountry}
+        senderCountry={senderCountry}
+        audience={{ kind: "owner" }}
+        styles={{ input: inputClasses, label: labelClasses }}
+        errors={{
+          postal_code: state.fieldErrors?.postal_code,
+          country_code: state.fieldErrors?.country_code,
+        }}
+        preview="beside"
+        handleRef={address}
+        errorsKey={state}
+        prefillCountry={contactId === undefined}
+      />
+
+      <div className={`${column} flex flex-col gap-1.5`}>
         <label htmlFor="notes" className={labelClasses}>
           Notes
         </label>
@@ -180,7 +186,7 @@ export function ContactForm({
       <button
         type="submit"
         disabled={pending}
-        className="h-10 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 "
+        className={`h-10 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 ${column}`}
       >
         {pending ? "Saving…" : submitLabel}
       </button>

@@ -27,6 +27,7 @@ type InvitePageConfiguratorProps = {
   enabledFields: EnabledFields;
   linkIsLive?: boolean;
   onFieldChange: (name: keyof EnabledFields, enabled: boolean) => void;
+  senderCountry: string;
 };
 
 /** Optional-field controls paired with a deliberately inert invite preview. */
@@ -36,6 +37,7 @@ export function InvitePageConfigurator({
   enabledFields,
   linkIsLive = false,
   onFieldChange,
+  senderCountry,
 }: InvitePageConfiguratorProps) {
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-10">
@@ -143,6 +145,8 @@ export function InvitePageConfigurator({
                   defaults={BLANK_RECIPIENT_VALUES}
                   enabled={enabledFields}
                   household={{ defaults: BLANK_HOUSEHOLD_VALUES }}
+                  ownerName={ownerName || "Your friend"}
+                  senderCountry={senderCountry}
                 />
                 <button
                   type="button"

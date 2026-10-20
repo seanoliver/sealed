@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  clearedFields,
   DISPLAY_VALUE_MAX,
   dropDisabledFields,
   parseSubmissionForDisplay,
@@ -302,5 +303,38 @@ describe("submittedPeople", () => {
   it("returns no one for a payload that isn't an object", () => {
     expect(submittedPeople(["张伟"], allEnabled)).toEqual([]);
     expect(submittedPeople(null, allEnabled)).toEqual([]);
+  });
+});
+
+describe("country text from before codes", () => {
+  it("maps a stored country name to its code for approval", () => {
+    const parsed = parseSubmissionPayload({ full_name: "Ada", country: "United Kingdom" }, allEnabled);
+    expect(parsed).toEqual({ success: true, data: { full_name: "Ada", country_code: "GB" } });
+  });
+
+  it("keeps text no code matches, for the owner to see", () => {
+    const parsed = parseSubmissionPayload({ full_name: "Ada", country: "Atlantis" }, allEnabled);
+    expect(parsed).toEqual({ success: true, data: { full_name: "Ada", country: "Atlantis" } });
+  });
+
+  it("reads blank country text as clearing the code", () => {
+    expect(clearedFields({ country: "" }, allEnabled)).toEqual(["country_code"]);
+    expect(parseSubmissionForDisplay({ country: "" }, allEnabled)).toEqual({ country_code: "" });
+    expect(parseSubmissionPayload({ full_name: "Ada", country: "" }, allEnabled)).toEqual({
+      success: true,
+      data: { full_name: "Ada" },
+    });
+  });
+
+  it("shows the code for a known name and keeps unknown text for display", () => {
+    expect(parseSubmissionForDisplay({ country: "Holland" }, allEnabled)).toEqual({ country_code: "NL" });
+    expect(parseSubmissionForDisplay({ country: "Atlantis" }, allEnabled)).toEqual({ country: "Atlantis" });
+    expect(parseSubmissionForDisplay({ country_code: "DE" }, allEnabled)).toEqual({ country_code: "DE" });
+  });
+
+  it("rejects a code that isn't on the list", () => {
+    expect(parseSubmissionPayload({ full_name: "Ada", country_code: "XX" }, allEnabled)).toEqual({
+      success: false,
+    });
   });
 });

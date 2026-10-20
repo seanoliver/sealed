@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bookSchema } from "./book";
+import { bookSchema, senderCountrySchema } from "./book";
 
 describe("bookSchema", () => {
   const valid = {
@@ -29,5 +29,13 @@ describe("bookSchema", () => {
     expect(
       bookSchema.safeParse({ ...valid, display_name: "a".repeat(201) }).success,
     ).toBe(false);
+  });
+});
+
+describe("senderCountrySchema", () => {
+  it("takes a country code on the list", () => {
+    expect(senderCountrySchema.parse("GB")).toBe("GB");
+    expect(senderCountrySchema.safeParse("XX").success).toBe(false);
+    expect(senderCountrySchema.safeParse("United Kingdom").success).toBe(false);
   });
 });

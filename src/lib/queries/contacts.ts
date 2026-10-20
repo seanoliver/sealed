@@ -30,10 +30,12 @@ export interface ContactListRow extends StoredNames {
   birthday: string | null;
   addressLine1: string | null;
   addressLine2: string | null;
+  district: string | null;
   city: string | null;
   stateRegion: string | null;
   postalCode: string | null;
-  country: string | null;
+  countryCode: string | null;
+  legacyCountry: string | null;
   /** Factual latest-send status; the UI layers an "updated" chip on top. */
   sendStatus: SendStatus;
   /** Why the latest send failed; set only when sendStatus is "failed". */
@@ -130,10 +132,12 @@ export async function listContacts(
         birthday: contacts.birthday,
         addressLine1: contacts.addressLine1,
         addressLine2: contacts.addressLine2,
+        district: contacts.district,
         city: contacts.city,
         stateRegion: contacts.stateRegion,
         postalCode: contacts.postalCode,
-        country: contacts.country,
+        countryCode: contacts.countryCode,
+        legacyCountry: contacts.legacyCountry,
         literalMatch: literal ? sql<boolean>`${literal}` : sql<boolean>`true`,
         // Wrapped in sql`` because drizzle types flat partial selects from a
         // left-joined subquery as non-nullable; this is string | null.

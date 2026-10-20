@@ -42,14 +42,15 @@ describe("getPublicBook", () => {
         enabled_fields = excluded.enabled_fields`);
   });
 
-  it("returns EXACTLY ownerName and enabledFields — nothing else", async () => {
+  it("returns EXACTLY ownerName, enabledFields and senderCountry — nothing else", async () => {
     const book = await getPublicBook(SLUG);
     expect(book).not.toBeNull();
     // Key-set assertion: a widened select (id, counts, ...) fails here.
-    expect(Object.keys(book!).sort()).toEqual(["enabledFields", "ownerName"]);
+    expect(Object.keys(book!).sort()).toEqual(["enabledFields", "ownerName", "senderCountry"]);
     expect(book).toEqual({
       ownerName: "Public Owner",
       enabledFields: { partner_name: true, kids_names: false, birthday: true },
+      senderCountry: "US",
     });
   });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_SENDER_COUNTRY } from "@/lib/address";
 import { useActionState, useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { InvitePageConfigurator } from "@/components/invite-page-configurator";
@@ -63,6 +64,7 @@ export function OnboardingForm({ defaults, urlPrefix }: OnboardingFormProps) {
             onFieldChange={(name, enabled) =>
               setEnabledFields((current) => ({ ...current, [name]: enabled }))
             }
+            senderCountry={DEFAULT_SENDER_COUNTRY}
           />
           <input
             type="hidden"

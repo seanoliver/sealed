@@ -121,7 +121,7 @@ test("creates a token on the Agents page and shows it once", async () => {
 });
 
 test("shows agent edits in the feed and undoes one", async () => {
-  await toolResult("update_contact", { id: adaId, fields: { country: "GB" } });
+  await toolResult("update_contact", { id: adaId, fields: { country: "Ireland" } });
   const edit = await toolResult("update_contact", {
     id: hollowayId,
     fields: { postal_code: "97211-3417" },
@@ -133,7 +133,7 @@ test("shows agent edits in the feed and undoes one", async () => {
   const postal = feed.getByRole("listitem").filter({ hasText: "Postal code 97211 → 97211-3417" });
   await expect(postal).toContainText("Jen & Mark Holloway");
   await expect(postal).toContainText("Claude Code on MacBook");
-  await expect(feed.getByText("Country United Kingdom → GB")).toBeVisible();
+  await expect(feed.getByText("Country United Kingdom → Ireland")).toBeVisible();
 
   await postal.getByRole("button", { name: /^Undo/ }).click();
   await expect(postal).toContainText("Already undone");

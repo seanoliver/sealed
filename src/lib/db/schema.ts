@@ -21,6 +21,7 @@ export const books = pgTable("books", {
   enabledFields: jsonb("enabled_fields").notNull().$type<{
     partner_name: boolean; kids_names: boolean; birthday: boolean;
   }>().default({ partner_name: false, kids_names: false, birthday: false }),
+  senderCountry: text("sender_country").notNull().default("US"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -40,10 +41,12 @@ export const contacts = pgTable("contacts", {
   birthday: date("birthday"),
   addressLine1: text("address_line1"),
   addressLine2: text("address_line2"),
+  district: text("district"),
   city: text("city"),
   stateRegion: text("state_region"),
   postalCode: text("postal_code"),
-  country: text("country"),
+  countryCode: text("country_code"),
+  legacyCountry: text("country"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

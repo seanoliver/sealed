@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type PostalAddress } from "@/lib/address";
 import { type StoredNames } from "@/lib/names";
 
 /** Fails closed: drift in get_contact_for_token's jsonb must never reach the recipient's DOM. */
@@ -18,9 +19,11 @@ export const tokenDataSchema = z.object({
     birthday: z.string().nullable(),
     address_line1: z.string().nullable(),
     address_line2: z.string().nullable(),
+    district: z.string().nullable(),
     city: z.string().nullable(),
     state_region: z.string().nullable(),
     postal_code: z.string().nullable(),
+    country_code: z.string().nullable(),
     country: z.string().nullable(),
   }),
   enabled_fields: z.object({
@@ -29,6 +32,7 @@ export const tokenDataSchema = z.object({
     birthday: z.boolean(),
   }),
   owner_name: z.string(),
+  sender_country: z.string(),
   recipient: z.enum(["primary", "partner"]),
   /** A string, not a Date: a Date drops the microseconds seen_at is compared at. */
   updated_at: z.string(),
@@ -44,6 +48,17 @@ export function readSeenAt(formData: FormData): string | null {
   return typeof value === "string" && SEEN_AT.test(value) ? value : null;
 }
 type TokenContact = TokenData["contact"];
+
+export const tokenAddress = (contact: TokenContact): PostalAddress => ({
+  addressLine1: contact.address_line1,
+  addressLine2: contact.address_line2,
+  district: contact.district,
+  city: contact.city,
+  stateRegion: contact.state_region,
+  postalCode: contact.postal_code,
+  countryCode: contact.country_code,
+  legacyCountry: contact.country_code ? null : contact.country,
+});
 
 export const storedNames = (contact: TokenContact): StoredNames => ({
   fullName: contact.full_name ?? "",

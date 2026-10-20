@@ -1,5 +1,7 @@
 import Papa from "papaparse";
+import { countryCodeFor } from "@/lib/address/countries";
 import {
+  checkAddress,
   CONTACT_FIELDS,
   contactSchema,
   type ContactField,
@@ -19,13 +21,18 @@ export type CsvRowError = {
   message: string;
 };
 
+export type ImportRow = ContactInput & { country?: string };
+
 export type ParseContactsCsvResult = {
-  valid: ContactInput[];
+  valid: ImportRow[];
   errors: CsvRowError[];
+  warnings: CsvRowError[];
 };
 
+type ImportColumn = ContactField | "country";
+
 /** Common export-header spellings → canonical contact fields. */
-const HEADER_ALIASES: Record<string, ContactField> = {
+const HEADER_ALIASES: Record<string, ImportColumn> = {
   name: "full_name",
   name_on_envelope: "full_name",
   envelope_name: "full_name",
@@ -44,6 +51,11 @@ const HEADER_ALIASES: Record<string, ContactField> = {
   address1: "address_line1",
   street_address: "address_line1",
   address2: "address_line2",
+  country: "country",
+  nation: "country",
+  suburb: "district",
+  neighborhood: "district",
+  neighbourhood: "district",
   "e-mail": "email",
   email_address: "email",
   email_2: "partner_email",
@@ -55,12 +67,12 @@ const HEADER_ALIASES: Record<string, ContactField> = {
 
 const headerKey = (header: string) => header.trim().toLowerCase().replace(/[\s_-]+/g, "");
 
-const FIELD_BY_HEADER = new Map<string, ContactField>([
+const FIELD_BY_HEADER = new Map<string, ImportColumn>([
   ...Object.entries(HEADER_ALIASES).map(([alias, field]) => [headerKey(alias), field] as const),
   ...CONTACT_FIELDS.map((field) => [headerKey(field), field] as const),
 ]);
 
-function resolveHeader(raw: string): ContactField | undefined {
+function resolveHeader(raw: string): ImportColumn | undefined {
   return FIELD_BY_HEADER.get(headerKey(raw));
 }
 
@@ -115,7 +127,7 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
   // parse as "﻿full_name" and never match.
   const input = text.replace(/^﻿/, "");
   if (input.trim() === "") {
-    return { valid: [], errors: [{ row: 0, message: "The file is empty." }] };
+    return { valid: [], errors: [{ row: 0, message: "The file is empty." }], warnings: [] };
   }
 
   // preview stops the parser after limit+1 rows, so a 100k-row file never
@@ -126,20 +138,21 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
     preview: CSV_ROW_LIMIT + 1,
   });
 
-  const columnMap: [source: string, target: ContactField][] = [];
+  const columnMap: [source: string, target: ImportColumn][] = [];
   for (const field of parsed.meta.fields ?? []) {
     const target = resolveHeader(field);
     if (target) columnMap.push([field, target]);
   }
   if (columnMap.length === 0) {
-    return { valid: [], errors: [{ row: 0, message: EXPECTED_HEADERS_MESSAGE }] };
+    return { valid: [], errors: [{ row: 0, message: EXPECTED_HEADERS_MESSAGE }], warnings: [] };
   }
 
-  const valid: ContactInput[] = [];
+  const valid: ImportRow[] = [];
   const errors: CsvRowError[] = [];
+  const warnings: CsvRowError[] = [];
 
   parsed.data.slice(0, CSV_ROW_LIMIT).forEach((row, i) => {
-    const candidate: Partial<Record<ContactField, string>> = {};
+    const candidate: Partial<Record<ImportColumn, string>> = {};
     // Columns apply left-to-right, so when two headers map to the same field
     // (e.g. "name" and "full_name") the last non-blank one wins.
     for (const [source, target] of columnMap) {
@@ -154,11 +167,22 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
       const couple = splitCouple(candidate.full_name ?? "");
       if (couple) Object.assign(candidate, couple);
     }
+    const { country: countryText = "", ...fields } = candidate;
+    const country = resolveCountry(fields.country_code ?? "", countryText);
+    if (country.warning) warnings.push({ row: i + 1, message: country.warning });
+    fields.country_code = country.code ?? "";
+    if (country.code === "US" && fields.postal_code) {
+      fields.postal_code = fields.postal_code.trim().replace(/^\d{3,4}(?=(-\d{4})?$)/, (zip) => zip.padStart(5, "0"));
+    }
 
-    const result = contactSchema.safeParse(candidate);
-    if (result.success) {
-      valid.push(withoutSamePartnerEmail(result.data));
-    } else {
+    const result = contactSchema.safeParse(fields);
+    const address = result.success ? checkAddress(result.data) : null;
+    if (address?.ok) {
+      const unmatched = country.code === null && country.text !== "" ? { country: country.text } : {};
+      valid.push({ ...withoutSamePartnerEmail(address.data), ...unmatched });
+    } else if (address) {
+      errors.push({ row: i + 1, message: `${address.field}: ${address.error}` });
+    } else if (!result.success) {
       const issue = result.error.issues[0];
       const message = issue
         ? [issue.path.join("."), issue.message].filter(Boolean).join(": ")
@@ -174,5 +198,40 @@ export function parseContactsCsv(text: string): ParseContactsCsvResult {
     });
   }
 
-  return { valid, errors };
+  return { valid, errors, warnings };
+}
+
+/** The code column wins; a name column is read as a name, alias or code, and kept as text if none fits. */
+function resolveCountry(
+  codeColumn: string,
+  nameColumn: string,
+): { code: string | null; text: string; warning?: string } {
+  const fromCode = countryCodeFor(codeColumn);
+  const fromName = countryCodeFor(nameColumn);
+  const text = (codeColumn.trim() !== "" && fromCode === null ? codeColumn : nameColumn).trim().slice(0, 120);
+  if (fromCode && nameColumn.trim() !== "" && fromName !== fromCode) {
+    return {
+      code: fromCode,
+      text,
+      warning: `country_code ${fromCode} and country "${nameColumn.trim().slice(0, 60)}" disagree; saved ${fromCode}.`,
+    };
+  }
+  const code = fromCode ?? fromName;
+  const badCode = codeColumn.trim();
+  if (badCode !== "" && fromCode === null) {
+    const used = code ? `saved ${code} from the country column` : "it's saved as typed for you to fix";
+    return {
+      code,
+      text,
+      warning: `country_code "${badCode.slice(0, 60)}" isn't a country we know; ${used}.`,
+    };
+  }
+  if (code === null && text !== "") {
+    return {
+      code,
+      text,
+      warning: `country: "${text.slice(0, 60)}" isn't a country we know. It's saved as typed for you to fix.`,
+    };
+  }
+  return { code, text };
 }

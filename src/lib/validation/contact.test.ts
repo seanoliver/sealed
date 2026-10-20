@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  checkAddress,
   contactSchema,
   readTokenDetails,
   TOKEN_UPDATE_FIELDS,
@@ -27,7 +28,7 @@ describe("contactSchema", () => {
       city: "London",
       state_region: "Greater London",
       postal_code: "SW1Y 4JH",
-      country: "United Kingdom",
+      country_code: "GB",
       notes: "Wrote the first program.",
     });
     expect(result.success).toBe(true);
@@ -75,7 +76,7 @@ describe("contactSchema", () => {
     ["city", 120],
     ["state_region", 120],
     ["postal_code", 20],
-    ["country", 120],
+    ["district", 120],
     ["notes", 2000],
   ] as const)("enforces max length of %s = %i", (field, max) => {
     expect(
@@ -161,10 +162,11 @@ describe("TOKEN_UPDATE_FIELDS", () => {
       "birthday",
       "address_line1",
       "address_line2",
+      "district",
       "city",
       "state_region",
       "postal_code",
-      "country",
+      "country_code",
     ]);
     expect(TOKEN_UPDATE_FIELDS).not.toContain("notes");
   });
@@ -180,5 +182,36 @@ describe("readTokenDetails", () => {
     expect(values.city).toBe("Lisbon");
     expect(values.email).toBe("");
     expect([values.full_name, values.partner_name, values.kids_names]).toEqual(["", "", ""]);
+  });
+});
+
+describe("checkAddress", () => {
+  it("normalizes and checks the postcode against the country", () => {
+    expect(checkAddress({ postal_code: "bs6 5qt", country_code: "GB" })).toEqual({
+      ok: true,
+      data: { postal_code: "BS6 5QT", country_code: "GB" },
+    });
+    expect(checkAddress({ postal_code: "1016", country_code: "NL" })).toEqual({
+      ok: false,
+      field: "postal_code",
+      error: "A Dutch postcode is four digits and two letters, like 1234 AB.",
+    });
+  });
+
+  it("lets a postcode saved before the check through while it and the country are unchanged", () => {
+    const stored = { postal_code: "1016", country_code: "NL" };
+    expect(checkAddress({ postal_code: "1016", country_code: "NL" }, { stored }).ok).toBe(true);
+    expect(checkAddress({ postal_code: "1017", country_code: "NL" }, { stored }).ok).toBe(false);
+    expect(checkAddress({ postal_code: "1016", country_code: "BE" }, { stored }).ok).toBe(true);
+    expect(checkAddress({ postal_code: "1016", country_code: "DE" }, { stored }).ok).toBe(false);
+    expect(
+      checkAddress({ postal_code: "NOPE", country_code: "GB" }, { stored: { postal_code: "nope", country_code: "GB" } }).ok,
+    ).toBe(true);
+  });
+
+  it("only takes country codes on the list", () => {
+    expect(contactSchema.safeParse({ full_name: "Ada", country_code: "gb" }).data?.country_code).toBe("GB");
+    expect(contactSchema.safeParse({ full_name: "Ada", country_code: "XX" }).success).toBe(false);
+    expect(contactSchema.safeParse({ full_name: "Ada", country_code: "United Kingdom" }).success).toBe(false);
   });
 });

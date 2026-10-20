@@ -25,6 +25,7 @@ export const SNAPSHOT_FIELDS = [
   ...TOKEN_UPDATE_FIELDS,
   "partner_email",
   ...NAME_FIELDS,
+  "country",
 ] as const;
 type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 
@@ -36,6 +37,7 @@ export type Snapshot = Record<TokenUpdateField, string | null> & {
   partner_first_name: string | null;
   partner_last_name: string | null;
   kids: Kid[] | null;
+  country: string | null;
 };
 
 export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
@@ -48,15 +50,17 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     birthday: row.birthday,
     address_line1: row.addressLine1,
     address_line2: row.addressLine2,
+    district: row.district,
     city: row.city,
     state_region: row.stateRegion,
     postal_code: row.postalCode,
-    country: row.country,
+    country_code: row.countryCode,
     first_name: row.firstName,
     last_name: row.lastName,
     partner_first_name: row.partnerFirstName,
     partner_last_name: row.partnerLastName,
     kids: row.kids,
+    country: row.legacyCountry,
   };
 }
 
@@ -99,25 +103,31 @@ const FIELD_TO_COLUMN = {
   birthday: "birthday",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
+  district: "district",
   city: "city",
   state_region: "stateRegion",
   postal_code: "postalCode",
-  country: "country",
+  country_code: "countryCode",
   first_name: "firstName",
   last_name: "lastName",
   partner_first_name: "partnerFirstName",
   partner_last_name: "partnerLastName",
   kids: "kids",
+  country: "legacyCountry",
 } as const satisfies Record<SnapshotField, keyof typeof contacts.$inferInsert>;
 
 export function toInsertRow(payload: SubmissionPayload) {
-  if (!isHouseholdPayload(payload)) return toRow(payload);
+  if (!isHouseholdPayload(payload)) {
+    const { country, ...rest } = payload;
+    return { ...toRow(rest), legacyCountry: rest.country_code ? null : (country ?? null) };
+  }
   const {
     first_name,
     last_name,
     partner_first_name,
     partner_last_name,
     kids,
+    country,
     ...rest
   } = payload;
   return {
@@ -125,6 +135,7 @@ export function toInsertRow(payload: SubmissionPayload) {
       ...rest,
       full_name: formatPerson({ first: first_name, last: last_name }) ?? "",
     }),
+    legacyCountry: rest.country_code ? null : (country ?? null),
     firstName: first_name,
     lastName: last_name,
     partnerFirstName: partner_first_name ?? null,
@@ -152,10 +163,11 @@ const sameAddress = (a: string | null | undefined, b: string | null | undefined)
 const CLEARS: Record<ClearableField, readonly SnapshotField[]> = {
   address_line1: ["address_line1"],
   address_line2: ["address_line2"],
+  district: ["district"],
   city: ["city"],
   state_region: ["state_region"],
   postal_code: ["postal_code"],
-  country: ["country"],
+  country_code: ["country_code"],
   birthday: ["birthday"],
   partner_name: ["partner_first_name", "partner_last_name", "partner_name"],
   kids_names: ["kids", "kids_names"],
@@ -175,13 +187,22 @@ export function mergeUpdate(
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
     patch.partner_email = partnerEmail;
   }
+  // Unmatched text from an old reply stands in for a missing code, never a stored one.
+  if ("country" in patch) {
+    if (before.country_code !== null) delete patch.country;
+    else if (!("country_code" in patch)) patch.country_code = null;
+  } else if (
+    "country_code" in patch &&
+    (patch.country_code != null || before.country_code !== null)
+  ) {
+    patch.country = null;
+  }
   const set: Partial<Record<string, unknown>> = {};
   for (const field of SNAPSHOT_FIELDS) {
     if (field in patch && !sameJsonb(before[field], patch[field])) {
       set[FIELD_TO_COLUMN[field]] = patch[field];
     }
   }
-  return Object.keys(set).length > 0
-    ? (set as Partial<typeof contacts.$inferInsert>)
-    : undefined;
+  if (Object.keys(set).length === 0) return undefined;
+  return set as Partial<typeof contacts.$inferInsert>;
 }

@@ -18,6 +18,7 @@ export default async function SettingsPage() {
     partner_name: book.enabledFields.partner_name,
     kids_names: book.enabledFields.kids_names,
     birthday: book.enabledFields.birthday,
+    sender_country: book.senderCountry,
   };
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">

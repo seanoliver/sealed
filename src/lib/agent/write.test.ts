@@ -154,6 +154,20 @@ describe("agent write tools", () => {
       expect(await eventsOf(ANA)).toHaveLength(0);
     });
 
+    it("takes a country as a name, short form or code, and checks the postcode against it", async () => {
+      expect(await update({ id: ANA, fields: { country: "Holland", postal_code: "1016dz" } })).toMatchObject({
+        changed: true,
+        after: { country_code: "NL", postal_code: "1016 DZ" },
+      });
+      await expect(update({ id: ANA, fields: { country: "Atlantis" } })).rejects.toThrow(
+        "isn't a country I know",
+      );
+      await expect(update({ id: ANA, fields: { postal_code: "1016" } })).rejects.toThrow(
+        "A Dutch postcode is four digits and two letters, like 1234 AB.",
+      );
+      expect((await stored(ANA)).countryCode).toBe("NL");
+    });
+
     it("leaves updated_at alone and writes no history for a no-op", async () => {
       const before = await version(ANA);
       expect(await update({ id: ANA, fields: { city: "Portland" } })).toEqual({ id: ANA, changed: false });
@@ -551,6 +565,41 @@ describe("agent write tools", () => {
         ok: false,
         error: expect.stringContaining("changed after the agent's edit"),
       });
+    });
+
+    it("clears old country text with the country, and brings both back on undo", async () => {
+      await dbAdmin.execute(
+        sql`update public.contacts set country = 'USA', country_code = 'US' where id = ${ANA}`,
+      );
+      const result = await update({ id: ANA, fields: { country: null } });
+      expect(result).toMatchObject({ after: { country_code: null, country: null } });
+      expect(await stored(ANA)).toMatchObject({ countryCode: null, legacyCountry: null });
+      await undoAgentChange(ctx.claims, result.event_id!, agentActor(ctx));
+      expect(await stored(ANA)).toMatchObject({ countryCode: "US", legacyCountry: "USA" });
+    });
+
+    it("records no country change for a city edit on a contact whose country text became a code", async () => {
+      await dbAdmin.execute(sql`update public.contacts set country = 'USA' where id = ${ANA}`);
+      const result = await update({ id: ANA, fields: { city: "Bend" } });
+      expect(result).toEqual(expect.objectContaining({ before: { city: "Portland" }, after: { city: "Bend" } }));
+      const backfilled = { before: { city: "A", country: "USA" }, after: { city: "B", country: null } };
+      expect(summarizeDiff(backfilled, { countryCode: "US" })).toBe("City A → B");
+      expect(summarizeDiff({ before: { country: "France" }, after: { country: null } }, { countryCode: null })).toBe(
+        "Removed country",
+      );
+      expect(summarizeDiff({ before: { country: "France" }, after: { country: null } }, { countryCode: "US" })).toBe(
+        "Removed country",
+      );
+    });
+
+    it("undoes history recorded before country codes", async () => {
+      const result = await update({ id: ANA, fields: { city: "Bend" } });
+      await dbAdmin.execute(sql`
+        update public.contact_events
+        set diff = '{"before": {"city": "Portland", "country": "United Kingdom"}, "after": {"city": "Bend", "country": null}}'
+        where id = ${result.event_id}`);
+      await undoAgentChange(ctx.claims, result.event_id!, agentActor(ctx));
+      expect(await stored(ANA)).toMatchObject({ city: "Portland", legacyCountry: null, countryCode: "GB" });
     });
 
     it("locks the contact, so an edit committed meanwhile refuses the undo", async () => {

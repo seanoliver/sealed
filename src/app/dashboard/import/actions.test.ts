@@ -43,6 +43,20 @@ describe("importContacts", () => {
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);
   });
 
+  it("re-checks postcodes server-side and saves unrecognized country text", async () => {
+    await expect(
+      importContacts([{ full_name: "Sanne", country_code: "NL", postal_code: "1016" }]),
+    ).resolves.toEqual({ error: "Invalid import data." });
+    await expect(
+      importContacts([{ full_name: "Nemo", country: "Atlantis", postal_code: "x1" }]),
+    ).resolves.toEqual({ imported: 1, skipped: 0 });
+    const [nemo] = await dbAdmin
+      .select({ countryCode: contacts.countryCode, legacyCountry: contacts.legacyCountry })
+      .from(contacts)
+      .where(eq(contacts.fullName, "Nemo"));
+    expect(nemo).toEqual({ countryCode: null, legacyCountry: "Atlantis" });
+  });
+
   it("imports rows, keeps partners, and skips emails already in the book", async () => {
     await expect(
       importContacts([

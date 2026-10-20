@@ -10,6 +10,7 @@ import {
   type SnapshotField,
   type WriteResult,
 } from "@/app/dashboard/contacts/write";
+import { countryCodeFor, countryName } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -17,7 +18,7 @@ import { agentPreviews, agentTokens, contactEvents, contacts } from "@/lib/db/sc
 import { logDbError } from "@/lib/log";
 import { householdLine, pickStoredNames, type Kid } from "@/lib/names";
 
-const FIELD_LABELS: Record<SnapshotField, string> = {
+const FIELD_LABELS: Record<SnapshotField | "country", string> = {
   full_name: "Name",
   partner_name: "Partner",
   kids_names: "Kids",
@@ -26,9 +27,12 @@ const FIELD_LABELS: Record<SnapshotField, string> = {
   birthday: "Birthday",
   address_line1: "Street",
   address_line2: "Address line 2",
+  district: "District",
   city: "City",
   state_region: "State or region",
   postal_code: "Postal code",
+  country_code: "Country",
+  // Diffs saved before country codes.
   country: "Country",
   notes: "Notes",
   first_name: "First name",
@@ -46,10 +50,12 @@ const DERIVED: Partial<Record<SnapshotField, SnapshotField[]>> = {
 
 const MAX_VALUE = 40;
 
-function display(value: unknown): string {
+function display(value: unknown, field: string): string {
   const text = Array.isArray(value)
     ? (value as Kid[]).map((kid) => kid.first).join(", ")
-    : String(value);
+    : field === "country_code"
+      ? countryName(String(value))
+      : String(value);
   return text.length > MAX_VALUE ? `${text.slice(0, MAX_VALUE - 1)}…` : text;
 }
 
@@ -62,20 +68,33 @@ function asDiff(value: unknown): Diff {
   return value !== null && typeof value === "object" ? (value as Diff) : {};
 }
 
-export function summarizeDiff(raw: unknown): string {
+/** `countryCode` is the contact's current code, to tell backfilled text from a real removal. */
+export function summarizeDiff(
+  raw: unknown,
+  { countryCode = null }: { countryCode?: string | null } = {},
+): string {
   const diff = asDiff(raw);
   const after = diff.after ?? {};
   if (!diff.before) return "Added the contact";
-  const fields = (Object.keys(FIELD_LABELS) as SnapshotField[]).filter(
-    (field) => field in after && !(DERIVED[field] ?? []).some((name) => name in after),
+  const backfilledText =
+    blank(after.country) &&
+    !("country_code" in after) &&
+    countryCode !== null &&
+    typeof diff.before.country === "string" &&
+    countryCodeFor(diff.before.country) === countryCode;
+  const fields = (Object.keys(FIELD_LABELS) as (keyof typeof FIELD_LABELS)[]).filter(
+    (field) =>
+      field in after &&
+      !(field === "country" && ("country_code" in after || backfilledText)) &&
+      !(DERIVED[field as SnapshotField] ?? []).some((name) => name in after),
   );
   const parts = fields.map((field) => {
     const label = FIELD_LABELS[field];
     const was = diff.before?.[field];
     const now = after[field];
-    if (blank(was)) return `Added ${label.toLowerCase()} ${display(now)}`;
+    if (blank(was)) return `Added ${label.toLowerCase()} ${display(now, field)}`;
     if (blank(now)) return `Removed ${label.toLowerCase()}`;
-    return `${label} ${display(was)} → ${display(now)}`;
+    return `${label} ${display(was, field)} → ${display(now, field)}`;
   });
   const prefix = diff.undo_of ? "Undid: " : "";
   if (parts.length <= 2) return prefix + (parts.join("; ") || "No visible change");
@@ -128,6 +147,7 @@ export async function listAgentChanges(
           partnerLastName: contacts.partnerLastName,
           kids: contacts.kids,
         },
+        countryCode: contacts.countryCode,
         hasBefore: sql<boolean>`${contactEvents.diff} ? 'before'`,
         current: sql<boolean>`coalesce(${contacts.updatedAt} = ${contactEvents.contactUpdatedAt}, false)`,
         undone: sql<boolean>`exists (
@@ -163,7 +183,7 @@ export async function listAgentChanges(
       eventId: event.id,
       contactId: event.contactId,
       contactName: householdLine(pickStoredNames(event.contact)),
-      summary: summarizeDiff(event.diff),
+      summary: summarizeDiff(event.diff, { countryCode: event.countryCode }),
       at: event.at,
       undo: undoState(event),
     })),

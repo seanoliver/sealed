@@ -15,7 +15,9 @@ import {
   parseSubmissionForDisplay,
   submittedPeople,
   type EnabledFields,
+  type SubmissionDisplayFields,
 } from "@/lib/validation/submission";
+import { countryName } from "@/lib/address";
 import { NameWithReading } from "@/components/name-with-reading";
 import { contactReadings, readingsForContact } from "@/lib/pinyin";
 import { type Readings } from "@/lib/readings";
@@ -49,11 +51,18 @@ const FIELD_LABELS: Record<ReviewField, string> = {
   birthday: "Birthday",
   address_line1: "Address line 1",
   address_line2: "Address line 2",
+  district: "District",
   city: "City",
   state_region: "State / region",
   postal_code: "Postal code",
-  country: "Country",
+  country_code: "Country",
 };
+
+function forDisplay(fields: SubmissionDisplayFields): Partial<Record<ReviewField, string>> {
+  const { country, ...rest } = fields;
+  if (rest.country_code) return { ...rest, country_code: countryName(rest.country_code) };
+  return country ? { ...rest, country_code: `${country} (not a country on the list)` } : rest;
+}
 
 /** Same cosmetic cap as the payload side, applied to current values. */
 function capForDisplay(value: string): string {
@@ -90,8 +99,9 @@ async function toCardModel(
   };
 
   // Lenient parse + gate; null ⇒ non-object payload ⇒ reject-only card.
-  const parsed = parseSubmissionForDisplay(submission.payload, enabled);
-  if (parsed === null) return { ...base, kind: "malformed" };
+  const display = parseSubmissionForDisplay(submission.payload, enabled);
+  if (display === null) return { ...base, kind: "malformed" };
+  const parsed = forDisplay(display);
 
   // Value-bearing fields only (legit payloads never store "", and a hostile
   // empty string carries no information worth a row).
@@ -122,10 +132,11 @@ async function toCardModel(
     birthday: matchedContact.birthday,
     address_line1: matchedContact.addressLine1,
     address_line2: matchedContact.addressLine2,
+    district: matchedContact.district,
     city: matchedContact.city,
     state_region: matchedContact.stateRegion,
     postal_code: matchedContact.postalCode,
-    country: matchedContact.country,
+    country_code: matchedContact.countryCode && countryName(matchedContact.countryCode),
   };
 
   return {

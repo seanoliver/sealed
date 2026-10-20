@@ -38,10 +38,12 @@ const listRow: ContactListRow = {
   birthday: null,
   addressLine1: "12 St James's Square",
   addressLine2: null,
+  district: null,
   city: "London",
   stateRegion: null,
   postalCode: "SW1Y 4JH",
-  country: "United Kingdom",
+  countryCode: "GB",
+  legacyCountry: null,
   sendStatus: "delivered",
   sendFailureReason: null,
   sendStatuses: {
@@ -160,7 +162,7 @@ describe("twoAnswers", () => {
     city: "Seattle",
     stateRegion: "WA",
     postalCode: "98103",
-    country: "USA",
+    countryCode: "US",
   };
 
   it("puts the saved contact beside a partner's reply and marks what differs", () => {
@@ -181,7 +183,7 @@ describe("twoAnswers", () => {
     expect(answers.saved.lines).toEqual([
       {
         label: null,
-        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103, USA", changed: false }],
+        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103", changed: false }],
       },
     ]);
     expect(answers.incoming.lines).toEqual([
@@ -190,7 +192,7 @@ describe("twoAnswers", () => {
         parts: [
           { text: "4410 Fremont Ave N, ", changed: false },
           { text: "Apt 2", changed: true },
-          { text: ", Seattle, WA 98103, USA", changed: false },
+          { text: ", Seattle, WA 98103", changed: false },
         ],
       },
     ]);
@@ -219,11 +221,40 @@ describe("twoAnswers", () => {
   it("lists the parts when there is no street line", () => {
     const answers = twoAnswers(
       { ...couple, addressLine1: null, stateRegion: null, postalCode: null },
-      { submissionId: "s1", from: "partner", savedBy: "primary", display: { country: "Canada" } },
+      { submissionId: "s1", from: "partner", savedBy: "primary", display: { country_code: "CA" } },
     );
     expect(answers.incoming.lines[0]?.parts).toEqual([
       { text: "Seattle, ", changed: false },
       { text: "Canada", changed: true },
+    ]);
+  });
+
+  it("puts a reply's new country on the envelope's country line", () => {
+    const answers = twoAnswers(
+      couple,
+      { submissionId: "s1", from: "partner", savedBy: "primary", display: { country_code: "CA" } },
+      { senderCountry: "US" },
+    );
+    expect(answers.incoming.lines[0]?.parts.at(-1)).toEqual({ text: "CANADA", changed: true });
+  });
+
+  it("shows a reply's unrecognized country text only where no country is stored, as approval does", () => {
+    const withCode = twoAnswers(couple, {
+      submissionId: "s1",
+      from: "partner",
+      savedBy: "primary",
+      display: { country: "Atlantis" },
+    });
+    expect(withCode.incoming.lines).toHaveLength(1);
+    const answers = twoAnswers({ ...couple, countryCode: null }, {
+      submissionId: "s1",
+      from: "partner",
+      savedBy: "primary",
+      display: { country: "Atlantis" },
+    });
+    expect(answers.incoming.lines).toEqual([
+      { label: null, parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103", changed: false }] },
+      { label: "Country", parts: [{ text: "Atlantis (not on the list)", changed: true }] },
     ]);
   });
 
@@ -251,7 +282,7 @@ describe("twoAnswers", () => {
     expect(answers.incoming.lines).toEqual([
       {
         label: null,
-        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103, USA", changed: false }],
+        parts: [{ text: "4410 Fremont Ave N, Seattle, WA 98103", changed: false }],
       },
       { label: "Line 2", parts: [{ text: "(removed)", changed: true }] },
       { label: "Kids", parts: [{ text: "(removed)", changed: true }] },
@@ -269,7 +300,7 @@ describe("changedValues", () => {
     expect(
       changedValues(values, {
         city: "Paris",
-        country: "United Kingdom",
+        country_code: "GB",
         state_region: "",
       }),
     ).toEqual({ city: "Paris" });

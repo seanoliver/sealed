@@ -41,6 +41,7 @@ import {
   type RequestAddressesResult,
 } from "@/app/dashboard/actions";
 import { patchContact } from "@/app/dashboard/contacts/actions";
+import { COUNTRY_OPTIONS, countryName } from "@/lib/address";
 import {
   approveMerge,
   reject,
@@ -185,8 +186,12 @@ const FIELD_COLUMNS: FieldColumn[] = [
   { field: "city", label: "City", size: 110, maxLength: 120 },
   { field: "state_region", label: "Region", size: 110, maxLength: 120 },
   { field: "postal_code", label: "Postal code", size: 110, maxLength: 20 },
-  { field: "country", label: "Country", size: 100, maxLength: 120 },
+  { field: "country_code", label: "Country", size: 130, maxLength: 2 },
 ];
+
+function countryLabel(row: SheetRow): string {
+  return row.values.country_code ? countryName(row.values.country_code) : (row.legacyCountry ?? "");
+}
 
 const FIELD_BY_ID = new Map<string, FieldColumn>(
   FIELD_COLUMNS.map((c) => [c.field, c]),
@@ -251,7 +256,7 @@ const columns = helper.columns([
     enableHiding: false,
   }),
   ...FIELD_COLUMNS.map((c) =>
-    helper.accessor((row) => row.values[c.field] || undefined, {
+    helper.accessor((row) => (c.field === "country_code" ? countryLabel(row) : row.values[c.field]) || undefined, {
       id: c.field,
       header: c.label,
       size: c.size,
@@ -1098,9 +1103,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
           {sortedRows.map((row) => {
             const { values, names } = row.original;
             const name = sheetName(names);
-            const place = [values.address_line1, values.city]
-              .filter(Boolean)
-              .join(", ");
+            const place = row.original.place;
             const emails = [values.email, values.partner_email]
               .filter(Boolean)
               .join(" · ");
@@ -1426,8 +1429,19 @@ function ViewRow({
             </td>
           );
         }
+        if (field?.field === "country_code" && !values.country_code && row.original.legacyCountry) {
+          return (
+            <td
+              key={cell.id}
+              title="Not a country on the list. Edit the row to pick one."
+              className={`${cellClasses} truncate text-amber-700 italic dark:text-amber-300`}
+            >
+              {row.original.legacyCountry}
+            </td>
+          );
+        }
         if (field) {
-          const value = values[field.field];
+          const value = field.field === "country_code" ? countryLabel(row.original) : values[field.field];
           return (
             <td
               key={cell.id}
@@ -1502,6 +1516,13 @@ function EditingRow({
 
   function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      save();
+    }
+  }
+
+  function onSelectKeyDown(event: KeyboardEvent<HTMLSelectElement>) {
+    if (event.key === "Enter") {
       event.preventDefault();
       save();
     }
@@ -1595,6 +1616,30 @@ function EditingRow({
                   />
                 ))}
               </span>
+            </td>
+          );
+        }
+        if (field?.field === "country_code") {
+          const code = draft.country_code ?? values.country_code;
+          return (
+            <td key={cell.id} className={`${cellClasses} px-1`}>
+              <select
+                data-cell-input
+                aria-label={field.label}
+                autoFocus={id === firstCellId}
+                disabled={isSaving}
+                value={code}
+                onChange={(event) => setDraft({ ...draft, country_code: event.target.value })}
+                onKeyDown={onSelectKeyDown}
+                className={cellInputClasses}
+              >
+                <option value="">Choose a country</option>
+                {COUNTRY_OPTIONS.map(([optionCode, optionName]) => (
+                  <option key={optionCode} value={optionCode}>
+                    {optionName}
+                  </option>
+                ))}
+              </select>
             </td>
           );
         }

@@ -27,7 +27,7 @@ describe("parseContactsCsv", () => {
       city: "London",
       state_region: "Greater London",
       postal_code: "SW1Y 4JH",
-      country: "UK",
+      country_code: "GB",
       notes: "met at a party",
     });
     // Empty cells become undefined (stored as NULL), not "".
@@ -37,7 +37,7 @@ describe("parseContactsCsv", () => {
       city: "Arlington",
       state_region: "VA",
       postal_code: "22201",
-      country: "USA",
+      country_code: "US",
     });
   });
 
@@ -318,5 +318,86 @@ describe("splitCouple", () => {
     const cap = word[0].toUpperCase() + word.slice(1);
     expect(splitCouple(`Ada & ${cap} Byron`)).toBeUndefined();
     expect(splitCouple(`${cap} Ada & Will Byron`)).toBeUndefined();
+  });
+});
+
+describe("countries and postcodes", () => {
+  it("maps country names, short forms and codes to codes", () => {
+    const { valid, errors } = parseContactsCsv(
+      ["name,country", "Ada,United Kingdom", "Bea,usa", "Cai,NL", "Dee,CHINA", "Eve,"].join("\n"),
+    );
+    expect(errors).toEqual([]);
+    expect(valid.map((row) => row.country_code)).toEqual(["GB", "US", "NL", "CN", undefined]);
+  });
+
+  it("keeps a country it doesn't know as text, with a warning", () => {
+    const { valid, errors, warnings } = parseContactsCsv(
+      ["name,country", "Ada,Atlantis", "Bea,Spain"].join("\n"),
+    );
+    expect(errors).toEqual([]);
+    expect(valid).toEqual([
+      { full_name: "Ada", country: "Atlantis" },
+      { full_name: "Bea", country_code: "ES" },
+    ]);
+    expect(warnings).toEqual([
+      { row: 1, message: 'country: "Atlantis" isn\'t a country we know. It\'s saved as typed for you to fix.' },
+    ]);
+  });
+
+  it("prefers the code column and flags a name column that disagrees", () => {
+    const { valid, warnings } = parseContactsCsv(
+      ["name,country_code,country", "Ada,GB,United Kingdom", "Bea,FR,Germany"].join("\n"),
+    );
+    expect(valid.map((row) => row.country_code)).toEqual(["GB", "FR"]);
+    expect(warnings).toEqual([
+      { row: 2, message: 'country_code FR and country "Germany" disagree; saved FR.' },
+    ]);
+  });
+
+  it("flags a country_code that matches no country", () => {
+    const { valid, warnings } = parseContactsCsv(
+      ["name,country_code,country", "Ada,XX,France", "Bea,XX,"].join("\n"),
+    );
+    expect(valid).toEqual([
+      { full_name: "Ada", country_code: "FR" },
+      { full_name: "Bea", country: "XX" },
+    ]);
+    expect(warnings).toEqual([
+      { row: 1, message: 'country_code "XX" isn\'t a country we know; saved FR from the country column.' },
+      { row: 2, message: 'country_code "XX" isn\'t a country we know; it\'s saved as typed for you to fix.' },
+    ]);
+  });
+
+  it("puts back a US ZIP's leading zero that a spreadsheet dropped", () => {
+    const { valid, errors } = parseContactsCsv(
+      ["name,country,zip", "Ada,US,2110", "Bea,US,501-1234", "Cai,DE,2110"].join("\n"),
+    );
+    expect(valid.map((row) => row.postal_code)).toEqual(["02110", "00501-1234"]);
+    expect(errors.map((error) => error.row)).toEqual([3]);
+  });
+
+  it("formats an Eircode with its space", () => {
+    const { valid } = parseContactsCsv(["name,country,postcode", "Ada,Ireland,d02x285"].join("\n"));
+    expect(valid[0]).toMatchObject({ country_code: "IE", postal_code: "D02 X285" });
+  });
+
+  it("formats postcodes and US states, and reports one that doesn't fit the country", () => {
+    const { valid, errors } = parseContactsCsv(
+      [
+        "name,country,postcode,state,suburb",
+        "Ada,UK,bs65qt,,",
+        "Bea,US,97214,oregon,",
+        "Cai,Netherlands,1016,,",
+        "Dee,South Africa,8001,,Gardens",
+      ].join("\n"),
+    );
+    expect(valid).toEqual([
+      { full_name: "Ada", country_code: "GB", postal_code: "BS6 5QT" },
+      { full_name: "Bea", country_code: "US", postal_code: "97214", state_region: "OR" },
+      { full_name: "Dee", country_code: "ZA", postal_code: "8001", district: "Gardens" },
+    ]);
+    expect(errors).toEqual([
+      { row: 3, message: "postal_code: A Dutch postcode is four digits and two letters, like 1234 AB." },
+    ]);
   });
 });
