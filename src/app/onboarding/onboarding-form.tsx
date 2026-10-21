@@ -15,7 +15,7 @@ import {
 } from "./actions";
 
 const inputClasses =
-  "h-12 w-full rounded-lg border border-input bg-card px-3.5 text-base text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25";
+  "h-12 w-full rounded-lg border border-input bg-card px-3.5 text-base text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25";
 
 type OnboardingFormProps = { defaults: OnboardingValues; urlPrefix: string };
 

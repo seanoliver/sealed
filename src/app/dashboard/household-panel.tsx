@@ -19,7 +19,7 @@ import {
 } from "@/lib/validation/household";
 
 const panelInputClasses =
-  "h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none read-only:opacity-60 focus:border-ring focus:ring-2 focus:ring-ring/25 aria-invalid:border-red-400 dark:aria-invalid:border-red-800";
+  "h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground read-only:opacity-60 focus:border-ring focus:ring-2 focus:ring-ring/25 aria-invalid:border-red-400 dark:aria-invalid:border-red-800";
 const removeClasses =
   "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
 const addClasses =
@@ -68,7 +68,6 @@ type PanelInputProps = {
   value: string;
   onChange: (value: string) => void;
   error?: string;
-  following?: boolean;
   readOnly: boolean;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
   inputRef?: Ref<HTMLInputElement>;
@@ -80,7 +79,6 @@ function PanelInput({
   value,
   onChange,
   error,
-  following = false,
   readOnly,
   onKeyDown,
   inputRef,
@@ -99,7 +97,7 @@ function PanelInput({
         onKeyDown={onKeyDown}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
-        className={cn(panelInputClasses, following && "text-muted-foreground")}
+        className={panelInputClasses}
       />
       {error ? (
         <span
@@ -267,7 +265,6 @@ export function HouseholdNameCell({
                       label="Partner last name"
                     placeholder="Last"
                       value={draft.partner.lastEdited ? draft.partner.last : draft.last_name}
-                      following={!draft.partner.lastEdited}
                       onChange={(last) =>
                         draft.partner &&
                         onDraftChange({
@@ -313,7 +310,6 @@ export function HouseholdNameCell({
                       label={`Child ${i + 1} last name`}
                     placeholder="Last"
                       value={kid.lastEdited ? kid.last : draft.last_name}
-                      following={!kid.lastEdited}
                       onChange={(last) =>
                         onDraftChange({
                           ...draft,
