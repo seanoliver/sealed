@@ -37,7 +37,6 @@ type NameInputProps = {
   value: string;
   onChange: (value: string) => void;
   error?: string;
-  following?: boolean;
   inputRef?: Ref<HTMLInputElement>;
 };
 
@@ -48,7 +47,6 @@ function NameInput({
   value,
   onChange,
   error,
-  following = false,
   inputRef,
 }: NameInputProps) {
   return (
@@ -67,7 +65,6 @@ function NameInput({
       className={cn(
         inputClasses,
         "min-w-0",
-        following && "text-muted-foreground",
         error && invalidClasses,
       )}
     />
@@ -132,7 +129,6 @@ function PersonRow({
           value={following ? familyLast : row.last}
           onChange={(last) => onChange({ ...row, last, lastEdited: true })}
           error={errors.last}
-          following={following && familyLast !== ""}
           inputRef={lastRef}
         />
         <button
