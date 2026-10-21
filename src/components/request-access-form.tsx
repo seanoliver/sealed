@@ -98,7 +98,7 @@ function RequestAccessForm({
           autoComplete="email"
           placeholder="you@example.com"
           defaultValue={state.status === "error" ? state.email : undefined}
-          className="h-12 rounded-xl border border-input bg-background/60 px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25"
+          className="h-12 rounded-xl border border-input bg-background/60 px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25"
         />
         <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
         <SubmitButton

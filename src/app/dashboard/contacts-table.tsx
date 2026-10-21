@@ -1612,7 +1612,7 @@ function EditingRow({
                       setDraft({ ...draft, [name]: event.target.value })
                     }
                     onKeyDown={onInputKeyDown}
-                    className={`${cellInputClasses} placeholder:text-muted-foreground/60`}
+                    className={`${cellInputClasses} placeholder:text-muted-foreground`}
                   />
                 ))}
               </span>

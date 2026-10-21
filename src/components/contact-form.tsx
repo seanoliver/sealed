@@ -10,7 +10,7 @@ import { type HouseholdValues } from "@/lib/validation/household";
 const initialState: ContactFormState = {};
 
 const inputClasses =
-  "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 ";
+  "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 ";
 const labelClasses = "text-sm font-medium text-foreground";
 // The envelope preview's 17rem column plus its gap, so these fields line up with the address.
 const column = "lg:mr-[18.5rem]";
@@ -179,7 +179,7 @@ export function ContactForm({
           rows={4}
           maxLength={2000}
           defaultValue={v.notes}
-          className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 "
+          className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 "
         />
       </div>
 

@@ -9,7 +9,7 @@ import { saveBook, type BookFormValues, type SaveBookState } from "./actions";
 const initialState: SaveBookState = {};
 
 const inputClasses =
-  "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 ";
+  "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 ";
 
 type BookFormProps = {
   urlPrefix: string;

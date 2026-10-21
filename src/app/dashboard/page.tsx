@@ -113,7 +113,7 @@ export default async function DashboardPage({
           type="search"
           defaultValue={query}
           placeholder="Search by name or partner…"
-          className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-ring focus:ring-3 focus:ring-ring/25 "
+          className="h-9 w-full max-w-xs rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 "
         />
         <button
           type="submit"
