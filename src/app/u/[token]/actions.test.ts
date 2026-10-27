@@ -180,6 +180,16 @@ describe("submitTokenUpdate", () => {
     await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
   });
 
+  it("leaves the stored street alone when the form doesn't post it", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await dbAdmin.execute(sql`update public.contacts set address_line1 = '1 Old Rd' where id = ${C}`);
+    const form = prefilledForm(contact);
+    form.delete("address_line1");
+    await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+    expect((await stored()).addressLine1).toBe("1 Old Rd");
+  });
+
   it("names the street the way the country does", async () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);

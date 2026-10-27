@@ -110,6 +110,18 @@ test("prefills enabled fields; a disabled field is absent AND unleaked", async (
   await context.close();
 });
 
+test("the street is required and labelled so, even where the country leaves it optional", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`/u/${token}`);
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("IE");
+  await expect(page.locator("label[for=address_line1]")).not.toContainText("optional");
+  await expect(page.locator("#address_line1")).toHaveAttribute("required", "");
+  await context.close();
+});
+
 test("recipient submits an update; owner sees the Updated chip and new values", async ({
   browser,
 }) => {

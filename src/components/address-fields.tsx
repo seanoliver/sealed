@@ -342,10 +342,13 @@ export function AddressFields({
     rows.flatMap((row) => row.fields.filter(visible).map((field) => field.name)),
   );
 
+  const required = (spec: AddressFieldSpec) =>
+    spec.required || (requireStreet && spec.name === "address_line1");
+
   const label = (spec: AddressFieldSpec) => (
     <label htmlFor={spec.name} className={styles.label}>
       {spec.label}
-      {spec.required ? null : (
+      {required(spec) ? null : (
         <span className="font-normal text-muted-foreground"> (optional)</span>
       )}
     </label>
