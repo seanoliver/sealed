@@ -7,6 +7,8 @@ import { sql } from "drizzle-orm";
 // private.apply_token_reply is a SECURITY DEFINER function with zero grants
 // for client roles — the admin connection is the only path to it. This
 // action and the /u/[token] page are its ONLY consumers.
+import { getCountry } from "@/lib/address";
+import { fieldLabel } from "@/lib/address/fields";
 import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { logDbError } from "@/lib/log";
@@ -133,6 +135,11 @@ export async function submitTokenUpdate(
       fieldErrors,
       ...echo,
     };
+  }
+  // Only the street: legacy contacts keep the whole address in it, other fields blank.
+  if (formData.has("address_line1") && details.data.address_line1 === undefined) {
+    const label = fieldLabel("address_line1", getCountry(details.data.country_code));
+    return { error: `${label} is required to mail your card.`, ...echo };
   }
 
   // 5. Payload keys = exactly the fields the form rendered (present in

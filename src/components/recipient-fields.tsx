@@ -42,6 +42,7 @@ type RecipientFieldsProps = {
   legacyCountry?: string | null;
   addressRef?: Ref<AddressFieldsHandle>;
   errorsKey?: unknown;
+  requireStreet?: boolean;
 };
 
 type FieldProps = {
@@ -90,6 +91,7 @@ export function RecipientFields({
   legacyCountry,
   addressRef,
   errorsKey,
+  requireStreet,
 }: RecipientFieldsProps) {
   return (
     <>
@@ -134,6 +136,7 @@ export function RecipientFields({
         errorsKey={errorsKey}
         preview="below"
         handleRef={addressRef}
+        requireStreet={requireStreet}
       />
     </>
   );

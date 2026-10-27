@@ -100,7 +100,7 @@ function prefilledForm(stored: Seed, overrides: Record<string, string> = {}) {
   for (const [key, value] of Object.entries({
     email: "old@tu.test",
     birthday: "",
-    address_line1: "",
+    address_line1: "Karl Johans gate 1",
     address_line2: "",
     city: "Oslo",
     state_region: "",
@@ -165,6 +165,40 @@ describe("submitTokenUpdate", () => {
       fieldErrors: { postal_code: "A Dutch postcode is four digits and two letters, like 1234 AB." },
     });
     expect((await stored()).postalCode).toBeNull();
+  });
+
+  it("refuses a blank street address and keeps the link", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const result = await submitTokenUpdate(
+      token,
+      {},
+      prefilledForm(contact, { address_line1: "" }),
+    );
+    expect(result).toMatchObject({ error: "Street address is required to mail your card." });
+    expect((await stored()).city).toBe("Paris");
+    await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
+  });
+
+  it("leaves the stored street alone when the form doesn't post it", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await dbAdmin.execute(sql`update public.contacts set address_line1 = '1 Old Rd' where id = ${C}`);
+    const form = prefilledForm(contact);
+    form.delete("address_line1");
+    await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+    expect((await stored()).addressLine1).toBe("1 Old Rd");
+  });
+
+  it("names the street the way the country does", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const result = await submitTokenUpdate(
+      token,
+      {},
+      prefilledForm(contact, { country_code: "NL", address_line1: "", postal_code: "1016 DZ" }),
+    );
+    expect(result).toMatchObject({ error: "Street and house number is required to mail your card." });
   });
 
   it("leaves a field the form didn't post as stored", async () => {

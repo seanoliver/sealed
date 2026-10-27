@@ -77,6 +77,7 @@ export default async function TokenUpdatePage({
           defaults={defaults}
           enabled={enabled_fields}
           submitLabel="Update my details"
+          requireStreet
           pendingLabel="Saving…"
           household={household}
           seenAt={loaded.data.updated_at}

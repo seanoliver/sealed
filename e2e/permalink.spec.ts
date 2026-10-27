@@ -125,6 +125,12 @@ test("the owner approves a submission into a contact", async () => {
   ).toBeVisible();
 });
 
+test("the invite page leaves the street optional", async ({ browser }) => {
+  const page = await openInvitePage(browser);
+  await expect(page.locator("#address_line1")).not.toHaveAttribute("required");
+  await page.context().close();
+});
+
 test("a validation error keeps the typed household rows", async ({
   browser,
 }) => {
