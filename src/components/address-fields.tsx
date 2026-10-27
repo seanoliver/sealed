@@ -51,6 +51,7 @@ type AddressFieldsProps = {
   handleRef?: Ref<AddressFieldsHandle>;
   /** Off for a saved contact: prefilling there would save a country nobody picked. */
   prefillCountry?: boolean;
+  requireStreet?: boolean;
 };
 
 const LANGUAGE: Record<string, string> = {
@@ -191,6 +192,7 @@ export function AddressFields({
   preview,
   handleRef,
   prefillCountry = true,
+  requireStreet = false,
 }: AddressFieldsProps) {
   const anchor = useRef<HTMLDivElement>(null);
   const initial = useRef(initialValues(defaults));
@@ -355,6 +357,7 @@ export function AddressFields({
       id: spec.name,
       name: spec.name,
       autoComplete: spec.autoComplete,
+      required: (requireStreet && spec.name === "address_line1") || undefined,
       "aria-invalid": invalid || undefined,
       "aria-describedby": invalid ? "postal_code-error" : undefined,
       className: `${styles.input} w-full min-w-0 ${invalid ? "border-destructive focus-visible:border-destructive" : ""}`,

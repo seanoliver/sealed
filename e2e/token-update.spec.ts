@@ -63,6 +63,7 @@ test.beforeAll(async ({ browser }) => {
     email: "tess@e2e.test",
     partnerName: "Pat Partner",
     kidsNames: "Zoe, Max", // stored but disabled — must never reach the page
+    addressLine1: "Rua das Flores 12",
     city: "Lisbon",
     country: "Portugal",
   });
@@ -129,7 +130,11 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
 
   // A corrected retry succeeds.
   await page.locator("#email").fill("");
+  await page.locator("#address_line1").fill("");
   await page.locator("#city").fill("Porto");
+  await page.getByRole("button", { name: "Update my details" }).click();
+  await expect(page).toHaveURL(new RegExp(`/u/${token}$`));
+  await page.locator("#address_line1").fill("Rua das Flores 12");
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(/\/u\/thanks$/);
   await expect(
@@ -207,6 +212,7 @@ test.describe("with the partner field disabled", () => {
     const contactId = await seedContact({
       bookId,
       fullName: "Riley Quinn",
+      addressLine1: "4 Elm St",
       household: { firstName: "Riley", lastName: "Quinn", partnerFirstName: "Morgan", partnerLastName: "Vale" },
     });
     partnerToken = await seedUpdateToken(contactId);
@@ -247,6 +253,7 @@ test.describe("with partner and kids enabled", () => {
       email: recipientEmail,
       partnerName: "Mark",
       kidsNames: "Zoe, Max",
+      addressLine1: "9 Holloway Rd",
     });
     kidsTokens = [
       await seedUpdateToken(contactId),

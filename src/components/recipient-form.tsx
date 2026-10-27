@@ -51,6 +51,7 @@ type RecipientFormProps = {
   ownerName: string;
   senderCountry: string;
   legacyCountry?: string | null;
+  requireStreet?: boolean;
 };
 
 export function RecipientForm({
@@ -65,6 +66,7 @@ export function RecipientForm({
   ownerName,
   senderCountry,
   legacyCountry,
+  requireStreet,
 }: RecipientFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   const address = useRef<AddressFieldsHandle>(null);
@@ -103,6 +105,7 @@ export function RecipientForm({
         legacyCountry={legacyCountry}
         addressRef={address}
         errorsKey={state}
+        requireStreet={requireStreet}
       />
 
       {seenAt === undefined ? null : (
