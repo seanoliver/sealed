@@ -168,6 +168,7 @@ describe("agent read tools", () => {
         complained: 0,
         failed: 1,
         unconfirmed: 0,
+        confirmed: 0,
         updated: 0,
       },
       byCountry: [
@@ -315,6 +316,7 @@ describe("get_contact's updated-after-send rule", () => {
   const B3 = "10000000-0000-4000-8000-0000000a9201";
   const KIM = "20000000-0000-4000-8000-0000000a9201";
   const LEO = "20000000-0000-4000-8000-0000000a9202";
+  const MAX = "20000000-0000-4000-8000-0000000a9203";
   const owner = { sub: U3 };
 
   beforeAll(async () => {
@@ -325,16 +327,20 @@ describe("get_contact's updated-after-send rule", () => {
     await dbAdmin.execute(sql`
       insert into public.contacts (id, book_id, full_name, partner_name, email, partner_email) values
         (${KIM}, ${B3}, 'Kim Park', null, 'kim@rt.test', null),
-        (${LEO}, ${B3}, 'Leo Hart', 'Mia Hart', 'leo@rt.test', 'mia@rt.test')`);
+        (${LEO}, ${B3}, 'Leo Hart', 'Mia Hart', 'leo@rt.test', 'mia@rt.test'),
+        (${MAX}, ${B3}, 'Max Roy', null, 'max@rt.test', null)`);
     await dbAdmin.execute(sql`
       insert into public.email_sends (contact_id, book_id, recipient, status, failure_reason, sent_at) values
         (${KIM}, ${B3}, 'primary', 'failed', 'rejected', now() - interval '10 min'),
         (${LEO}, ${B3}, 'primary', 'delivered', null, now() - interval '30 min'),
-        (${LEO}, ${B3}, 'partner', 'delivered', null, now() - interval '5 min')`);
+        (${LEO}, ${B3}, 'partner', 'delivered', null, now() - interval '5 min'),
+        (${MAX}, ${B3}, 'primary', 'delivered', null, now() - interval '10 min')`);
     await dbAdmin.execute(sql`
       insert into public.contact_events (contact_id, source, recipient, diff, created_at) values
         (${KIM}, 'owner', null, '{"city": [null, "Busan"]}', now() - interval '5 min'),
-        (${LEO}, 'token', 'primary', '{}', now() - interval '15 min')`);
+        (${LEO}, 'token', 'primary', '{}', now() - interval '15 min'),
+        (${MAX}, 'token', 'primary', '{"before": {"city": "Oslo"}, "after": {"city": "Oslo"}}',
+         now() - interval '5 min')`);
   });
 
   afterAll(async () => {
@@ -355,5 +361,16 @@ describe("get_contact's updated-after-send rule", () => {
   it("needs the reply to be newer than both people's latest sends", async () => {
     const leo = await getContact(owner, getContactInput.parse({ id: LEO }));
     expect(leo?.sendStatus).toMatchObject({ status: "delivered", updatedAfterSend: false });
+  });
+
+  it("calls a reply that changed nothing confirmed", async () => {
+    const max = await getContact(owner, getContactInput.parse({ id: MAX }));
+    expect(max?.sendStatus).toMatchObject({
+      status: "confirmed",
+      updatedAfterSend: true,
+      needsAttention: false,
+    });
+    expect(ids((await searchContacts(owner, searchContactsInput.parse({ status: "confirmed" }))).items))
+      .toEqual([MAX]);
   });
 });

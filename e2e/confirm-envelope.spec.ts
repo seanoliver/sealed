@@ -114,7 +114,7 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   const row = ownerPage
     .getByRole("table", { name: "Contacts" })
     .locator("tbody tr", { hasText: "Cora Confirm" });
-  await expect(row).toContainText("Updated");
+  await expect(row).toContainText("Confirmed"); // a reply that changed nothing
 });
 
 test("a dropped connection asks for another tap", async ({ page }) => {

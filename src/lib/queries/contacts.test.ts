@@ -8,6 +8,7 @@ const B = "10000000-0000-4000-8000-0000000c9001";
 const SOLO = "20000000-0000-4000-8000-0000000c9001";
 const COUPLE = "20000000-0000-4000-8000-0000000c9002";
 const HALF_FAILED = "20000000-0000-4000-8000-0000000c9003";
+const CONFIRMED = "20000000-0000-4000-8000-0000000c9004";
 
 async function send(contactId: string, recipient: string, status: string, minutesAgo: number) {
   await dbAdmin.execute(sql`
@@ -28,16 +29,23 @@ describe("listContacts", () => {
       insert into public.contacts (id, book_id, full_name, email, partner_email) values
         (${SOLO}, ${B}, 'A Solo', 'solo@lc.test', null),
         (${COUPLE}, ${B}, 'B Couple', 'b1@lc.test', 'b2@lc.test'),
-        (${HALF_FAILED}, ${B}, 'C Half', 'c1@lc.test', 'c2@lc.test')`);
+        (${HALF_FAILED}, ${B}, 'C Half', 'c1@lc.test', 'c2@lc.test'),
+        (${CONFIRMED}, ${B}, 'D Confirmed', 'd1@lc.test', null)`);
     await send(SOLO, "primary", "sent", 30);
     await send(SOLO, "primary", "failed", 10);
     await send(COUPLE, "primary", "delivered", 10);
     await send(COUPLE, "partner", "opened", 10);
     await send(HALF_FAILED, "primary", "opened", 10);
     await send(HALF_FAILED, "partner", "failed", 5);
+    await send(CONFIRMED, "primary", "delivered", 10);
     await dbAdmin.execute(sql`
       insert into public.contact_events (contact_id, source, recipient, diff, created_at)
       values (${COUPLE}, 'token', 'partner', '{}', now() - interval '5 min')`);
+    await dbAdmin.execute(sql`
+      insert into public.contact_events (contact_id, source, recipient, diff, created_at)
+      values (${CONFIRMED}, 'token', 'primary',
+              '{"before": {"city": "Seattle"}, "after": {"city": "Seattle"}, "payload": {}}',
+              now() - interval '5 min')`);
   });
 
   afterAll(async () => {
@@ -67,6 +75,7 @@ describe("listContacts", () => {
         partner: { status: "opened" },
       },
       updatedAfterSend: true,
+      changedAfterSend: true,
     });
 
     expect(half).toMatchObject({
@@ -78,6 +87,15 @@ describe("listContacts", () => {
         partner: { status: "failed", failureReason: "rejected" },
       },
       updatedAfterSend: false,
+      changedAfterSend: false,
+    });
+  });
+
+  it("tells a no-op confirm apart from a reply that changed something", async () => {
+    const rows = await listContacts({ sub: U });
+    expect(rows.find((row) => row.id === CONFIRMED)).toMatchObject({
+      updatedAfterSend: true,
+      changedAfterSend: false,
     });
   });
 });

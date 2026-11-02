@@ -44,6 +44,7 @@ export interface ContactListRow extends StoredNames {
   needsAttention: boolean;
   /** True if a token-sourced contact_events row is newer than the latest send. */
   updatedAfterSend: boolean;
+  changedAfterSend: boolean;
   updatedAt: Date;
 }
 
@@ -150,6 +151,14 @@ export async function listContacts(
           where ${contactEvents.contactId} = ${contacts.id}
             and ${contactEvents.source} = 'token'
             and ${contactEvents.createdAt} > greatest(${primarySend.sentAt}, ${partnerSend.sentAt}))`,
+        // Keep the "after is null" arm: older events have no "after" and are changes.
+        changedAfterSend: sql<boolean>`exists (
+          select 1 from ${contactEvents}
+          where ${contactEvents.contactId} = ${contacts.id}
+            and ${contactEvents.source} = 'token'
+            and ${contactEvents.createdAt} > greatest(${primarySend.sentAt}, ${partnerSend.sentAt})
+            and (${contactEvents.diff} -> 'after' is null
+              or ${contactEvents.diff} -> 'before' is distinct from ${contactEvents.diff} -> 'after'))`,
         updatedAt: contacts.updatedAt,
       })
       .from(contacts)

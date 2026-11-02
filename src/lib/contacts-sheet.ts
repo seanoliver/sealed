@@ -25,7 +25,7 @@ import {
   type HouseholdValues,
 } from "@/lib/validation/household";
 
-export type StatusKey = SendStatus | "updated";
+export type StatusKey = SendStatus | "confirmed" | "updated";
 
 export type SheetField = Extract<
   keyof ContactFormValues,
@@ -126,7 +126,10 @@ export type EffectiveSends = {
 };
 
 export function effectiveSends(
-  row: Pick<ContactListRow, "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend">,
+  row: Pick<
+    ContactListRow,
+    "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend" | "changedAfterSend"
+  >,
 ): EffectiveSends {
   // A person whose email was removed no longer counts: their old bounce
   // can't be resent, so it must not hold the row in Needs attention.
@@ -140,7 +143,11 @@ export function effectiveSends(
   const combined = combineSends(sendOf("primary"), sendOf("partner"));
   return {
     emailed,
-    status: row.updatedAfterSend ? "updated" : combined.status,
+    status: row.updatedAfterSend
+      ? row.changedAfterSend
+        ? "updated"
+        : "confirmed"
+      : combined.status,
     failureReason: combined.failureReason,
     attention: row.updatedAfterSend
       ? []
@@ -148,6 +155,14 @@ export function effectiveSends(
           .filter((recipient) => NEEDS_ATTENTION.has(row.sendStatuses[recipient].status))
           .map((recipient) => ({ recipient, status: row.sendStatuses[recipient].status })),
   };
+}
+
+// jsonb returns keys sorted, so equal objects stringify the same. A missing
+// "after" (older events) is a change: don't let undefined === undefined pass.
+export function isNoOpReply(diff: unknown): boolean {
+  if (typeof diff !== "object" || diff === null) return false;
+  const { before, after } = diff as { before?: unknown; after?: unknown };
+  return after !== undefined && JSON.stringify(before) === JSON.stringify(after);
 }
 
 /** Sort rank for the status column: ascending puts problems first. */
@@ -160,7 +175,8 @@ export const STATUS_RANK: Record<StatusKey, number> = {
   sent: 5,
   delivered: 6,
   opened: 7,
-  updated: 8,
+  confirmed: 8,
+  updated: 9,
 };
 
 /** Latest sends the owner should look at: failed, bounced or never confirmed. */

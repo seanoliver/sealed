@@ -89,6 +89,8 @@ const chipBase =
 const chipStyles: Record<StatusKey, string> = {
   updated:
     "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200",
+  confirmed:
+    "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200",
   none: "border-border bg-secondary/50 text-muted-foreground",
   sent: "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200",
   delivered:
@@ -107,6 +109,7 @@ const chipStyles: Record<StatusKey, string> = {
 
 const chipLabels: Record<StatusKey, string> = {
   updated: "Updated",
+  confirmed: "Confirmed",
   none: "Not sent",
   sent: "Sent",
   delivered: "Delivered",
@@ -153,7 +156,7 @@ function StatusChip({
 }
 
 function StatusChips({ row }: { row: SheetRow }) {
-  if (row.status === "updated" || row.people.length === 0) {
+  if (row.status === "updated" || row.status === "confirmed" || row.people.length === 0) {
     return <StatusChip status={row.status} failureReason={row.failureReason} />;
   }
   return (
