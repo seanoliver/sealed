@@ -276,6 +276,10 @@ export async function seedPermalinkSubmission(opts: {
   return rows[0].id as string;
 }
 
+export async function rejectPendingSubmissions(bookId: string): Promise<void> {
+  await db`update public.submissions set status = 'rejected' where book_id = ${bookId} and status = 'pending'`;
+}
+
 export async function getSubmissionStatus(id: string): Promise<string> {
   const rows = await db`select status from public.submissions where id = ${id}`;
   return rows[0].status as string;

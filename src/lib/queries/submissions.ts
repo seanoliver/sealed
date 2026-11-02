@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { books, contacts, submissions } from "@/lib/db/schema";
@@ -48,6 +48,20 @@ export async function listPendingSubmissions(
       .orderBy(desc(submissions.createdAt), desc(submissions.id))
       .limit(200);
   });
+}
+
+/** Must keep the same filter as listPendingSubmissions, or the header count drifts from the review page. */
+export async function countPendingSubmissions(
+  claims: SessionClaims,
+  bookId: string,
+): Promise<number> {
+  const [row] = await withRls(claims, (tx) =>
+    tx
+      .select({ n: count() })
+      .from(submissions)
+      .where(and(eq(submissions.bookId, bookId), eq(submissions.status, "pending"))),
+  );
+  return Number(row?.n ?? 0);
 }
 
 export type PendingReply = {
