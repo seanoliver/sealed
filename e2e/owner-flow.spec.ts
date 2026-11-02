@@ -244,9 +244,10 @@ test("edits the contact and the audit trail records the change", async () => {
   await expect(history.locator("li")).toHaveCount(2);
   const latest = history.locator("li").first();
   await expect(latest).toContainText("You");
-  await expect(latest.locator("pre")).toContainText('"city"');
-  await expect(latest.locator("pre")).toContainText("Boston");
-  await expect(latest.locator("pre")).toContainText('"partner_name": "William King"');
+  await expect(latest.locator("dd", { hasText: "Boston" })).toBeVisible();
+  await expect(latest.locator("dd", { hasText: "William King" })).toBeVisible();
+  await expect(latest).not.toContainText("partner_first_name");
+  await expect(history.locator("li").last()).toContainText("Added this contact");
   await expect(page.locator("#kid_0_first")).toHaveValue("Byron");
   await expect(page.locator("#kid_0_last")).toHaveValue("Lovelace");
 

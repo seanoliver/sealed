@@ -9,31 +9,10 @@ import { NameWithReading } from "@/components/name-with-reading";
 import { householdPrefill } from "@/lib/names";
 import { readingsForContact } from "@/lib/pinyin";
 import { updateContact } from "../actions";
+import { ContactHistory } from "./contact-history";
 import { DeleteContactButton } from "./delete-contact-button";
 
 const uuidSchema = z.uuid();
-
-/** Cap rendered diff JSON so a huge jsonb value can't blow up the page. */
-const MAX_DIFF_CHARS = 4000;
-
-/**
- * Render-safety: `diff` values are attacker-influenced (token updates write
- * diffs too, Task 13). Rendered ONLY as JSON text inside <pre> — React's
- * default escaping applies; never dangerouslySetInnerHTML. Tolerates any
- * jsonb shape (scalar/array/object).
- */
-function formatDiff(diff: unknown): string {
-  const json = JSON.stringify(diff, null, 2) ?? String(diff);
-  return json.length > MAX_DIFF_CHARS
-    ? `${json.slice(0, MAX_DIFF_CHARS)}\n… (truncated)`
-    : json;
-}
-
-const sourceLabels: Record<string, string> = {
-  owner: "You",
-  token: "Recipient update",
-  submission: "Permalink submission",
-};
 
 export default async function ContactDetailPage({
   params,
@@ -93,51 +72,7 @@ export default async function ContactDetailPage({
         />
       </div>
 
-      <section
-        aria-label="History"
-        className="mt-6 rounded-xl border border-border bg-card p-8 shadow-sm "
-      >
-        <h2 className="text-base font-semibold tracking-tight text-foreground">
-          History
-        </h2>
-        {events.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No changes recorded yet.
-          </p>
-        ) : (
-          <ol className="mt-4 flex flex-col gap-4">
-            {events.map((event) => (
-              <li
-                key={event.id}
-                className="rounded-lg border border-border p-4 "
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-foreground">
-                    {event.source === "agent"
-                      ? `Agent: ${event.agentName ?? "removed token"}`
-                      : (sourceLabels[event.source] ?? event.source)}
-                  </span>
-                  <time
-                    dateTime={event.createdAt.toISOString()}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {event.createdAt.toLocaleString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </time>
-                </div>
-                <pre className="mt-2 overflow-x-auto rounded-lg bg-secondary/50 p-3 text-xs text-foreground/80  dark:text-muted-foreground">
-                  {formatDiff(event.diff)}
-                </pre>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <ContactHistory contact={contact} events={events} />
 
       <div className="mt-6">
         <DeleteContactButton contactId={contact.id} />
