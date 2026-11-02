@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { dbAdmin } from "@/lib/db/admin";
-import { listPendingReplies } from "./submissions";
+import { countPendingSubmissions, listPendingReplies } from "./submissions";
 
 const U = "00000000-0000-4000-8000-0000000c9101";
 const B = "10000000-0000-4000-8000-0000000c9101";
@@ -26,7 +26,7 @@ async function submit(
             ${token ? "primary" : null})`);
 }
 
-describe("listPendingReplies", () => {
+describe("pending submission queries", () => {
   beforeAll(async () => {
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);
     await dbAdmin.execute(sql`
@@ -57,5 +57,13 @@ describe("listPendingReplies", () => {
         savedBy: "primary",
       },
     ]);
+  });
+
+  it("counts every pending submission in the book, token or permalink", async () => {
+    expect(await countPendingSubmissions({ sub: U }, B)).toBe(3);
+  });
+
+  it("counts nothing for another owner's book", async () => {
+    expect(await countPendingSubmissions({ sub: "00000000-0000-4000-8000-0000000c9199" }, B)).toBe(0);
   });
 });
