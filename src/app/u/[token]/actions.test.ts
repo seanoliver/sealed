@@ -362,16 +362,30 @@ describe("submitTokenUpdate", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
-  it("puts no recipient data in the email", async () => {
+  it("names the household in the body only, with no address or email", async () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);
     const form = prefilledForm(contact, { email: "secret@tu.test", address_line1: "9 Hidden Ln" });
     await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
     await flushAfter();
-    const sent = JSON.stringify(vi.mocked(sendNotification).mock.calls);
-    for (const value of ["Ana", "Reyes", "secret@tu.test", "9 Hidden Ln", "Oslo"]) {
-      expect(sent).not.toContain(value);
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("Ana Reyes changed their details");
+    expect(sent.subject).not.toContain("Ana");
+    for (const value of ["secret@tu.test", "9 Hidden Ln", "Oslo"]) {
+      expect(JSON.stringify(sent)).not.toContain(value);
     }
+  });
+
+  it("names the household as the owner entered it, not as the recipient renamed it", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const form = prefilledForm(contact, { first_name: "Sign in", last_name: "at evil.example" });
+    await expect(submitTokenUpdate(token, {}, form)).rejects.toThrow("REDIRECT");
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("Ana Reyes changed their details");
+    expect(JSON.stringify(sent)).not.toContain("evil.example");
+    expect((await stored()).firstName).toBe("Sign in");
   });
 
   it("skips the email without APP_URL, still saving", async () => {
