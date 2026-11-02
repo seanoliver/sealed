@@ -8,6 +8,7 @@ import {
   emailCount,
   householdEdited,
   householdPatchInput,
+  isNoOpReply,
   moveCursor,
   namesFromValues,
   parseStoredLayout,
@@ -52,6 +53,7 @@ const listRow: ContactListRow = {
   },
   needsAttention: false,
   updatedAfterSend: false,
+  changedAfterSend: false,
   updatedAt: new Date("2026-10-01T12:00:00Z"),
 };
 
@@ -89,8 +91,22 @@ describe("toSheetRow", () => {
   it("shows a recipient update over the delivery status", () => {
     expect(toSheetRow(listRow, String).status).toBe("delivered");
     expect(
-      toSheetRow({ ...listRow, updatedAfterSend: true }, String).status,
+      toSheetRow({ ...listRow, updatedAfterSend: true, changedAfterSend: true }, String).status,
     ).toBe("updated");
+  });
+
+  it("shows a reply that changed nothing as confirmed, not updated", () => {
+    const row = toSheetRow({ ...listRow, updatedAfterSend: true, changedAfterSend: false }, String);
+    expect(row.status).toBe("confirmed");
+    expect(row.needsAttention).toBe(false);
+  });
+
+  it("treats only a recorded before = after as a no-op reply", () => {
+    expect(isNoOpReply({ before: { city: "A" }, after: { city: "A" }, payload: {} })).toBe(true);
+    expect(isNoOpReply({ before: { city: "A" }, after: { city: "B" } })).toBe(false);
+    expect(isNoOpReply({ before: { city: "A" }, payload: { city: "B" } })).toBe(false);
+    expect(isNoOpReply({})).toBe(false);
+    expect(isNoOpReply(null)).toBe(false);
   });
 
   it("gives a single-email contact one status and a couple one per person", () => {
@@ -382,6 +398,7 @@ describe("STATUS_RANK", () => {
       "sent",
       "delivered",
       "opened",
+      "confirmed",
       "updated",
     ]);
   });

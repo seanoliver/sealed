@@ -24,6 +24,7 @@ let token: string;
 let noAddressToken: string;
 let fixToken: string;
 let dropToken: string;
+let coupleToken: string;
 
 test.beforeAll(async ({ browser }) => {
   await clearRateLimits();
@@ -67,6 +68,25 @@ test.beforeAll(async ({ browser }) => {
       addressLine1: "3 Oak Ave",
     }),
   );
+  const coupleId = await seedContact({
+    bookId,
+    fullName: "Cleo Couple",
+    email: "cleo@e2e.test",
+    partnerEmail: "cal@e2e.test",
+    addressLine1: "5 Birch Rd",
+    city: "Portland",
+    stateRegion: "OR",
+    postalCode: "97214",
+  });
+  for (const recipient of ["primary", "partner"] as const) {
+    await seedEmailSend({
+      contactId: coupleId,
+      bookId,
+      recipient,
+      resendId: `e2e_confirm_${recipient}_${Date.now().toString(36)}`,
+    });
+  }
+  coupleToken = await seedUpdateToken(coupleId);
   noAddressToken = await seedUpdateToken(
     await seedContact({
       bookId,
@@ -114,7 +134,22 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   const row = ownerPage
     .getByRole("table", { name: "Contacts" })
     .locator("tbody tr", { hasText: "Cora Confirm" });
-  await expect(row).toContainText("Updated");
+  await expect(row).toContainText("Confirmed"); // a reply that changed nothing
+});
+
+test("a couple's row shows one Confirmed chip, not a chip per person", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${coupleToken}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: "Yes, send it here" }).click();
+  await expect(page.getByRole("heading", { name: "You're on the list" })).toBeVisible();
+
+  await ownerPage.goto("/dashboard");
+  const row = ownerPage
+    .getByRole("table", { name: "Contacts" })
+    .locator("tbody tr", { hasText: "Cleo Couple" });
+  await expect(row).toContainText("Confirmed");
+  await expect(row).not.toContainText("· Sent");
 });
 
 test("a dropped connection asks for another tap", async ({ page }) => {

@@ -9,7 +9,12 @@ import {
   rowAddress,
 } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
-import { effectiveSends, type EffectiveSends, type StatusKey } from "@/lib/contacts-sheet";
+import {
+  effectiveSends,
+  isNoOpReply,
+  type EffectiveSends,
+  type StatusKey,
+} from "@/lib/contacts-sheet";
 import { contactsToCsv } from "@/lib/csv/export";
 import { withRls } from "@/lib/db";
 import { emailSends, submissions } from "@/lib/db/schema";
@@ -84,7 +89,7 @@ export type ContactSummary = {
   missing: (GapField | "email")[];
 };
 
-const STATUS_FILTERS = ["none", ...SEND_STATUSES, "updated"] as const;
+const STATUS_FILTERS = ["none", ...SEND_STATUSES, "confirmed", "updated"] as const;
 
 function summarize(row: ContactListRow): ContactSummary {
   const { status, attention } = effectiveSends(row);
@@ -116,7 +121,7 @@ export const searchContactsInput = z.object({
     .enum(STATUS_FILTERS)
     .optional()
     .describe(
-      "Status as the dashboard shows it: 'updated' when the recipient replied after the last send, otherwise the best latest send among people who still have an email. 'none' means never emailed.",
+      "Status as the dashboard shows it: 'updated' when the recipient replied after the last send and changed something, 'confirmed' when they replied without changing anything, otherwise the best latest send among people who still have an email. 'none' means never emailed.",
     ),
   needs_attention: z
     .boolean()
@@ -231,16 +236,20 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
   const partner = latest("partner");
   const { contact, events } = detail;
   const sentTimes = [primary.sentAt, partner.sentAt].flatMap((at) => (at ? [at.getTime()] : []));
-  const updatedAfterSend =
-    sentTimes.length > 0 &&
-    events.some(
-      (event) => event.source === "token" && event.createdAt.getTime() > Math.max(...sentTimes),
-    );
+  const replies =
+    sentTimes.length > 0
+      ? events.filter(
+          (event) => event.source === "token" && event.createdAt.getTime() > Math.max(...sentTimes),
+        )
+      : [];
+  const updatedAfterSend = replies.length > 0;
+  const changedAfterSend = replies.some((event) => !isNoOpReply(event.diff));
   const { status, failureReason, attention } = effectiveSends({
     email: contact.email,
     partnerEmail: contact.partnerEmail,
     sendStatuses: { primary, partner },
     updatedAfterSend,
+    changedAfterSend,
   });
   const { legacyCountry, ...stored } = contact;
   const name = householdLine(pickStoredNames(contact));

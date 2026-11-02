@@ -8,6 +8,9 @@ const B = "10000000-0000-4000-8000-0000000c9001";
 const SOLO = "20000000-0000-4000-8000-0000000c9001";
 const COUPLE = "20000000-0000-4000-8000-0000000c9002";
 const HALF_FAILED = "20000000-0000-4000-8000-0000000c9003";
+const CONFIRMED = "20000000-0000-4000-8000-0000000c9004";
+const RESENT = "20000000-0000-4000-8000-0000000c9005";
+const AFTER_ONLY = "20000000-0000-4000-8000-0000000c9006";
 
 async function send(contactId: string, recipient: string, status: string, minutesAgo: number) {
   await dbAdmin.execute(sql`
@@ -28,16 +31,27 @@ describe("listContacts", () => {
       insert into public.contacts (id, book_id, full_name, email, partner_email) values
         (${SOLO}, ${B}, 'A Solo', 'solo@lc.test', null),
         (${COUPLE}, ${B}, 'B Couple', 'b1@lc.test', 'b2@lc.test'),
-        (${HALF_FAILED}, ${B}, 'C Half', 'c1@lc.test', 'c2@lc.test')`);
+        (${HALF_FAILED}, ${B}, 'C Half', 'c1@lc.test', 'c2@lc.test'),
+        (${CONFIRMED}, ${B}, 'D Confirmed', 'd1@lc.test', null),
+        (${RESENT}, ${B}, 'E Resent', 'e1@lc.test', null),
+        (${AFTER_ONLY}, ${B}, 'F After', 'f1@lc.test', null)`);
     await send(SOLO, "primary", "sent", 30);
     await send(SOLO, "primary", "failed", 10);
     await send(COUPLE, "primary", "delivered", 10);
     await send(COUPLE, "partner", "opened", 10);
     await send(HALF_FAILED, "primary", "opened", 10);
     await send(HALF_FAILED, "partner", "failed", 5);
+    await send(CONFIRMED, "primary", "delivered", 10);
+    await send(RESENT, "primary", "delivered", 10);
+    await send(AFTER_ONLY, "primary", "delivered", 10);
     await dbAdmin.execute(sql`
       insert into public.contact_events (contact_id, source, recipient, diff, created_at)
       values (${COUPLE}, 'token', 'partner', '{}', now() - interval '5 min')`);
+    await dbAdmin.execute(sql`
+      insert into public.contact_events (contact_id, source, recipient, diff, created_at)
+      values (${CONFIRMED}, 'token', 'primary',
+              '{"before": {"city": "Seattle"}, "after": {"city": "Seattle"}, "payload": {}}',
+              now() - interval '5 min')`);
   });
 
   afterAll(async () => {
@@ -67,6 +81,7 @@ describe("listContacts", () => {
         partner: { status: "opened" },
       },
       updatedAfterSend: true,
+      changedAfterSend: true,
     });
 
     expect(half).toMatchObject({
@@ -78,6 +93,35 @@ describe("listContacts", () => {
         partner: { status: "failed", failureReason: "rejected" },
       },
       updatedAfterSend: false,
+      changedAfterSend: false,
+    });
+  });
+
+  it("counts only replies since the latest send, and a missing before as a change", async () => {
+    // An edit, then a re-send, then a confirm: the confirm is all that's new.
+    await dbAdmin.execute(sql`
+      insert into public.contact_events (contact_id, source, recipient, diff, created_at) values
+        (${RESENT}, 'token', 'primary', '{"before": {"city": "A"}, "after": {"city": "B"}}',
+         now() - interval '20 min'),
+        (${RESENT}, 'token', 'primary', '{"before": {"city": "B"}, "after": {"city": "B"}}',
+         now() - interval '5 min'),
+        (${AFTER_ONLY}, 'token', 'primary', '{"after": {"city": "B"}}', now() - interval '5 min')`);
+    const rows = await listContacts({ sub: U });
+    expect(rows.find((row) => row.id === RESENT)).toMatchObject({
+      updatedAfterSend: true,
+      changedAfterSend: false,
+    });
+    expect(rows.find((row) => row.id === AFTER_ONLY)).toMatchObject({
+      updatedAfterSend: true,
+      changedAfterSend: true,
+    });
+  });
+
+  it("tells a no-op confirm apart from a reply that changed something", async () => {
+    const rows = await listContacts({ sub: U });
+    expect(rows.find((row) => row.id === CONFIRMED)).toMatchObject({
+      updatedAfterSend: true,
+      changedAfterSend: false,
     });
   });
 });
