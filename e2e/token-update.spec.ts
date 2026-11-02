@@ -174,8 +174,10 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   // The audit trail shows the recipient's change.
   await ownerPage.getByRole("link", { name: "Tess Token" }).click();
   const history = ownerPage.getByRole("region", { name: "History" });
-  await expect(history.getByText("Recipient update")).toBeVisible();
-  await expect(history.locator("pre").first()).toContainText("Porto");
+  const latest = history.locator("li").first();
+  await expect(latest).toContainText("Tess, through their link");
+  await expect(latest.locator("dd", { hasText: "Porto" })).toContainText("Lisbon");
+  await expect(history.locator("pre")).toHaveCount(0);
 });
 
 test("a used link renders the generic invalid page", async ({ browser }) => {

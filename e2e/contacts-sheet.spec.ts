@@ -202,9 +202,8 @@ test("Enter edits the row in place and keeps fields the row does not show", asyn
   await page.goto(`/dashboard/contacts/${adaId}`);
   await expect(page.locator("#city")).toHaveValue("Paris");
   await expect(page.locator("#kid_0_first")).toHaveValue("Byron");
-  await expect(
-    page.getByRole("region", { name: "History" }).locator("li").first(),
-  ).toContainText('"city": "Paris"');
+  const latest = page.getByRole("region", { name: "History" }).locator("li").first();
+  await expect(latest.locator("dd", { hasText: "Paris" }).locator("del")).toHaveText("London");
 });
 
 test("Escape discards the edit", async () => {

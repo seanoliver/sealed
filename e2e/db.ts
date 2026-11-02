@@ -171,6 +171,36 @@ export async function getContactEventDiffs(contactId: string): Promise<unknown[]
   return rows.map((r) => r.diff);
 }
 
+export async function seedAgentToken(opts: { userId: string; name: string }): Promise<string> {
+  const rows = await db`
+    insert into public.agent_tokens (user_id, name, token_hash, scopes)
+    values (${opts.userId}, ${opts.name}, ${generateToken().hash}, ${["read", "write"]})
+    returning id`;
+  return rows[0].id as string;
+}
+
+export async function seedContactEvent(opts: {
+  contactId: string;
+  source: "owner" | "token" | "submission" | "agent";
+  diff: unknown;
+  recipient?: "primary" | "partner";
+  agentTokenId?: string;
+  minutesAgo?: number;
+}): Promise<void> {
+  await db`
+    insert into public.contact_events (contact_id, source, recipient, agent_token_id, diff, created_at)
+    values (${opts.contactId}, ${opts.source}, ${opts.recipient ?? null}, ${opts.agentTokenId ?? null},
+            ${db.json(opts.diff as never)}, now() - make_interval(mins => ${opts.minutesAgo ?? 0}))`;
+}
+
+/** The contact as apply_token_reply snapshots it: the row minus timestamps. */
+export async function getContactSnapshot(contactId: string): Promise<Record<string, unknown>> {
+  const rows = await db`
+    select to_jsonb(c) - 'created_at' - 'updated_at' as snap
+    from public.contacts c where c.id = ${contactId}`;
+  return rows[0].snap as Record<string, unknown>;
+}
+
 export async function setContactKidsByEmail(
   email: string,
   kids: { first: string; last?: string }[],
