@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { type PostalAddress } from "@/lib/address";
-import { type StoredNames } from "@/lib/names";
+import { householdPrefill, type StoredNames } from "@/lib/names";
+import { type TokenUpdateValues } from "@/lib/validation/contact";
+import { type HouseholdValues } from "@/lib/validation/household";
 
 /** Fails closed: drift in get_contact_for_token's jsonb must never reach the recipient's DOM. */
 export const tokenDataSchema = z.object({
@@ -70,3 +72,32 @@ export const storedNames = (contact: TokenContact): StoredNames => ({
   partnerLastName: contact.partner_last_name,
   kids: contact.kids,
 });
+
+// PII: blank a disabled field's stored value here, don't just hide it. Form
+// props are embedded in the RSC payload, so it would show in the page source.
+export function recipientPrefill(data: TokenData): {
+  household: HouseholdValues;
+  defaults: TokenUpdateValues;
+} {
+  const { contact, enabled_fields } = data;
+  return {
+    household: householdPrefill(storedNames(contact), {
+      partner: enabled_fields.partner_name,
+      kids: enabled_fields.kids_names,
+    }),
+    defaults: {
+      full_name: "",
+      partner_name: "",
+      kids_names: "",
+      email: contact.email ?? "",
+      birthday: enabled_fields.birthday ? (contact.birthday ?? "") : "",
+      address_line1: contact.address_line1 ?? "",
+      address_line2: contact.address_line2 ?? "",
+      district: contact.district ?? "",
+      city: contact.city ?? "",
+      state_region: contact.state_region ?? "",
+      postal_code: contact.postal_code ?? "",
+      country_code: contact.country_code ?? "",
+    },
+  };
+}

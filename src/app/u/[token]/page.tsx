@@ -1,8 +1,6 @@
 import { type Metadata } from "next";
-import { householdPrefill } from "@/lib/names";
 import { loadTokenPage } from "./load";
-import { storedNames } from "./token-data";
-import { type TokenUpdateValues } from "@/lib/validation/contact";
+import { recipientPrefill } from "./token-data";
 import { RecipientForm } from "@/components/recipient-form";
 import { submitTokenUpdate } from "./actions";
 import { WhyExplainer } from "@/components/why-explainer";
@@ -32,28 +30,7 @@ export default async function TokenUpdatePage({
   if ("notice" in loaded) return loaded.notice;
   const { contact, enabled_fields, owner_name: ownerLabel } = loaded.data;
 
-  // PII: a disabled field's stored value must not reach the client AT ALL —
-  // form props are embedded in the RSC payload, so passing it would leak it
-  // into the page source even though no input renders it. Blank, not just
-  // hidden. Pass the enabled flags to householdPrefill for the same reason.
-  const household = householdPrefill(storedNames(contact), {
-    partner: enabled_fields.partner_name,
-    kids: enabled_fields.kids_names,
-  });
-  const defaults: TokenUpdateValues = {
-    full_name: "",
-    partner_name: "",
-    kids_names: "",
-    email: contact.email ?? "",
-    birthday: enabled_fields.birthday ? (contact.birthday ?? "") : "",
-    address_line1: contact.address_line1 ?? "",
-    address_line2: contact.address_line2 ?? "",
-    district: contact.district ?? "",
-    city: contact.city ?? "",
-    state_region: contact.state_region ?? "",
-    postal_code: contact.postal_code ?? "",
-    country_code: contact.country_code ?? "",
-  };
+  const { household, defaults } = recipientPrefill(loaded.data);
 
   // Bind the token server-side. Note: bound args may round-trip through the
   // client in cleartext (observed in dev) — acceptable here only because the

@@ -36,7 +36,7 @@ import { INVALID_LINK_MESSAGE } from "../notice";
 import { notifyOwner, ownerForToken } from "./owner";
 import { readSeenAt, storedNames, type TokenData, tokenDataSchema } from "./token-data";
 
-export type TokenUpdateState = RecipientFormState;
+export type TokenUpdateState = RecipientFormState & { saved?: true };
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
@@ -64,17 +64,32 @@ async function tokenData(token: string): Promise<TokenData | null> {
   }
 }
 
-/**
- * Recipient-facing submit for /u/[token]. Everything here is hostile input:
- * the token, the form values, the turnstile response, and the caller itself
- * (server actions are directly invokable endpoints — the page's checks are
- * NOT a precondition). The raw token is never logged anywhere in this flow.
- */
 export async function submitTokenUpdate(
   token: string,
   _prevState: TokenUpdateState,
   formData: FormData,
 ): Promise<TokenUpdateState> {
+  const result = await applyTokenUpdate(token, formData);
+  if (result === "saved") redirect("/u/thanks");
+  return result;
+}
+
+export async function saveTokenUpdate(
+  token: string,
+  _prevState: TokenUpdateState,
+  formData: FormData,
+): Promise<TokenUpdateState> {
+  const result = await applyTokenUpdate(token, formData);
+  return result === "saved" ? { saved: true } : result;
+}
+
+// Server actions are directly invokable: treat the token, form values,
+// turnstile response and caller as hostile, never rely on the page's checks,
+// and never log the raw token.
+async function applyTokenUpdate(
+  token: string,
+  formData: FormData,
+): Promise<TokenUpdateState | "saved"> {
   // 1. Token shape gate — same regex as the page; malformed tokens cost no
   //    DB work and get the same generic copy as dead ones.
   if (!TOKEN_SHAPE.test(token)) {
@@ -186,5 +201,5 @@ export async function submitTokenUpdate(
   }
 
   if (owner) after(() => notifyOwner({ ...owner, queued: outcome === "queued" }));
-  redirect("/u/thanks");
+  return "saved";
 }
