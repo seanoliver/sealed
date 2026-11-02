@@ -179,6 +179,111 @@ describe("confirmTokenAddress", () => {
     );
   });
 
+  it("tells the owner who confirmed, without the address", async () => {
+    const token = await seed();
+    await confirmTokenAddress(token, {}, new FormData());
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain(
+      "Ana Reyes confirmed their details through their personal link without changing anything.",
+    );
+    expect(sent.subject).not.toContain("Ana");
+    for (const value of ["1428 Alder St", "Portland", "ana@cf.test"]) {
+      expect(JSON.stringify(sent)).not.toContain(value);
+    }
+  });
+
+  it("still emails, with generic wording, when the reply's event can't be read", async () => {
+    const token = await seed();
+    await confirmTokenAddress(token, {}, new FormData());
+    vi.spyOn(dbAdmin, "select").mockImplementationOnce(() => {
+      throw new Error("db down");
+    });
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("Ana Reyes checked their details through their personal link.");
+  });
+
+  it("still emails when the reply's event is missing", async () => {
+    const token = await seed();
+    await confirmTokenAddress(token, {}, new FormData());
+    await dbAdmin.delete(contactEvents).where(eq(contactEvents.contactId, C));
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("Ana Reyes checked their details");
+  });
+
+  it("emails without a name when the name lookup fails", async () => {
+    const token = await seed();
+    vi.spyOn(dbAdmin, "select").mockImplementationOnce(() => {
+      throw new Error("db down");
+    });
+    await confirmTokenAddress(token, {}, new FormData());
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("One of your contacts confirmed their details");
+  });
+
+  it("judges the outcome from this recipient's reply, not the partner's", async () => {
+    const token = await seed();
+    await confirmTokenAddress(token, {}, new FormData());
+    await dbAdmin.insert(contactEvents).values({
+      contactId: C,
+      source: "token",
+      recipient: "partner",
+      diff: { before: { city: "Portland" }, after: { city: "Salem" } },
+      createdAt: new Date(Date.now() + 60_000),
+    });
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("confirmed their details");
+  });
+
+  it.each([
+    ["missing", []],
+    ["empty", [{ fullName: "", partnerName: null, kidsNames: null, firstName: null, lastName: null, partnerFirstName: null, partnerLastName: null, kids: null }]],
+  ])("emails without a name when the contact's name is %s", async (_, rows) => {
+    const token = await seed();
+    vi.spyOn(dbAdmin, "select").mockImplementationOnce(
+      () => ({ from: () => ({ where: async () => rows }) }) as never,
+    );
+    await confirmTokenAddress(token, {}, new FormData());
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("One of your contacts confirmed their details");
+  });
+
+  it("judges the outcome from this reply, not an older one or an owner edit", async () => {
+    const token = await seed();
+    await dbAdmin.insert(contactEvents).values({
+      contactId: C,
+      source: "token",
+      recipient: "primary",
+      diff: { before: { city: "Salem" }, after: { city: "Portland" } },
+      createdAt: new Date(Date.now() - 86_400_000),
+    });
+    await confirmTokenAddress(token, {}, new FormData());
+    await dbAdmin.insert(contactEvents).values({
+      contactId: C,
+      source: "owner",
+      diff: { before: { city: "Portland" }, after: { city: "Eugene" } },
+      createdAt: new Date(Date.now() + 60_000),
+    });
+    await flushAfter();
+    const [[sent]] = vi.mocked(sendNotification).mock.calls;
+    expect(sent.text).toContain("confirmed their details through their personal link without changing anything.");
+  });
+
+  it("sends nothing for a token with an unknown recipient", async () => {
+    const token = await seed();
+    vi.spyOn(dbAdmin, "execute").mockResolvedValueOnce([
+      { contact_id: C, email: "cf-owner@test.dev", recipient: "someone" },
+    ] as never);
+    await confirmTokenAddress(token, {}, new FormData());
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
   it("refuses a malformed, unknown or used token without emailing", async () => {
     await expect(
       confirmTokenAddress("short", {}, new FormData()),

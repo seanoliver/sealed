@@ -78,7 +78,7 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 - **Shape gate before DB** — both the page and the action test the token against `TOKEN_SHAPE` (`^[A-Za-z0-9_-]{43}$`) before any query; malformed tokens cost zero DB work
 - **Never logged** — the raw token exists only in the emailed URL; `logDbError` strips query params, and the sole exception is the `EMAIL_DRY_RUN=1` non-production log, which is hard-disabled when `APP_ENV=production`
 - `/u/*` responses carry `X-Robots-Tag: noindex, nofollow` (`next.config.ts`) so a leaked link can't end up in a search index
-- Emails contain no address data — only the link, which identifies nothing by itself
+- Owner notification emails contain no address data, only a link to the dashboard. The notification for a token reply may name the household in its body so the owner knows who replied, but never in the subject line
 
 ## Enumeration-proofing
 

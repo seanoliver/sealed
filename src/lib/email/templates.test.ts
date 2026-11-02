@@ -170,16 +170,50 @@ describe("waitlistApprovedEmail", () => {
 
 describe("contactUpdatedEmail", () => {
   const contactUrl = "https://self-hosted.example/dashboard/contacts/c1";
+  const changed = { contactUrl, household: "Priya Raman & Daniel Okafor", changed: true };
 
   it("links to the contact in html and text", () => {
-    const { subject, html, text } = contactUpdatedEmail({ contactUrl });
+    const { subject, html, text } = contactUpdatedEmail(changed);
     expect(subject).toBe("A contact checked their details · Sealed");
     expect(html).toContain(`href="${contactUrl}"`);
     expect(text).toContain(`View contact: ${contactUrl}`);
   });
 
+  it("names the household in the body but not the subject", () => {
+    const { subject, html, text } = contactUpdatedEmail(changed);
+    expect(text).toContain("Priya Raman & Daniel Okafor changed their details");
+    expect(html).toContain("Priya Raman &amp; Daniel Okafor changed their details");
+    for (const name of ["Priya", "Raman", "Daniel", "Okafor"]) expect(subject).not.toContain(name);
+  });
+
+  it("says whether the contact changed anything", () => {
+    const edited = contactUpdatedEmail(changed);
+    const confirmed = contactUpdatedEmail({ ...changed, changed: false });
+    expect(edited.text).toContain(
+      "changed their details through their personal link. Your address book already has the update.",
+    );
+    expect(confirmed.text).toContain(
+      "Priya Raman & Daniel Okafor confirmed their details through their personal link without changing anything.",
+    );
+    expect(confirmed.html).toContain("confirmed their details");
+    expect(confirmed.text).not.toContain("changed their details");
+    expect(confirmed.subject).toBe(edited.subject);
+  });
+
+  it("escapes the name in html and keeps it raw in text", () => {
+    const { html, text } = contactUpdatedEmail({ ...changed, household: "<b>Ana</b>" });
+    expect(html).not.toContain("<b>Ana</b>");
+    expect(html).toContain("&lt;b&gt;Ana&lt;/b&gt;");
+    expect(text).toContain("<b>Ana</b> changed their details");
+  });
+
+  it("falls back to generic wording when the name or the outcome is unknown", () => {
+    const { text } = contactUpdatedEmail({ contactUrl, household: null, changed: null });
+    expect(text).toContain("One of your contacts checked their details through their personal link.");
+  });
+
   it("escapes the URL in html", () => {
-    const { html } = contactUpdatedEmail({ contactUrl: 'https://x.example/"><b>' });
+    const { html } = contactUpdatedEmail({ ...changed, contactUrl: 'https://x.example/"><b>' });
     expect(html).not.toContain('"><b>');
   });
 });
