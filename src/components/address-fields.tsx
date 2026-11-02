@@ -16,7 +16,12 @@ import {
   type AddressField,
   type AddressFieldSpec,
 } from "@/lib/address/fields";
-import { formatEnvelope, type Envelope as EnvelopeModel } from "@/lib/address/format";
+import {
+  envelopeSlots,
+  formatEnvelope,
+  type Envelope as EnvelopeModel,
+  type EnvelopeSlot,
+} from "@/lib/address/format";
 import { normalizePostcode, normalizeState, postcodeProblem } from "@/lib/address/rules";
 import { formatPerson, householdLine } from "@/lib/names";
 
@@ -38,6 +43,20 @@ export type AddressFieldsHandle = {
 
 export type AddressFieldStyles = { input: string; label: string };
 
+export type AddressPreview = {
+  envelope: EnvelopeModel | null;
+  slots: EnvelopeSlot[];
+  name: string;
+  country: Country | null;
+  caption: ReactNode;
+  postcodeError: string | null;
+};
+
+export type AddressPreviewLayout = (parts: {
+  fields: ReactNode;
+  preview: AddressPreview;
+}) => ReactNode;
+
 type AddressFieldsProps = {
   defaults: AddressValues;
   legacyCountry?: string | null;
@@ -47,7 +66,9 @@ type AddressFieldsProps = {
   errors?: { postal_code?: string; country_code?: string };
   /** Changes with each server response, so a repeated error shows again. */
   errorsKey?: unknown;
-  preview: "below" | "beside";
+  preview: "below" | "beside" | AddressPreviewLayout;
+  /** Rows outside this set stay mounted but hidden: unmounting them would drop those fields from the save. */
+  focus?: ReadonlySet<AddressField | "country_code"> | null;
   handleRef?: Ref<AddressFieldsHandle>;
   /** Off for a saved contact: prefilling there would save a country nobody picked. */
   prefillCountry?: boolean;
@@ -190,6 +211,7 @@ export function AddressFields({
   errors,
   errorsKey,
   preview,
+  focus = null,
   handleRef,
   prefillCountry = true,
   requireStreet = false,
@@ -316,7 +338,7 @@ export function AddressFields({
   const envelope = printed && {
     ...printed,
     lines: printed.lines.map((line, i) => ({
-      text: line.text,
+      ...line,
       uppercased: line.text !== asTyped?.lines[i]?.text,
     })),
   };
@@ -406,7 +428,7 @@ export function AddressFields({
 
   const fields = (
     <div ref={anchor} className="flex min-w-0 flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5" hidden={focus !== null && !focus.has("country_code")}>
         <label htmlFor="country_code" className={styles.label}>
           Country
         </label>
@@ -444,8 +466,13 @@ export function AddressFields({
         const specs = row.fields.filter(visible);
         if (specs.length === 0) return null;
         const hasPostcode = specs.some((spec) => spec.name === "postal_code");
+        const inFocus = focus === null || specs.some((spec) => focus.has(spec.name));
         return (
-          <div key={specs.map((spec) => spec.name).join("+")} className="flex flex-col gap-1.5">
+          <div
+            key={specs.map((spec) => spec.name).join("+")}
+            className="flex flex-col gap-1.5"
+            hidden={!inFocus}
+          >
             <div
               className={
                 specs.length === 1
@@ -456,7 +483,11 @@ export function AddressFields({
               }
             >
               {specs.map((spec) => (
-                <div key={spec.name} className="flex min-w-0 flex-col gap-1.5">
+                <div
+                  key={spec.name}
+                  className="flex min-w-0 flex-col gap-1.5"
+                  hidden={focus !== null && !focus.has(spec.name)}
+                >
                   {label(spec)}
                   {control(spec)}
                 </div>
@@ -497,6 +528,20 @@ export function AddressFields({
         : "Your envelope fills in as you type your street address."}
     </div>
   );
+
+  if (typeof preview === "function") {
+    return preview({
+      fields,
+      preview: {
+        envelope,
+        slots: envelopeSlots(typed, { senderCountry }),
+        name,
+        country,
+        caption: envelope ? previewCaption(envelope, values, audience) : null,
+        postcodeError: postcodeError?.text ?? null,
+      },
+    });
+  }
 
   if (preview === "beside") {
     return (

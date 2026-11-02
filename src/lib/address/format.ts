@@ -29,7 +29,16 @@ export function rowAddress(row: AddressColumns): PostalAddress {
 export type EnvelopeLine = {
   text: string;
   uppercased: boolean;
+  tokens: FormatField[];
+  at: number;
 };
+
+export type EnvelopeSlot = {
+  tokens: FormatField[];
+  at: number;
+};
+
+export const COUNTRY_LINE_AT = Number.MAX_SAFE_INTEGER;
 
 export type Envelope = {
   lines: EnvelopeLine[];
@@ -183,8 +192,9 @@ export function formatEnvelope(
 
   let printsCountry = false;
   const lines: EnvelopeLine[] = [];
-  for (const formatLine of fmt.split("%n")) {
+  for (const [at, formatLine] of fmt.split("%n").entries()) {
     const parts = parseLine(formatLine);
+    const tokens = parts.flatMap((part) => ("field" in part ? [part.field] : []));
     const typed = renderLine(parts, raw).split("\n");
     const printed = renderLine(parts, cased).split("\n");
     const fixedName = parts.some(
@@ -193,13 +203,44 @@ export function formatEnvelope(
     printed.forEach((text, i) => {
       if (text.trim() === "") return;
       if (fixedName && text.includes(countryLine)) printsCountry = true;
-      lines.push({ text: text.trim(), uppercased: text !== typed[i] });
+      lines.push({ text: text.trim(), uppercased: text !== typed[i], tokens, at });
     });
   }
 
   const domestic = known !== null ? known.code === senderCountry : legacy === "";
-  if (!domestic && !printsCountry) lines.push({ text: countryLine, uppercased: false });
+  if (!domestic && !printsCountry) {
+    lines.push({ text: countryLine, uppercased: false, tokens: [], at: COUNTRY_LINE_AT });
+  }
   return { lines, local, country, domestic };
+}
+
+/** Name and organization lines are never slots: the editor has its own names sheet. */
+export function envelopeSlots(
+  address: PostalAddress,
+  { senderCountry }: Pick<EnvelopeOptions, "senderCountry">,
+): EnvelopeSlot[] {
+  const country =
+    getCountry(address.countryCode) ??
+    (clean(address.legacyCountry) === "" ? getCountry(senderCountry) : null);
+  const fmt = country?.fmt ?? UNKNOWN_FMT;
+  const required = country?.require ?? new Set<FormatField>(["A", "C"]);
+  const filled: Record<FormatField, boolean> = {
+    N: true,
+    O: true,
+    A: clean(address.addressLine1) !== "" || clean(address.addressLine2) !== "",
+    D: clean(address.district) !== "",
+    C: clean(address.city) !== "",
+    S: clean(address.stateRegion) !== "",
+    Z: clean(address.postalCode) !== "",
+  };
+  return fmt.split("%n").flatMap((formatLine, at) => {
+    const tokens = parseLine(formatLine)
+      .flatMap((part) => ("field" in part ? [part.field] : []))
+      .filter((token) => token !== "N" && token !== "O");
+    const empty = tokens.length > 0 && tokens.every((token) => !filled[token]);
+    const needed = tokens.some((token) => token === "A" || required.has(token));
+    return empty && needed ? [{ tokens, at }] : [];
+  });
 }
 
 export function envelopeLines(address: PostalAddress, options: EnvelopeOptions): string[] | null {

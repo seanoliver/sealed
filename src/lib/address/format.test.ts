@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { envelopeLines, formatEnvelope, type PostalAddress } from "./format";
+import {
+  COUNTRY_LINE_AT,
+  envelopeLines,
+  envelopeSlots,
+  formatEnvelope,
+  type PostalAddress,
+} from "./format";
 
 const blank: PostalAddress = {
   addressLine1: null,
@@ -37,8 +43,8 @@ describe("envelopeLines", () => {
       US,
     );
     expect(envelope?.lines).toEqual([
-      { text: "1 Main St", uppercased: false },
-      { text: "Portland, OR 97214", uppercased: false },
+      { text: "1 Main St", uppercased: false, tokens: ["A"], at: 2 },
+      { text: "Portland, OR 97214", uppercased: false, tokens: ["C", "S", "Z"], at: 3 },
     ]);
   });
 
@@ -71,11 +77,40 @@ describe("envelopeLines", () => {
       { ...US, name: "Priya Raman & Daniel Okafor" },
     );
     expect(envelope?.lines).toEqual([
-      { text: "Priya Raman & Daniel Okafor", uppercased: false },
-      { text: "Flat 2, 14 Kestrel Lane", uppercased: false },
-      { text: "BRISTOL", uppercased: true },
-      { text: "BS6 5QT", uppercased: true },
-      { text: "UNITED KINGDOM", uppercased: false },
+      { text: "Priya Raman & Daniel Okafor", uppercased: false, tokens: ["N"], at: 0 },
+      { text: "Flat 2, 14 Kestrel Lane", uppercased: false, tokens: ["A"], at: 2 },
+      { text: "BRISTOL", uppercased: true, tokens: ["C"], at: 3 },
+      { text: "BS6 5QT", uppercased: true, tokens: ["Z"], at: 4 },
+      { text: "UNITED KINGDOM", uppercased: false, tokens: [], at: COUNTRY_LINE_AT },
+    ]);
+  });
+
+  it("lists the required lines that print nothing yet, in envelope order", () => {
+    expect(envelopeSlots(blank, US)).toEqual([
+      { tokens: ["A"], at: 2 },
+      { tokens: ["C", "S", "Z"], at: 3 },
+    ]);
+    expect(
+      envelopeSlots({ ...blank, addressLine1: "14 Kestrel Lane", countryCode: "GB" }, US),
+    ).toEqual([
+      { tokens: ["C"], at: 3 },
+      { tokens: ["Z"], at: 4 },
+    ]);
+    expect(
+      envelopeSlots({ ...blank, addressLine1: "1 Main St", city: "Portland", countryCode: "US" }, US),
+    ).toEqual([]);
+  });
+
+  it("offers a slot only for lines the country needs, filled by any of their fields", () => {
+    expect(envelopeSlots({ ...blank, addressLine1: "1 Main St", countryCode: "IE" }, US)).toEqual([]);
+    expect(
+      envelopeSlots({ ...blank, addressLine2: "Unit 4", city: "Portland", stateRegion: "OR", postalCode: "97214", countryCode: "US" }, US),
+    ).toEqual([]);
+    expect(
+      envelopeSlots({ ...blank, addressLine1: "12 Sejong-daero", district: "Jongno-gu", postalCode: "03172", countryCode: "KR" }, US),
+    ).toEqual([]);
+    expect(envelopeSlots({ ...blank, addressLine1: "12 Sejong-daero", postalCode: "03172", countryCode: "KR" }, US)).toEqual([
+      { tokens: ["S", "C", "D"], at: 0 },
     ]);
   });
 

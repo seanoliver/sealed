@@ -153,7 +153,9 @@ describe("requestAddresses", () => {
       `Yes, send it here: https://app.example/u/${token}/confirm`,
     );
     expect(cal.subject).toContain("Where should");
-    expect(cal.text).not.toContain("/confirm");
+    expect(cal.text).toContain(
+      `Add your names and address: https://app.example/u/${sentLinks()["cal@ra.test"]}/confirm`,
+    );
   });
 
   it("puts the partner on the envelope only when the book collects partners", async () => {

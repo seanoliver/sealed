@@ -8,7 +8,8 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { sendNotification } from "@/lib/email/resend";
 import { householdPrefill } from "@/lib/names";
 import { INVALID_LINK_MESSAGE } from "../notice";
-import { submitTokenUpdate } from "./actions";
+import { saveTokenUpdate, submitTokenUpdate } from "./actions";
+import { redirect } from "next/navigation";
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
@@ -151,6 +152,35 @@ describe("submitTokenUpdate", () => {
     ).resolves.toMatchObject({
       error: INVALID_LINK_MESSAGE,
     });
+  });
+
+  it("saveTokenUpdate saves the same way but answers saved instead of redirecting", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await expect(
+      saveTokenUpdate(token, {}, prefilledForm(contact, { city: "Bergen" })),
+    ).resolves.toEqual({ saved: true });
+    expect(redirect).not.toHaveBeenCalled();
+    expect(await stored()).toMatchObject({ city: "Bergen", firstName: "Ana" });
+    await expect(
+      saveTokenUpdate(token, {}, prefilledForm(contact)),
+    ).resolves.toMatchObject({ error: INVALID_LINK_MESSAGE });
+  });
+
+  it("saveTokenUpdate hands field errors back without redirecting or spending the link", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const result = await saveTokenUpdate(
+      token,
+      {},
+      prefilledForm(contact, { country_code: "NL", postal_code: "1016" }),
+    );
+    expect(result.saved).toBeUndefined();
+    expect(result.fieldErrors?.postal_code).toBeDefined();
+    expect(redirect).not.toHaveBeenCalled();
+    await expect(
+      saveTokenUpdate(token, {}, prefilledForm(contact, { city: "Bergen" })),
+    ).resolves.toEqual({ saved: true });
   });
 
   it("refuses a postcode that doesn't fit the country and keeps the link", async () => {

@@ -177,7 +177,7 @@ export async function requestAddresses(
         ...addressRequestEmail({
           ownerName: scope.ownerName,
           recipientName: target.firstName,
-          updateUrl: `${appUrl}/u/${token}`,
+          updateUrl: `${appUrl}/u/${token}/confirm`,
           confirmUrl: `${appUrl}/u/${token}/confirm`,
           envelope: {
             household,

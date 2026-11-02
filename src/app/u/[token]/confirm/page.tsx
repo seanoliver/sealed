@@ -1,14 +1,12 @@
 import { type Metadata } from "next";
-import { redirect } from "next/navigation";
-import { formatEnvelope } from "@/lib/address";
-import { envelopeLine } from "@/lib/names";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { Notice } from "../../notice";
+import { saveTokenUpdate } from "../actions";
 import { loadTokenPage } from "../load";
 import { isSpentToken } from "../owner";
-import { storedNames, tokenAddress } from "../token-data";
+import { recipientPrefill } from "../token-data";
 import { confirmTokenAddress } from "./actions";
-import { ConfirmEnvelope } from "./confirm-envelope";
+import { EnvelopeEditor } from "./envelope-editor";
 import { WhyExplainer } from "@/components/why-explainer";
 
 export const metadata: Metadata = {
@@ -38,26 +36,21 @@ export default async function ConfirmAddressPage({
     return loaded.notice;
   }
   const { contact, enabled_fields, owner_name: ownerName } = loaded.data;
-
-  const household = envelopeLine(storedNames(contact), {
-    partner: enabled_fields.partner_name,
-  });
-  const envelope = formatEnvelope(tokenAddress(contact), {
-    name: household,
-    senderCountry: loaded.data.sender_country,
-  });
-  if (envelope === null) redirect(`/u/${token}`);
+  const { household, defaults } = recipientPrefill(loaded.data);
 
   return (
     <main className="mx-auto w-full max-w-md flex-1 px-4 py-10">
-      <ConfirmEnvelope
-        action={confirmTokenAddress.bind(null, token)}
+      <EnvelopeEditor
+        confirm={confirmTokenAddress.bind(null, token)}
+        save={saveTokenUpdate.bind(null, token)}
         ownerName={ownerName}
-        lines={envelope.lines}
-        name={household}
-        street={contact.address_line1 ?? ""}
-        updateHref={`/u/${token}`}
+        defaults={defaults}
+        household={household}
+        enabled={enabled_fields}
+        senderCountry={loaded.data.sender_country}
+        legacyCountry={contact.country_code ? null : contact.country}
         seenAt={loaded.data.updated_at}
+        fullFormHref={`/u/${token}`}
       />
       <div className="mt-4">
         <WhyExplainer ownerName={ownerName} />

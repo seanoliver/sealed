@@ -8,12 +8,15 @@ export {
 } from "./countries";
 export {
   addressSummary,
+  COUNTRY_LINE_AT,
   envelopeLines,
+  envelopeSlots,
   formatEnvelope,
   isLocalScript,
   rowAddress,
   type Envelope,
   type EnvelopeLine,
+  type EnvelopeSlot,
   type PostalAddress,
 } from "./format";
 
