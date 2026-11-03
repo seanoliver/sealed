@@ -77,6 +77,11 @@ begin
 
   if v_contact_id is null then return null; end if;
 
+  -- The email-change trigger skips this token: a recipient fixing their own
+  -- email keeps the link they are using.
+  perform set_config('sealed.reply_token_hash',
+    encode(extensions.digest(p_token, 'sha256'), 'hex'), true);
+
   v_first := nullif(trim(p_payload ->> 'first_name'), '');
   v_last := nullif(trim(p_payload ->> 'last_name'), '');
   if v_first is null or v_last is null then
@@ -124,6 +129,15 @@ begin
 
   -- Any change by the other person since the page loaded, even one the owner
   -- edited over since. Their no-op confirm (before = after) is not a change.
+  -- A tab opened before this recipient's own later save would silently undo it.
+  if p_seen_at is not null and v_updated_at > p_seen_at and exists (
+    select 1 from public.contact_events e
+    where e.contact_id = v_contact_id and e.created_at > p_seen_at
+      and e.source = 'token' and e.recipient = v_recipient
+      and e.diff -> 'before' is distinct from e.diff -> 'after') then
+    return 'stale';
+  end if;
+
   v_conflict := p_seen_at is not null and v_updated_at > p_seen_at and exists (
     select 1 from public.contact_events e
     where e.contact_id = v_contact_id and e.created_at > p_seen_at
@@ -226,7 +240,9 @@ create or replace function private.revoke_links_on_email_change()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   delete from public.update_tokens
-  where contact_id = new.id and recipient = tg_argv[0];
+  where contact_id = new.id and recipient = tg_argv[0]
+    and token_hash is distinct from
+        decode(nullif(current_setting('sealed.reply_token_hash', true), ''), 'hex');
   return new;
 end $$;
 

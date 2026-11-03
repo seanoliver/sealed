@@ -155,10 +155,10 @@ select isnt((select used_at from public.update_tokens
              where token_hash = extensions.digest('c7', 'sha256')), null,
   'a matching answer spends the token');
 
-select is(private.apply_token_reply('c4', '{"city": "Paris"}', now() - interval '1 hour'), 'applied',
-  'a second answer from the same person applies');
-select is((select city from public.contacts where id = '20000000-0000-4000-8000-000000095004'), 'Paris',
-  'the same person''s answer overwrites');
+select is(private.apply_token_reply('c4', '{"city": "Paris"}', now() - interval '1 hour'), 'stale',
+  'an answer from a page opened before the same person''s later answer is told to reload');
+select is((select city from public.contacts where id = '20000000-0000-4000-8000-000000095004'), 'Oslo',
+  'the stale answer does not overwrite');
 
 select is(private.apply_token_reply('c5', '{"city": "Paris"}', now() - interval '1 hour'), 'queued',
   'an owner edit after the other person''s change does not hide the collision');

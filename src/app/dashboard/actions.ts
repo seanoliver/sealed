@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
@@ -238,7 +238,6 @@ export async function requestAddresses(
                 ),
               ),
             ),
-            isNull(updateTokens.usedAt),
             lt(updateTokens.createdAt, mintedAt),
           ),
         );

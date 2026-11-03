@@ -8,6 +8,9 @@ import { type ReactNode } from "react";
 export const INVALID_LINK_MESSAGE =
   "This link is invalid or has expired. Ask the person who sent it for a fresh one.";
 
+export const STALE_REPLY_MESSAGE =
+  "You changed this from another page since opening this one. Reload to see the latest.";
+
 /** Centered card used by every recipient-facing terminal state. */
 export function Notice({
   title,
