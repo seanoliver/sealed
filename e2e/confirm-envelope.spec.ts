@@ -6,6 +6,7 @@ import {
   seedBook,
   seedContact,
   seedEmailSend,
+  seedOwnerBook,
   seedUpdateToken,
 } from "./db";
 import {
@@ -27,6 +28,9 @@ let dropToken: string;
 let coupleToken: string;
 let guardToken: string;
 let lostToken: string;
+let familyToken: string;
+let zipToken: string;
+const familyOwnerEmail = uniqueEmail("confirm-family-owner");
 
 test.beforeAll(async ({ browser }) => {
   await clearRateLimits();
@@ -112,14 +116,46 @@ test.beforeAll(async ({ browser }) => {
       email: "satya@e2e.test",
     }),
   );
+  zipToken = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Zed Zip",
+      email: "zed@e2e.test",
+      addressLine1: "2217 Alder Street",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+    }),
+  );
+  const family = await seedOwnerBook({
+    email: familyOwnerEmail,
+    displayName: "Sean & Tina",
+    slug: uniqueSlug("confirm-family"),
+    enabledFields: { partner_name: true, kids_names: true, birthday: false },
+  });
+  familyToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Maya Chen",
+      email: "maya@e2e.test",
+      addressLine1: "2217 Alder Street",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: { firstName: "Maya", lastName: "Chen" },
+    }),
+  );
 });
 
 test.beforeEach(clearRateLimits);
 
 test.afterAll(async () => {
   await cleanupUser(ownerEmail);
+  await cleanupUser(familyOwnerEmail);
   await ownerPage.close();
 });
+
+const saved = (page: Page) => page.getByRole("heading", { name: "Saved. Your card goes here." });
 
 test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   const context = await browser.newContext();
@@ -128,26 +164,31 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   await page.goto(`/u/${token}/confirm`);
 
   await expect(
-    page.getByRole("heading", {
-      name: "Send Confirm Owner's card to this envelope?",
-    }),
+    page.getByRole("heading", { name: "Will your holiday card reach you here?" }),
   ).toBeVisible();
+  await expect(page.getByText("From Confirm Owner")).toBeVisible();
+  await expect(
+    page.getByText("Only Confirm Owner sees what you enter. It isn't sold or shared."),
+  ).toBeVisible();
+  await expect(page.getByText("Tap any line to fix it")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sealed" })).toHaveAttribute("href", "/about");
+  await expect(page.getByText("A small project by Sean Oliver")).toBeVisible();
+  await expect(page.getByText("Why am I getting this?")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Use the full form instead" })).toHaveCount(0);
   const envelope = page.locator("address");
-  await expect(envelope).toHaveText(
-    "Cora Confirm1428 Alder StPortland, OR 97214",
-  );
+  await expect(envelope).toHaveText("Cora Confirm1428 Alder StPortland, OR 97214");
   expect(await page.content()).not.toContain("Hidden Partner");
 
   await waitForTurnstile(page);
   await page.getByRole("button", { name: "Yes, send it here" }).click();
-  await expect(
-    page.getByRole("heading", { name: "You're on the list" }),
-  ).toBeVisible();
+  await expect(saved(page)).toBeVisible();
+  await expect(page.getByText("You confirmed this address. Nothing changed.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What changed" })).toHaveCount(0);
+  await expect(page.getByText("This link keeps working.")).toBeVisible();
 
+  // Links are reusable until they expire: the envelope opens again.
   await page.goto(`/u/${token}/confirm`);
-  await expect(
-    page.getByRole("heading", { name: "You're already on the list" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Cora Confirm\. Edit/ })).toBeVisible();
   await context.close();
 
   await ownerPage.goto("/dashboard");
@@ -162,7 +203,7 @@ test("a couple's row shows one Confirmed chip, not a chip per person", async ({ 
   await page.goto(`/u/${coupleToken}/confirm`);
   await waitForTurnstile(page);
   await page.getByRole("button", { name: "Yes, send it here" }).click();
-  await expect(page.getByRole("heading", { name: "You're on the list" })).toBeVisible();
+  await expect(saved(page)).toBeVisible();
 
   await ownerPage.goto("/dashboard");
   const row = ownerPage
@@ -185,24 +226,20 @@ test("a dropped connection asks for another tap", async ({ page }) => {
     return route.continue();
   });
   await page.getByRole("button", { name: /^Email:/ }).click();
-  const details = page.getByRole("dialog", { name: "Email" });
-  await details.locator("#email").fill("dee.new@e2e.test");
-  await details.getByRole("button", { name: "Done" }).click();
+  await page.locator("#email").fill("dee.new@e2e.test");
+  await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: "Send it here · 1 change" }).click();
-  await expect(
-    page.getByText("The connection dropped. Tap again."),
-  ).toBeVisible();
-  await expect(page.locator("#email")).toHaveValue("dee.new@e2e.test");
+  await expect(page.getByText("The connection dropped. Tap again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Email:/ })).toContainText("dee.new@e2e.test");
   await page.evaluate(() =>
     (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
   );
   await page.getByRole("button", { name: "Send it here · 1 change" }).click();
-  await expect(
-    page.getByRole("heading", { name: "You're on the list" }),
-  ).toBeVisible();
+  await expect(saved(page)).toBeVisible();
+  await expect(page.getByText("Email: dee.new@e2e.test")).toBeVisible();
 });
 
-test("a retry after a lost save response says the link is used and keeps the edits", async ({ page }) => {
+test("a retry after a lost save response keeps the edits and saves", async ({ page }) => {
   await stubTurnstile(page);
   await page.goto(`/u/${lostToken}/confirm`);
   await waitForTurnstile(page);
@@ -215,19 +252,17 @@ test("a retry after a lost save response says the link is used and keeps the edi
     }
     return route.continue();
   });
-  await page.getByRole("button", { name: /^Email:/ }).click();
-  const details = page.getByRole("dialog", { name: "Email" });
-  await details.locator("#email").fill("lu.new@e2e.test");
-  await details.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: /^8 Fir Ln\. Edit/ }).click();
+  await page.locator("#address_line1").fill("18 Fir Ln");
+  await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: "Send it here · 1 change" }).click();
   await expect(page.getByText("The connection dropped. Tap again.")).toBeVisible();
+  await expect(page.locator("address")).toContainText("18 Fir Ln");
   await page.evaluate(() =>
     (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
   );
   await page.getByRole("button", { name: "Send it here · 1 change" }).click();
-  await expect(page.getByText("This link is invalid or has expired.", { exact: false })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "You're on the list" })).toBeHidden();
-  await expect(page.locator("#email")).toHaveValue("lu.new@e2e.test");
+  await expect(saved(page)).toBeVisible();
 });
 
 test("the button waits for the bot check", async ({ page }) => {
@@ -263,18 +298,27 @@ test("a failed bot check keeps the button disabled until a retry solves it", asy
   ).toBeEnabled();
 });
 
-test("the full form is still one link away", async ({ page }) => {
+test("edits survive moving between lines, and Escape closes a line", async ({ page }) => {
   await stubTurnstile(page);
   await page.goto(`/u/${fixToken}/confirm`);
+  await page.getByRole("button", { name: /^Finn Fix\. Edit/ }).click();
+  // One person: inputs straight away, and no "First person" label.
+  await expect(page.locator("#first_name")).toBeFocused();
+  await expect(page.getByText("First person")).toHaveCount(0);
+  await page.locator("#last_name").fill("Fixer");
+  await expect(page.locator("address")).toContainText("Finn Fixer");
   await page.getByRole("button", { name: /^9 Elm St\. Edit/ }).click();
-  await page.getByRole("link", { name: "Use the full form instead" }).click();
-  await expect(page).toHaveURL(new RegExp(`/u/${fixToken}$`));
-  await expect(
-    page.getByRole("button", { name: "Update my details" }),
-  ).toBeVisible();
+  await expect(page.locator("#address_line1")).toBeVisible();
+  await expect(page.locator("#last_name")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#address_line1")).toBeHidden();
+  await expect(page.getByRole("button", { name: /^9 Elm St\. Edit/ })).toBeFocused();
+  await page.getByRole("button", { name: /^Finn Fixer\. Edit/ }).click();
+  await expect(page.locator("#last_name")).toHaveValue("Fixer");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("tapping a line edits just that line, and sending saves the changes", async ({
+test("tapping a line edits it in place, a ZIP fills city and state, and sending saves", async ({
   page,
 }) => {
   await stubTurnstile(page);
@@ -286,36 +330,114 @@ test("tapping a line edits just that line, and sending saves the changes", async
   await expect(page.getByRole("button", { name: "Yes, send it here" })).toBeEnabled();
 
   await page.getByRole("button", { name: /^9 Elm St\. Edit/ }).click();
-  const sheet = page.getByRole("dialog", { name: "Street address" });
-  await expect(sheet).toBeVisible();
-  await expect(sheet.locator("#city")).toBeHidden();
-  await sheet.locator("#address_line1").fill("11 Elm St");
-  await expect(page.locator("address")).toContainText("11 Elm St");
-  await sheet.getByRole("button", { name: "Done" }).click();
-  await expect(sheet).toBeHidden();
+  const envelope = page.locator("address");
+  await expect(envelope.locator("#address_line1")).toBeVisible();
+  await expect(page.locator("#city")).toBeHidden();
+  await envelope.locator("#address_line1").fill("11 Elm St");
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(envelope.locator("#address_line1")).toHaveCount(0);
+  await expect(envelope).toContainText("11 Elm St");
 
   await page.getByRole("button", { name: "+ Add city, state and ZIP code" }).click();
-  const city = page.getByRole("dialog", { name: "City, state and ZIP code" });
-  await city.locator("#city").fill("Portland");
-  await city.locator("#state_region").selectOption("OR");
-  await city.locator("#postal_code").fill("972");
-  await city.getByRole("button", { name: "Done" }).click();
-  await expect(city.locator("#postal_code-error")).toBeVisible();
-  await city.locator("#postal_code").fill("97214");
-  await city.getByRole("button", { name: "Done" }).click();
-  await expect(city).toBeHidden();
+  // ZIP first: it sits above city and state.
+  const zip = envelope.locator("#postal_code");
+  const zipBox = await zip.boundingBox();
+  const cityBox = await envelope.locator("#city").boundingBox();
+  expect(zipBox!.y).toBeLessThan(cityBox!.y);
+  await zip.fill("972");
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#postal_code-error")).toBeVisible();
+  await zip.fill("97214");
+  await expect(envelope.locator("#city")).toHaveValue("Portland");
+  await expect(envelope.locator("#state_region")).toHaveValue("OR");
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(zip).toHaveCount(0);
 
   await page.getByRole("button", { name: "Send it here · 2 changes" }).click();
-  await expect(
-    page.getByRole("heading", { name: "You're on the list" }),
-  ).toBeVisible();
+  await expect(saved(page)).toBeVisible();
   await expect(page.locator("address")).toHaveText("Finn Fix11 Elm StPortland, OR 97214");
+  const changes = page.getByRole("region", { name: "What changed" });
+  await expect(changes).toContainText("9 Elm St");
+  await expect(changes).toContainText("11 Elm St, Portland, OR 97214");
 
   await ownerPage.goto("/dashboard");
   const row = ownerPage
     .getByRole("table", { name: "Contacts" })
     .locator("tbody tr", { hasText: "Finn Fix" });
   await expect(row).toContainText("11 Elm St");
+});
+
+test("a ZIP that disagrees with the city offers a fix or keeps theirs, and Edit again reopens it", async ({
+  page,
+}) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${zipToken}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: /^Portland, OR 97214\. Edit/ }).click();
+  const envelope = page.locator("address");
+  await envelope.locator("#postal_code").fill("94112");
+  await expect(envelope.getByText("94112 is in San Francisco, CA")).toBeVisible();
+  // Advisory: the button never blocks on it.
+  await expect(page.getByRole("button", { name: /^Send it here/ })).toBeEnabled();
+  await envelope.getByRole("button", { name: "Keep mine" }).click();
+  await expect(envelope.getByText("94112 is in San Francisco, CA")).toHaveCount(0);
+  await expect(envelope.locator("#city")).toHaveValue("Portland");
+
+  await envelope.locator("#postal_code").fill("94110");
+  await expect(envelope.getByText("94110 is in San Francisco, CA")).toBeVisible();
+  await envelope.getByRole("button", { name: "Use San Francisco, CA" }).click();
+  await expect(envelope.locator("#city")).toHaveValue("San Francisco");
+  await expect(envelope.locator("#state_region")).toHaveValue("CA");
+  await expect(envelope.getByText("is in San Francisco")).toHaveCount(0);
+  await envelope.getByRole("button", { name: "Done" }).click();
+
+  await page.getByRole("button", { name: "Send it here · 1 change" }).click();
+  await expect(saved(page)).toBeVisible();
+  const changes = page.getByRole("region", { name: "What changed" });
+  await expect(changes).toContainText("2217 Alder Street, Portland, OR 97214");
+  await expect(changes).toContainText("2217 Alder Street, San Francisco, CA 94110");
+  await expect(page.locator("[data-changed]")).toHaveText(["San Francisco, CA 94110"]);
+
+  await page.getByRole("button", { name: "Edit again" }).click();
+  await expect(
+    page.getByRole("button", { name: /^San Francisco, CA 94110\. Edit/ }),
+  ).toBeVisible();
+});
+
+test("a recipient adds people on the envelope itself", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${familyToken}/confirm`);
+  await waitForTurnstile(page);
+  await expect(page.getByText("Only Sean & Tina see what you enter.")).toBeVisible();
+  await page.getByRole("button", { name: /^Maya Chen\. Edit/ }).click();
+  const names = page.getByRole("group", { name: "Names on the envelope" });
+  await expect(names).toBeVisible();
+  await expect(page.getByText("Names on the envelope")).toHaveCount(0);
+  await expect(page.getByText("First person")).toHaveCount(0);
+
+  await names.getByRole("button", { name: "Add a person" }).click();
+  await names.getByLabel("Second person's first name").fill("Jordan");
+  await names.getByLabel("Second person's last name").fill("Lee");
+  await names.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(names.getByRole("button", { name: "Edit Jordan Lee" })).toBeVisible();
+  await expect(names.getByRole("button", { name: "Remove Jordan Lee" })).toBeVisible();
+
+  await names.getByRole("button", { name: "Add kids" }).click();
+  await names.getByLabel("Child 1's first name").fill("Theo");
+  await names.getByLabel("Child 1's last name").fill("Lee");
+  await names.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(names.getByRole("button", { name: "Edit Theo Lee" })).toBeVisible();
+
+  // An abandoned add leaves nothing behind.
+  await names.getByRole("button", { name: "Add kids" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(names).toHaveCount(0);
+  await expect(page.locator("address")).toContainText("Maya Chen & Jordan Lee");
+
+  await page.getByRole("button", { name: "Send it here · 1 change" }).click();
+  await expect(saved(page)).toBeVisible();
+  const changes = page.getByRole("region", { name: "What changed" });
+  await expect(changes.getByRole("listitem")).toHaveText(["Added Jordan Lee", "Added Theo Lee"]);
 });
 
 test("a bad postcode keeps earlier edits and sends the recipient back to it", async ({
@@ -326,37 +448,30 @@ test("a bad postcode keeps earlier edits and sends the recipient back to it", as
   await waitForTurnstile(page);
 
   await page.getByRole("button", { name: /^Gia Guard\. Edit/ }).click();
-  const names = page.getByRole("dialog", { name: "Names on the envelope" });
-  await names.locator("#last_name").fill("Guardian");
-  await names.getByRole("button", { name: "Done" }).click();
+  await page.locator("#last_name").fill("Guardian");
+  await page.getByRole("button", { name: "Done" }).click();
 
   await page.getByRole("button", { name: "+ Add city, state and ZIP code" }).click();
-  const city = page.getByRole("dialog", { name: "City, state and ZIP code" });
-  await city.locator("#city").fill("Portland");
-  await city.locator("#state_region").selectOption("OR");
-  await city.locator("#postal_code").fill("972");
-  await city.getByRole("button", { name: "Done" }).click();
-  await expect(city.locator("#postal_code-error")).toBeVisible();
-  await expect(page.locator("address")).toContainText("Gia Guardian");
-  await expect(city.locator("#postal_code")).toHaveValue("972");
-  await expect(page.locator(".shake-x")).toHaveCount(0);
-  await city.getByRole("button", { name: "Done" }).click();
+  const envelope = page.locator("address");
+  await envelope.locator("#city").fill("Portland");
+  await envelope.locator("#state_region").selectOption("OR");
+  await envelope.locator("#postal_code").fill("972");
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#postal_code-error")).toBeVisible();
+  await expect(envelope).toContainText("Gia Guardian");
+  await expect(envelope.locator("#postal_code")).toHaveValue("972");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /^Gia Guardian\. Edit/ }).click();
-  expect(await page.locator(".shake-x").count()).toBe(0);
+  await expect(page.locator("#last_name")).toHaveValue("Guardian");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: /^Portland, OR 972\. Edit/ }).click();
 
-  await page.keyboard.press("Escape");
-  await expect(city).toBeHidden();
   await page.getByRole("button", { name: /^Send it here/ }).click();
-  await expect(city).toBeVisible();
-  await expect(city.locator("#postal_code")).toBeFocused();
+  await expect(envelope.locator("#postal_code")).toBeFocused();
 
-  await city.locator("#postal_code").fill("97214");
-  await city.getByRole("button", { name: "Done" }).click();
+  await envelope.locator("#postal_code").fill("97214");
+  await envelope.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: /^Send it here/ }).click();
-  await expect(page.getByRole("heading", { name: "You're on the list" })).toBeVisible();
+  await expect(saved(page)).toBeVisible();
   await expect(page.locator("address")).toContainText("Gia Guardian");
 });
 
@@ -370,29 +485,25 @@ test("a contact with no address adds one line by line", async ({ page }) => {
   ).toBeDisabled();
 
   await page.getByRole("button", { name: "+ Add street address" }).click();
-  const street = page.getByRole("dialog", { name: "Street address" });
-  await expect(street.getByText("1 of 2")).toBeVisible();
-  await street.locator("#address_line1").fill("1550 Larkin St");
-  await street.getByRole("button", { name: "Next" }).click();
-  const city = page.getByRole("dialog", { name: "City, state and ZIP code" });
-  await expect(city.getByText("2 of 2")).toBeVisible();
-  await city.locator("#city").fill("San Francisco");
-  await city.locator("#state_region").selectOption("CA");
-  await city.locator("#postal_code").fill("94109");
-  await city.getByRole("button", { name: "Done" }).click();
+  const envelope = page.locator("address");
+  await envelope.locator("#address_line1").fill("1550 Larkin St");
+  await envelope.getByRole("button", { name: "Next" }).click();
+  await envelope.locator("#postal_code").fill("94109");
+  await expect(envelope.locator("#city")).toHaveValue("San Francisco");
+  await expect(envelope.locator("#state_region")).toHaveValue("CA");
+  await envelope.getByRole("button", { name: "Done" }).click();
 
   await page.getByRole("button", { name: /^Send it here/ }).click();
-  const names = page.getByRole("dialog", { name: "Names on the envelope" });
+  const names = page.getByRole("group", { name: "Names on the envelope" });
   await expect(names).toBeVisible();
+  await expect(page.locator("#last_name")).toBeFocused();
   await names.locator("#last_name").fill("Rao");
-  await names.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
   await page.evaluate(() =>
     (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
   );
   await page.getByRole("button", { name: /^Send it here/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "You're on the list" }),
-  ).toBeVisible();
+  await expect(saved(page)).toBeVisible();
 });
 
 test("unknown and malformed tokens get the generic page on /confirm", async ({

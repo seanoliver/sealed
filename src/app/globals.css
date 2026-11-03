@@ -138,17 +138,6 @@
     filter: blur(3px);
   }
 }
-@keyframes sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-}
-@keyframes sheet-pop {
-  from {
-    opacity: 0;
-    transform: translateX(-0.5rem) scale(0.97);
-  }
-}
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -190,17 +179,6 @@
 .envelope-rise [data-envelope-slot] {
   animation: envelope-line 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   animation-delay: calc(var(--i, 0) * 80ms + 220ms);
-}
-.sheet-panel {
-  animation: sheet-up 0.42s cubic-bezier(0.2, 0.9, 0.25, 1) both;
-}
-@media (min-width: 80rem) {
-  .sheet-panel {
-    animation-name: sheet-pop;
-  }
-}
-.sheet-backdrop {
-  animation: fade-in 0.25s both;
 }
 .shake-x {
   animation: shake-x 0.42s;

@@ -3,43 +3,58 @@
 import {
   useActionState,
   useEffect,
-  useId,
+  useEffectEvent,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { CircleAlert, Lock } from "lucide-react";
 import {
   AddressFields,
   type AddressFieldsHandle,
   type AddressPreview,
 } from "@/components/address-fields";
-import { HouseholdFields } from "@/components/household-fields";
 import { type EnabledFields } from "@/components/recipient-fields";
-import { inputClasses, labelClasses } from "@/components/recipient-field-styles";
 import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-widget";
 import { type Country, type FormatField } from "@/lib/address/countries";
 import { fieldLabel, type AddressField } from "@/lib/address/fields";
 import { COUNTRY_LINE_AT } from "@/lib/address/format";
+import { type ZipPlace } from "@/lib/address/us-zip";
+import { ownerVerb } from "@/lib/owner-name";
 import { cn } from "@/lib/utils";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
 import { type TokenUpdateState } from "../actions";
 import { type ConfirmState } from "./actions";
+import {
+  draftFromValues,
+  envelopeInputClasses,
+  envelopeLabelClasses,
+  HouseholdInputs,
+  NamesEditor,
+  personWithError,
+  pruneDraft,
+  valuesFromDraft,
+  type HouseholdDraft,
+} from "./envelope-names";
+import { whatChanged, type Change, type ReplySnapshot } from "./what-changed";
+import { lookupZip } from "./zip-action";
 
 type FormField = AddressField | "country_code";
 
-type Sheet =
+/** The one line open for editing on the envelope, if any. */
+type Open =
   | { kind: "names" }
   | { kind: "details" }
   | { kind: "address"; tokens: FormatField[]; at: number; slot: boolean };
 
+type Saved = { lines: { text: string; changed: boolean }[]; changes: Change[] };
+
 type EditorState = {
   error?: string;
   done?: true;
-  values?: TokenUpdateValues;
-  household?: HouseholdValues;
   fieldErrors?: TokenUpdateState["fieldErrors"];
 };
 
@@ -47,13 +62,14 @@ type Props = {
   confirm: (state: ConfirmState, formData: FormData) => Promise<ConfirmState>;
   save: (state: TokenUpdateState, formData: FormData) => Promise<TokenUpdateState>;
   ownerName: string;
+  /** "Sean Oliver and Tina Hee" for the From line; the owner name when unset. */
+  senderNames: string;
   defaults: TokenUpdateValues;
   household: HouseholdValues;
   enabled: EnabledFields;
   senderCountry: string;
   legacyCountry: string | null;
   seenAt: string;
-  fullFormHref: string;
 };
 
 const TOKEN_FIELDS: Record<FormatField, AddressField[]> = {
@@ -69,10 +85,10 @@ const TOKEN_FIELDS: Record<FormatField, AddressField[]> = {
 const NAME_KEY = /^(first_name|last_name|partner_|kid_|kids_section)/;
 const IGNORED_KEYS = new Set(["cf-turnstile-response", "seen_at"]);
 
-function sheetFields(sheet: Sheet & { kind: "address" }): FormField[] {
-  if (sheet.at === COUNTRY_LINE_AT) return ["country_code"];
-  const fields: FormField[] = sheet.tokens.flatMap((token) => TOKEN_FIELDS[token]);
-  return sheet.slot && sheet.tokens.includes("A") ? ["country_code", ...fields] : fields;
+function openFields(open: Open & { kind: "address" }): FormField[] {
+  if (open.at === COUNTRY_LINE_AT) return ["country_code"];
+  const fields: FormField[] = open.tokens.flatMap((token) => TOKEN_FIELDS[token]);
+  return open.slot && open.tokens.includes("A") ? ["country_code", ...fields] : fields;
 }
 
 function lineKeys(tokens: FormatField[], at: number): (key: string) => boolean {
@@ -140,6 +156,35 @@ function slotLabel(tokens: FormatField[], country: Country | null): string {
   return tokens.includes("N") ? "your names" : midSentence(lineTitle(tokens, 0, country));
 }
 
+const ZIP5 = /^(\d{5})(-\d{4})?$/;
+const norm = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+
+/** True when the typed city or state disagrees with where the ZIP is. Blank fields agree. */
+function disagrees(place: ZipPlace, { city, state }: { city: string; state: string }): boolean {
+  const cityOk = city.trim() === "" || norm(city) === norm(place.city);
+  const stateOk = state.trim() === "" || state.trim().toUpperCase() === place.state;
+  return !(cityOk && stateOk);
+}
+
+/** Looks a ZIP up once per mount; key it by ZIP. */
+function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | null) => void }) {
+  const report = useEffectEvent(onPlace);
+  useEffect(() => {
+    let live = true;
+    lookupZip(zip).then(
+      (place) => {
+        if (live) report(place);
+      },
+      // Advisory only: a failed lookup just means no suggestion.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [zip]);
+  return null;
+}
+
 function Postmark({ date }: { date: string }) {
   return (
     <svg
@@ -164,31 +209,79 @@ function Postmark({ date }: { date: string }) {
   );
 }
 
-function Paper({ children, stamp, className }: { children: ReactNode; stamp?: ReactNode; className?: string }) {
+function Paper({
+  children,
+  from,
+  stamp,
+  className,
+}: {
+  children: ReactNode;
+  from: string;
+  stamp?: ReactNode;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        "relative rounded-lg border border-border bg-background px-4 pt-4 pb-5 shadow-[0_14px_26px_-18px_rgb(0_0_0/0.35)]",
+        "relative rounded-lg border border-border bg-card px-4 pt-3.5 pb-6 shadow-[0_14px_26px_-18px_rgb(0_0_0/0.35)]",
         className,
       )}
     >
-      <div aria-hidden="true" className="relative ml-auto h-11 w-9 rounded-sm border border-dashed border-border">
-        {stamp}
+      <div className="flex items-start justify-between gap-3">
+        <span className="pt-0.5 text-[11px] text-muted-foreground">{from}</span>
+        <div aria-hidden="true" className="relative h-11 w-9 shrink-0 rounded-sm border border-dashed border-border">
+          {stamp}
+        </div>
       </div>
       {children}
     </div>
   );
 }
 
-function DoneCard({ ownerName, lines }: { ownerName: string; lines: string[] }) {
+function ChangeItem({ change }: { change: Change }) {
+  const strong = (text: string) => <strong className="font-semibold text-foreground">{text}</strong>;
+  switch (change.kind) {
+    case "added":
+      return <>Added {strong(change.name)}</>;
+    case "removed":
+      return <>Removed {strong(change.name)}</>;
+    case "renamed":
+      return (
+        <>
+          <span className="text-muted-foreground line-through">{change.from}</span> → {strong(change.to)}
+        </>
+      );
+    case "address":
+      return (
+        <span className="flex flex-col">
+          {change.from ? <span className="text-muted-foreground line-through">{change.from}</span> : null}
+          <span>{change.to || "No address"}</span>
+        </span>
+      );
+    case "email":
+      return change.to ? <>Email: {strong(change.to)}</> : <>Removed your email</>;
+    case "birthday":
+      return change.to ? <>Birthday: {strong(change.to)}</> : <>Removed your birthday</>;
+  }
+}
+
+function SavedView({ ownerName, saved }: { ownerName: string; saved: Saved }) {
   const [date] = useState(() =>
     new Date()
       .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
       .toUpperCase(),
   );
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
   return (
-    <div className="flex flex-col gap-6 rounded-xl border border-border bg-card p-7 shadow-sm">
+    <div className="flex flex-col gap-5">
+      <h1 ref={headingRef} tabIndex={-1} className="font-serif text-[1.65rem] leading-tight text-foreground outline-none">
+        Saved. Your card goes here.
+      </h1>
       <Paper
+        from={ownerName}
         className="envelope-rise"
         stamp={
           <span className="stamp-land absolute inset-0.5 grid place-items-center rounded-[2px] bg-primary font-serif text-base font-semibold text-primary-foreground outline-2 -outline-offset-[3px] outline-background outline-dotted">
@@ -197,20 +290,52 @@ function DoneCard({ ownerName, lines }: { ownerName: string; lines: string[] }) 
         }
       >
         <Postmark date={date} />
-        <address className="mt-3 pl-6 font-serif text-lg leading-relaxed not-italic text-foreground">
-          {lines.map((line, i) => (
-            <span key={i} className="block">
-              {line}
+        <address
+          aria-label="Your envelope"
+          className="mt-4 flex flex-col items-start gap-0.5 pl-6 font-serif text-lg leading-relaxed not-italic text-foreground"
+        >
+          {saved.lines.map((line, i) => (
+            <span
+              key={i}
+              data-changed={line.changed || undefined}
+              className={cn("block", line.changed && "-mx-1 rounded bg-accent px-1 text-accent-foreground")}
+            >
+              {line.text}
             </span>
           ))}
         </address>
       </Paper>
-      <div className="fade-in-late flex flex-col gap-2 text-center">
-        <h1 className="font-serif text-2xl leading-tight text-foreground">You&apos;re on the list</h1>
+      {saved.changes.length > 0 ? (
+        <section
+          aria-labelledby="what-changed"
+          className="rounded-xl border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground"
+        >
+          <h2 id="what-changed" className="mb-1 font-semibold">
+            What changed
+          </h2>
+          <ul className="flex flex-col gap-1">
+            {saved.changes.map((change, i) => (
+              <li key={i}>
+                <ChangeItem change={change} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
         <p className="text-sm text-muted-foreground">
-          {ownerName}&apos;s card will go to this envelope. You can close this page.
+          You confirmed this address. Nothing changed.
         </p>
-      </div>
+      )}
+      <p className="text-center text-sm leading-relaxed text-muted-foreground">
+        Need to change something later? This link keeps working.
+      </p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="h-11 self-center rounded-lg px-4 text-sm font-semibold text-primary transition-colors hover:bg-accent"
+      >
+        Edit again
+      </button>
     </div>
   );
 }
@@ -219,29 +344,37 @@ export function EnvelopeEditor({
   confirm,
   save,
   ownerName,
+  senderNames,
   defaults,
   household,
   enabled,
   senderCountry,
   legacyCountry,
   seenAt,
-  fullFormHref,
 }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const addressRef = useRef<AddressFieldsHandle>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const envelopeRef = useRef<HTMLDivElement>(null);
+  const openRef = useRef<HTMLDivElement>(null);
   const shakeRef = useRef<HTMLDivElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
+  const returnTo = useRef<string | null>(null);
   const baseline = useRef<Map<string, string> | null>(null);
+  const before = useRef<{ lines: string[]; address: string[] } | null>(null);
   const dirtyRef = useRef(false);
-  const titleId = useId();
+  const nextKey = useRef(household.kids.length + 2);
 
-  const [sheet, setSheet] = useState<Sheet | null>(null);
-  const [chain, setChain] = useState<{ step: number; total: number } | null>(null);
+  const [open, setOpen] = useState<Open | null>(null);
+  const [draft, setDraft] = useState<HouseholdDraft>(() => draftFromValues(household));
+  const [editingPerson, setEditingPerson] = useState<number | null>(null);
+  const [email, setEmail] = useState(defaults.email);
+  const [birthday, setBirthday] = useState(defaults.birthday);
   const [changed, setChanged] = useState<ReadonlySet<string>>(new Set());
   const [touched, setTouched] = useState(false);
-  const [sentLines, setSentLines] = useState<string[]>([]);
   const [turnstile, setTurnstile] = useState<TurnstileStatus>("checking");
+  const [zipPlaces, setZipPlaces] = useState<Record<string, ZipPlace | null>>({});
+  const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+  /** What the latest submit sent, shown once it saves. */
+  const [sent, setSent] = useState<Saved>({ lines: [], changes: [] });
 
   const [state, formAction, pending] = useActionState(
     async (previous: EditorState, formData: FormData): Promise<EditorState> => {
@@ -257,17 +390,9 @@ export function EnvelopeEditor({
         const result = await save({}, formData);
         return result.saved
           ? { done: true }
-          : {
-              error: result.error,
-              values: result.values,
-              household: result.household,
-              fieldErrors: result.fieldErrors,
-            };
+          : { error: result.error, fieldErrors: result.fieldErrors };
       } catch {
-        // React resets uncontrolled inputs after the action; echo them back.
-        const values = { ...(previous.values ?? defaults), email: String(formData.get("email") ?? "") };
-        if (formData.has("birthday")) values.birthday = String(formData.get("birthday"));
-        return { ...previous, values, error: "The connection dropped. Tap again." };
+        return { ...previous, error: "The connection dropped. Tap again." };
       }
     },
     {},
@@ -276,14 +401,18 @@ export function EnvelopeEditor({
   const [seenState, setSeenState] = useState(state);
   if (state !== seenState) {
     setSeenState(state);
-    const nameError = Object.entries(state.fieldErrors ?? {}).some(
-      ([key, message]) => key !== "postal_code" && message,
-    );
-    if (nameError) {
-      setChain(null);
-      setSheet({ kind: "names" });
+    const person = personWithError(draft, state.fieldErrors);
+    if (person !== null) {
+      setOpen({ kind: "names" });
+      setEditingPerson(person);
     }
   }
+
+  // A postcode the server turned down opens its line, like the client check does.
+  useEffect(() => {
+    if (!state.fieldErrors?.postal_code) return;
+    formRef.current?.querySelector<HTMLElement>("[data-postcode-line]")?.click();
+  }, [state]);
 
   // Changes are measured against the form as it first rendered, so the
   // country prefill and state normalization never count as edits.
@@ -291,10 +420,18 @@ export function EnvelopeEditor({
     const form = formRef.current;
     if (!form) return;
     baseline.current = snapshot(new FormData(form));
+    const first = requestAnimationFrame(() => {
+      // The names line fills in a render after mount.
+      const read = (kind?: string) =>
+        [...form.querySelectorAll(`[data-print-line${kind ? `="${kind}"` : ""}]`)].map(
+          (line) => line.textContent ?? "",
+        );
+      before.current = { lines: read(), address: read("address") };
+    });
     let frame = 0;
     const measure = () => {
       cancelAnimationFrame(frame);
-      // Household rows re-render after a click, so read a frame later.
+      // Rows re-render after a click, so read a frame later.
       frame = requestAnimationFrame(() => {
         if (!baseline.current) return;
         const keys = changedKeys(baseline.current, snapshot(new FormData(form)));
@@ -306,6 +443,7 @@ export function EnvelopeEditor({
     form.addEventListener("change", measure);
     form.addEventListener("click", measure);
     return () => {
+      cancelAnimationFrame(first);
       cancelAnimationFrame(frame);
       form.removeEventListener("input", measure);
       form.removeEventListener("change", measure);
@@ -313,56 +451,66 @@ export function EnvelopeEditor({
     };
   }, []);
 
+  // Keep the open line above the on-screen keyboard: put the envelope at the
+  // top of the screen, then nudge the line back into view as the keyboard opens.
   useEffect(() => {
-    if (!sheet) return;
-    const first = visibleFocusables(panelRef.current)[0];
-    first?.focus({ preventScroll: true });
-  }, [sheet]);
+    if (!open) return;
+    const block = openRef.current;
+    // The names editor may already have focused the person it opened on.
+    if (block && !block.contains(document.activeElement)) {
+      [...block.querySelectorAll<HTMLElement>("input:not([type=hidden]), select, button")]
+        .find((el) => el.getClientRects().length > 0)
+        ?.focus({ preventScroll: true });
+    }
+    envelopeRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const keepVisible = () => {
+      const target = document.activeElement instanceof HTMLElement ? document.activeElement : block;
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      if (rect.bottom > viewport.height - 8 || rect.top < 0) {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    };
+    viewport.addEventListener("resize", keepVisible);
+    return () => viewport.removeEventListener("resize", keepVisible);
+  }, [open]);
 
-  if (state.done) return <DoneCard ownerName={ownerName} lines={sentLines} />;
+  if (state.done) return <SavedView ownerName={ownerName} saved={sent} />;
 
-  const values = state.values ?? defaults;
   const emailChanged = changed.has("email") || changed.has("birthday");
 
-  function open(next: Sheet, opener: HTMLElement | null, step: typeof chain = null) {
-    if (opener) openerRef.current = opener;
+  function show(next: Open, opener: HTMLElement | null) {
+    returnTo.current = opener?.dataset.lineFocus ?? null;
     setTouched(true);
-    setChain(step);
-    setSheet(next);
+    if (next.kind === "names") {
+      const alone = !draft.partner && draft.kids.length === 0;
+      setEditingPerson(alone || draft.primary.first === "" ? draft.primary.key : null);
+    }
+    setOpen(next);
   }
 
   function close() {
     shakeRef.current?.classList.remove("shake-x");
-    setSheet(null);
-    setChain(null);
-    const opener = openerRef.current;
+    setDraft((current) => pruneDraft(current));
+    setEditingPerson(null);
+    setOpen(null);
+    const focusKey = returnTo.current;
     // The opener may have become a line (a filled slot); refocus whatever is there now.
     requestAnimationFrame(() => {
-      const target = opener?.isConnected
-        ? opener
-        : formRef.current?.querySelector<HTMLElement>("[data-envelope-line]");
+      const form = formRef.current;
+      const target =
+        (focusKey && form?.querySelector<HTMLElement>(`[data-line-focus="${focusKey}"]`)) ||
+        form?.querySelector<HTMLElement>("[data-envelope-line]");
       target?.focus();
     });
   }
 
-  function onPanelKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const items = visibleFocusables(panelRef.current);
-    if (items.length === 0) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+  function onOpenKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    close();
   }
 
   const layout = ({ fields, preview }: { fields: ReactNode; preview: AddressPreview }) => {
@@ -375,49 +523,84 @@ export function EnvelopeEditor({
       (row) => row.kind === "line" && [...changed].some(lineKeys(row.tokens, row.at)),
     ).length;
     const count = changedLines + (emailChanged ? 1 : 0);
-    const activeAt = sheet?.kind === "address" ? sheet.at : sheet?.kind === "names" ? 0 : null;
-    const title =
-      sheet?.kind === "names"
-        ? "Names on the envelope"
-        : sheet?.kind === "details"
-          ? "Email"
-          : sheet
-            ? lineTitle(sheet.tokens, sheet.at, preview.country)
-            : "";
     const nextSlot =
-      sheet?.kind === "address" && sheet.slot
-        ? missing.find((row) => row.at !== sheet.at && !row.tokens.includes("N"))
+      open?.kind === "address" && open.slot
+        ? missing.find((row) => row.at !== open.at && !row.tokens.includes("N"))
         : undefined;
 
-    function openRow(row: Row, opener: HTMLElement) {
-      if (row.tokens.includes("N")) return open({ kind: "names" }, opener);
-      const slot = row.kind === "slot";
-      const remaining = missing.filter((other) => !other.tokens.includes("N")).length;
-      open(
-        { kind: "address", tokens: row.tokens, at: row.at, slot },
-        opener,
-        slot && remaining > 1 ? { step: 1, total: remaining } : null,
+    // ZIP first for US addresses: a 5-digit ZIP fills city and state, and a
+    // ZIP that disagrees with them gets an advisory fix, never a block.
+    const { values } = preview;
+    const us = preview.country?.code === "US";
+    const zip = us ? (values.postal_code.trim().match(ZIP5)?.[1] ?? null) : null;
+    const zipOpen = open?.kind === "address" && open.tokens.includes("Z");
+    const lookUp = zip !== null && !(zip in zipPlaces) && (zipOpen || changed.has("postal_code"));
+    const place = zip ? (zipPlaces[zip] ?? null) : null;
+    const where = { city: values.city, state: values.state_region };
+    const keepKey = `${zip}|${norm(where.city)}|${where.state}`;
+    const mismatch = place !== null && disagrees(place, where) && !kept.has(keepKey) ? place : null;
+
+    function onPlace(found: ZipPlace | null) {
+      if (zip === null) return;
+      setZipPlaces((current) => ({ ...current, [zip]: found }));
+      if (found && where.city.trim() === "" && where.state.trim() === "") {
+        applyZipPlace(found);
+      }
+    }
+
+    function applyZipPlace(found: ZipPlace) {
+      addressRef.current?.set({ city: found.city, state_region: found.state });
+      // A fill isn't an input event: tell the change counter.
+      requestAnimationFrame(() =>
+        formRef.current?.dispatchEvent(new Event("change", { bubbles: true })),
       );
+    }
+
+    const zipWarning = mismatch ? (
+      <div role="status" className="flex w-full flex-col gap-2 py-1 font-sans text-sm">
+        <p className="flex items-center gap-1.5 text-destructive">
+          <CircleAlert className="size-4 shrink-0" aria-hidden="true" />
+          {zip} is in {mismatch.city}, {mismatch.state}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => applyZipPlace(mismatch)}
+            className="h-11 rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/70"
+          >
+            Use {mismatch.city}, {mismatch.state}
+          </button>
+          <button
+            type="button"
+            onClick={() => setKept((current) => new Set(current).add(keepKey))}
+            className="h-11 rounded-full px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Keep mine
+          </button>
+        </div>
+      </div>
+    ) : null;
+
+    function openRow(row: Row, opener: HTMLElement) {
+      if (row.tokens.includes("N")) return show({ kind: "names" }, opener);
+      show({ kind: "address", tokens: row.tokens, at: row.at, slot: row.kind === "slot" }, opener);
     }
 
     function finish() {
       if (
-        sheet?.kind === "address" &&
-        sheet.tokens.includes("Z") &&
+        open?.kind === "address" &&
+        open.tokens.includes("Z") &&
         addressRef.current?.validate() === false
       ) {
-        const panel = shakeRef.current;
-        panel?.classList.remove("shake-x");
-        void panel?.offsetWidth;
-        panel?.classList.add("shake-x");
-        panel?.addEventListener("animationend", () => panel.classList.remove("shake-x"), { once: true });
+        const block = shakeRef.current;
+        block?.classList.remove("shake-x");
+        void block?.offsetWidth;
+        block?.classList.add("shake-x");
+        block?.addEventListener("animationend", () => block.classList.remove("shake-x"), { once: true });
         return;
       }
       if (nextSlot) {
-        setChain((current) =>
-          current ? { step: current.step + 1, total: Math.max(current.total, current.step + 1) } : null,
-        );
-        setSheet({ kind: "address", tokens: nextSlot.tokens, at: nextSlot.at, slot: true });
+        setOpen({ kind: "address", tokens: nextSlot.tokens, at: nextSlot.at, slot: true });
         return;
       }
       close();
@@ -435,27 +618,81 @@ export function EnvelopeEditor({
               : "Save and send it here"
             : "Yes, send it here";
 
+    const doneButton = (text: string, onClick: () => void) => (
+      <button
+        type="button"
+        onClick={onClick}
+        className="h-11 self-start rounded-lg bg-primary px-5 font-sans text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/80"
+      >
+        {text}
+      </button>
+    );
+
+    const addressOpen = open?.kind === "address";
+
     return (
       <>
-        <div
-          className={cn(
-            "relative transition-transform duration-300 ease-out",
-            sheet && "z-50 -translate-y-1 scale-[1.02]",
-          )}
-        >
-          <Paper className="envelope-rise">
-            <address className="mt-3 flex flex-col items-start pl-6 font-serif text-lg leading-relaxed not-italic text-foreground">
+        <div ref={envelopeRef} className="scroll-mt-3">
+          <Paper from={ownerName} className="envelope-rise">
+            <address
+              className={cn(
+                "mt-4 flex flex-col items-start gap-0.5 font-serif text-lg leading-relaxed not-italic text-foreground transition-[padding]",
+                open && open.kind !== "details" ? "pl-1" : "pl-6",
+              )}
+            >
               {rows.map((row, i) => {
                 const style = { "--i": i } as CSSProperties;
+                const isNames = row.tokens.includes("N");
+                const isOpen =
+                  (open?.kind === "names" && isNames) ||
+                  (open?.kind === "address" && !isNames && row.at === open.at);
+                const focusKey = isNames ? "names" : String(row.at);
+                const kind = isNames ? "names" : "address";
+                if (isOpen) {
+                  return (
+                    <div
+                      key={`open-${row.at}-${i}`}
+                      ref={openRef}
+                      data-open-line={focusKey}
+                      onKeyDown={onOpenKeyDown}
+                      className="my-1 flex w-full flex-col gap-3 font-sans"
+                    >
+                      {isNames ? (
+                        <NamesEditor
+                          draft={draft}
+                          onChange={setDraft}
+                          enabled={enabled}
+                          editing={editingPerson}
+                          onEdit={setEditingPerson}
+                          newKey={() => nextKey.current++}
+                          errors={state.fieldErrors}
+                          onDone={close}
+                        />
+                      ) : (
+                        <div ref={shakeRef} className="w-full">
+                          {fields}
+                        </div>
+                      )}
+                      {!isNames && row.tokens.includes("Z") ? zipWarning : null}
+                      {doneButton(nextSlot ? "Next" : "Done", isNames ? close : finish)}
+                      {row.kind === "line" ? (
+                        <span hidden data-print-line={kind}>
+                          {row.text}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                }
                 if (row.kind === "slot") {
                   return (
                     <button
                       key={`slot-${row.at}-${row.tokens.join("")}`}
                       type="button"
                       data-envelope-slot
+                      data-line-focus={focusKey}
                       style={style}
                       onClick={(event) => openRow(row, event.currentTarget)}
-                      className="my-0.5 rounded-md border-[1.5px] border-dashed border-primary/70 px-2 py-0.5 font-sans text-sm font-medium text-primary transition-colors hover:bg-accent"
+                      className="my-0.5 min-h-11 rounded-md border-[1.5px] border-dashed border-primary/70 px-2.5 py-1 font-sans text-sm font-medium text-primary transition-colors hover:bg-accent"
                     >
                       + Add {slotLabel(row.tokens, preview.country)}
                     </button>
@@ -463,51 +700,104 @@ export function EnvelopeEditor({
                 }
                 const isChanged = [...changed].some(lineKeys(row.tokens, row.at));
                 const isError = preview.postcodeError !== null && row.tokens.includes("Z");
-                const isActive = activeAt !== null && (row.at === activeAt || (activeAt === 0 && row.tokens.includes("N")));
                 return (
-                  <button
-                    key={`line-${row.at}-${i}`}
-                    type="button"
-                    data-envelope-line
-                    data-postcode-line={row.tokens.includes("Z") || undefined}
-                    style={style}
-                    aria-label={`${row.text}. Edit ${midSentence(lineTitle(row.tokens, row.at, preview.country))}`}
-                    onClick={(event) => openRow(row, event.currentTarget)}
-                    className={cn(
-                      "-mx-1 cursor-pointer rounded px-1 text-left underline decoration-muted-foreground/50 decoration-dotted decoration-1 underline-offset-[5px] transition-colors duration-300 hover:bg-accent hover:text-accent-foreground",
-                      (isChanged || (row.uppercased && isActive)) && "bg-accent text-accent-foreground",
-                      isActive && "ring-2 ring-accent",
-                      isError && "decoration-destructive decoration-wavy decoration-[1.5px]",
-                    )}
-                  >
-                    {row.text}
-                  </button>
+                  <div key={`line-${row.at}-${i}`} className="flex flex-col items-start">
+                    <button
+                      type="button"
+                      data-envelope-line
+                      data-line-focus={focusKey}
+                      data-print-line={kind}
+                      data-postcode-line={row.tokens.includes("Z") || undefined}
+                      style={style}
+                      aria-label={`${row.text}. Edit ${midSentence(lineTitle(row.tokens, row.at, preview.country))}`}
+                      onClick={(event) => openRow(row, event.currentTarget)}
+                      className={cn(
+                        "-mx-1 min-h-11 cursor-pointer rounded px-1 text-left underline decoration-primary/40 decoration-dotted decoration-[1.5px] underline-offset-[6px] transition-colors duration-300 hover:bg-accent hover:text-accent-foreground",
+                        isChanged && "bg-accent text-accent-foreground",
+                        isError && "decoration-destructive decoration-wavy",
+                      )}
+                    >
+                      {row.text}
+                    </button>
+                    {row.tokens.includes("Z") && !addressOpen ? zipWarning : null}
+                  </div>
                 );
               })}
             </address>
-            {preview.caption ? <p className="mt-3 pl-6 text-xs text-muted-foreground">{preview.caption}</p> : null}
+            {preview.caption && !open ? (
+              <p className="mt-3 pl-6 text-xs text-muted-foreground">{preview.caption}</p>
+            ) : null}
           </Paper>
+          {lookUp && zip ? <ZipLookup key={zip} zip={zip} onPlace={onPlace} /> : null}
+          {/* Every address field stays mounted, so closed lines still post. */}
+          {addressOpen ? null : <div hidden>{fields}</div>}
         </div>
 
-        {touched ? null : (
-          <p className="hint-nudge self-center rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">
+        {touched || open ? null : (
+          <p className="hint-nudge self-center text-xs font-medium text-muted-foreground">
             {blocked ? "Tap a dashed line to add it" : "Tap any line to fix it"}
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={(event) => open({ kind: "details" }, event.currentTarget)}
-          className={cn(
-            "flex items-baseline justify-between gap-3 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
-            emailChanged && "text-accent-foreground",
-          )}
-        >
-          <span className="min-w-0 truncate">
-            Email: <span className="text-foreground">{values.email || "none yet"}</span>
-          </span>
-          <span className="shrink-0 font-semibold text-primary">Change</span>
-        </button>
+        {open?.kind === "details" ? (
+          <div
+            ref={openRef}
+            data-open-line="details"
+            onKeyDown={onOpenKeyDown}
+            className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
+          >
+            <div className="flex flex-col gap-1">
+              <label htmlFor="email" className={envelopeLabelClasses}>
+                Email
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                maxLength={320}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className={cn(envelopeInputClasses, "font-sans text-base")}
+              />
+            </div>
+            {enabled.birthday ? (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="birthday" className={envelopeLabelClasses}>
+                  Birthday
+                </label>
+                <input
+                  id="birthday"
+                  name="birthday"
+                  type="date"
+                  value={birthday}
+                  onChange={(event) => setBirthday(event.target.value)}
+                  className={cn(envelopeInputClasses, "font-sans text-base")}
+                />
+              </div>
+            ) : null}
+            {doneButton("Done", close)}
+          </div>
+        ) : (
+          <>
+            <input type="hidden" name="email" value={email} />
+            {enabled.birthday ? <input type="hidden" name="birthday" value={birthday} /> : null}
+            <button
+              type="button"
+              data-line-focus="details"
+              onClick={(event) => show({ kind: "details" }, event.currentTarget)}
+              className={cn(
+                "flex min-h-11 items-center justify-between gap-3 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
+                emailChanged && "text-accent-foreground",
+              )}
+            >
+              <span className="min-w-0 truncate">
+                Email: <span className="text-foreground">{email || "none yet"}</span>
+              </span>
+              <span className="shrink-0 font-semibold text-primary">Change</span>
+            </button>
+          </>
+        )}
 
         <button
           type="submit"
@@ -516,80 +806,6 @@ export function EnvelopeEditor({
         >
           {label}
         </button>
-
-        {sheet ? (
-          <div aria-hidden="true" onClick={close} className="sheet-backdrop fixed inset-0 z-40 bg-foreground/30 xl:bg-foreground/10" />
-        ) : null}
-        <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          hidden={!sheet}
-          onKeyDown={onPanelKeyDown}
-          className="sheet-panel fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-3xl bg-card px-6 pt-2.5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[0_-14px_30px_-12px_rgb(0_0_0/0.3)] xl:absolute xl:inset-auto xl:top-24 xl:left-full xl:ml-6 xl:w-80 xl:rounded-2xl xl:border xl:border-border xl:pt-5"
-        >
-          <div aria-hidden="true" className="h-1 w-10 self-center rounded-full bg-border xl:hidden" />
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 id={titleId} className="font-serif text-xl leading-tight text-foreground">
-              {title}
-            </h2>
-            {chain ? (
-              <span className="text-xs font-medium text-muted-foreground">
-                {chain.step} of {chain.total}
-              </span>
-            ) : null}
-          </div>
-          <div ref={shakeRef} className="flex flex-col gap-5">
-            <div hidden={sheet?.kind !== "names"}>
-              <HouseholdFields
-                defaults={state.household ?? household}
-                enabled={enabled}
-                errors={state.fieldErrors}
-              />
-            </div>
-            <div hidden={sheet?.kind !== "address"}>{fields}</div>
-            <div hidden={sheet?.kind !== "details"} className="flex flex-col gap-5">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="email" className={labelClasses}>
-                  Email
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  maxLength={320}
-                  defaultValue={values.email}
-                  className={inputClasses}
-                />
-              </div>
-              {enabled.birthday ? (
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="birthday" className={labelClasses}>
-                    Birthday
-                  </label>
-                  <input
-                    id="birthday"
-                    name="birthday"
-                    type="date"
-                    defaultValue={values.birthday}
-                    className={inputClasses}
-                  />
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={finish}
-            className="h-11 shrink-0 rounded-lg bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/80"
-          >
-            {nextSlot ? "Next" : "Done"}
-          </button>
-          <a href={fullFormHref} className="text-center text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">
-            Use the full form instead
-          </a>
-        </div>
       </>
     );
   };
@@ -602,24 +818,47 @@ export function EnvelopeEditor({
       onSubmit={(event) => {
         if (dirtyRef.current && addressRef.current?.validate() === false) {
           event.preventDefault();
-          if (!(sheet?.kind === "address" && sheet.tokens.includes("Z"))) {
+          if (!(open?.kind === "address" && open.tokens.includes("Z"))) {
             formRef.current?.querySelector<HTMLElement>("[data-postcode-line]")?.click();
             requestAnimationFrame(() => addressRef.current?.validate());
           }
           return;
         }
-        const lines = [...event.currentTarget.querySelectorAll("[data-envelope-line]")].map(
-          (line) => line.textContent ?? "",
-        );
-        setSentLines(lines);
+        const read = (kind?: string) =>
+          [...event.currentTarget.querySelectorAll(`[data-print-line${kind ? `="${kind}"` : ""}]`)].map(
+            (line) => line.textContent ?? "",
+          );
+        const lines = read();
+        const start = before.current ?? { lines, address: read("address") };
+        const reply = (snap: Omit<ReplySnapshot, "email" | "birthday">, from: TokenUpdateValues | null): ReplySnapshot => ({
+          ...snap,
+          email: from ? from.email : email,
+          birthday: from ? from.birthday : birthday,
+        });
+        setSent({
+          lines: lines.map((text) => ({ text, changed: !start.lines.includes(text) })),
+          changes: whatChanged(
+            reply({ household, address: start.address }, defaults),
+            reply({ household: valuesFromDraft(pruneDraft(draft)), address: read("address") }, null),
+          ),
+        });
       }}
-      className="relative flex flex-col gap-5 rounded-xl border border-border bg-card p-7 shadow-sm"
+      className="relative flex flex-col gap-5"
     >
-      <h1 className="font-serif text-2xl leading-tight text-foreground">
-        {defaults.address_line1
-          ? `Send ${ownerName}'s card to this envelope?`
-          : `Where should ${ownerName} send your card?`}
-      </h1>
+      <header hidden={open !== null} className="flex flex-col gap-1">
+        <p className="text-sm text-muted-foreground">From {senderNames}</p>
+        <h1 className="font-serif text-[1.65rem] leading-tight text-foreground">
+          {defaults.address_line1
+            ? "Will your holiday card reach you here?"
+            : `Where should ${ownerName} send your card?`}
+        </h1>
+        <p className="mt-2 flex items-start gap-2 text-sm leading-snug text-muted-foreground">
+          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>
+            {`Only ${ownerName} ${ownerVerb(ownerName, "sees", "see")} what you enter. It isn't sold or shared.`}
+          </span>
+        </p>
+      </header>
       {state.error ? (
         <div
           role="alert"
@@ -631,33 +870,28 @@ export function EnvelopeEditor({
       <AddressFields
         key={senderCountry}
         defaults={{
-          address_line1: values.address_line1,
-          address_line2: values.address_line2,
-          district: values.district,
-          city: values.city,
-          state_region: values.state_region,
-          postal_code: values.postal_code,
-          country_code: values.country_code,
+          address_line1: defaults.address_line1,
+          address_line2: defaults.address_line2,
+          district: defaults.district,
+          city: defaults.city,
+          state_region: defaults.state_region,
+          postal_code: defaults.postal_code,
+          country_code: defaults.country_code,
         }}
         legacyCountry={legacyCountry}
         senderCountry={senderCountry}
         audience={{ kind: "recipient", ownerName }}
-        styles={{ input: inputClasses, label: labelClasses }}
+        styles={{ input: envelopeInputClasses, label: envelopeLabelClasses }}
         errors={{ postal_code: state.fieldErrors?.postal_code }}
         errorsKey={state}
         preview={layout}
-        focus={sheet?.kind === "address" ? new Set(sheetFields(sheet)) : null}
+        focus={open?.kind === "address" ? new Set(openFields(open)) : null}
         handleRef={addressRef}
+        postcodeFirstIn="US"
       />
+      <HouseholdInputs draft={draft} enabled={enabled} />
       <input type="hidden" name="seen_at" value={seenAt} />
       <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
     </form>
   );
-}
-
-function visibleFocusables(root: HTMLElement | null): HTMLElement[] {
-  if (!root) return [];
-  return [
-    ...root.querySelectorAll<HTMLElement>("input:not([type=hidden]), select, textarea, button, a[href]"),
-  ].filter((el) => !el.hasAttribute("disabled") && el.getClientRects().length > 0);
 }

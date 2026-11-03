@@ -7,7 +7,6 @@ import { isSpentToken } from "../owner";
 import { recipientPrefill } from "../token-data";
 import { confirmTokenAddress } from "./actions";
 import { EnvelopeEditor } from "./envelope-editor";
-import { WhyExplainer } from "@/components/why-explainer";
 
 export const metadata: Metadata = {
   title: "Confirm your address",
@@ -27,9 +26,10 @@ export default async function ConfirmAddressPage({
       TOKEN_SHAPE.test(token) &&
       (await isSpentToken(token))
     ) {
+      // Links stay open until they expire, so a used one landing here has expired.
       return (
-        <Notice title="You're already on the list">
-          Thanks, your reply is saved. You can close this page.
+        <Notice title="This link has expired">
+          Your reply is saved. To change it, ask the person who sent this for a new link.
         </Notice>
       );
     }
@@ -44,17 +44,14 @@ export default async function ConfirmAddressPage({
         confirm={confirmTokenAddress.bind(null, token)}
         save={saveTokenUpdate.bind(null, token)}
         ownerName={ownerName}
+        senderNames={loaded.data.sender_full_names ?? ownerName}
         defaults={defaults}
         household={household}
         enabled={enabled_fields}
         senderCountry={loaded.data.sender_country}
         legacyCountry={contact.country_code ? null : contact.country}
         seenAt={loaded.data.updated_at}
-        fullFormHref={`/u/${token}`}
       />
-      <div className="mt-4">
-        <WhyExplainer ownerName={ownerName} />
-      </div>
     </main>
   );
 }
