@@ -46,6 +46,8 @@ let followToken: string;
 let ownLastToken: string;
 let enterToken: string;
 let canadaEnterToken: string;
+let toCanadaToken: string;
+let toHungaryToken: string;
 const familyOwnerEmail = uniqueEmail("confirm-family-owner");
 
 test.beforeAll(async ({ browser }) => {
@@ -307,6 +309,21 @@ test.beforeAll(async ({ browser }) => {
       postalCode: "M5H 2N2",
       countryCode: "CA",
     }),
+  );
+  toCanadaToken = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Cam Move",
+      email: "cam@e2e.test",
+      addressLine1: "1 Main St",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      countryCode: "US",
+    }),
+  );
+  toHungaryToken = await seedUpdateToken(
+    await seedContact({ bookId, fullName: "Hana Move", email: "hana@e2e.test" }),
   );
   soloPartnerToken = await seedUpdateToken(
     await seedContact({
@@ -849,6 +866,45 @@ test("Enter in a Canadian city line steps through province and postal code befor
   await expect(envelope.locator("#postal_code")).toBeHidden();
   await expect(saved(page)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Yes, send it here" })).toBeVisible();
+});
+
+test("changing the country re-lays the envelope and opens the street", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${toCanadaToken}/confirm`);
+  await waitForTurnstile(page);
+  const envelope = page.locator("address");
+  const country = page.getByRole("button", { name: /^Country:/ });
+  await expect(country).toHaveText(/Country: United States\s*Change/);
+  await country.click();
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("CA");
+  await expect(envelope.locator("#address_line1")).toBeVisible();
+  await expect(envelope.locator("#address_line1")).toBeFocused();
+  await expect(envelope).toContainText("PORTLAND");
+  await expect(envelope).toContainText("CANADA");
+  await expect(page.getByRole("button", { name: /^Country:/ })).toHaveText(/Country: Canada\s*Change/);
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(envelope.getByRole("button", { name: /^1 MAIN ST\. Edit/ })).toBeVisible();
+  await expect(saved(page)).toHaveCount(0);
+});
+
+test("switching a blank address to Hungary opens the street on Hungary's street line", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${toHungaryToken}/confirm`);
+  await waitForTurnstile(page);
+  const envelope = page.locator("address");
+  await page.getByRole("button", { name: "+ Add street address" }).click();
+  await page.getByRole("button", { name: /^Country:/ }).click();
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("HU");
+  await expect(envelope.locator("#address_line1")).toBeFocused();
+  await expect(page.getByRole("button", { name: "+ Add street address" })).toHaveCount(0);
+  // Hungary prints the city above the street.
+  const order = await envelope
+    .locator("[data-envelope-slot], [data-open-line]")
+    .evaluateAll((els) => els.map((el) => (el instanceof HTMLElement && el.dataset.openLine ? "open" : el.textContent)));
+  expect(order).toEqual(["+ Add city", "open", "+ Add postal code"]);
+  await envelope.locator("#address_line1").fill("Váci utca 1");
+  await envelope.getByRole("button", { name: "Next" }).click();
+  await expect(envelope.locator("#city")).toBeFocused();
 });
 
 test("a partner's link labels the partner as the one replying", async ({ page }) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { envelopeSlots, formatEnvelope } from "@/lib/address/format";
-import { envelopeRows, openRowIndex } from "./envelope-rows";
+import { getCountry } from "@/lib/address/countries";
+import { envelopeRows, openRowIndex, streetLine } from "./envelope-rows";
 
 const blank = {
   addressLine1: "",
@@ -66,13 +67,36 @@ describe("openRowIndex", () => {
     const rows = envelopeRows({ envelope, name: "山田太郎", slots: [] });
     const street = rows.filter((row) => row.tokens.includes("A"));
     expect(street.length).toBeGreaterThan(1);
-    const open = { at: street[0].at };
+    const open = { tokens: street[0].tokens, at: street[0].at };
     expect(street.every((row) => row.at === open.at)).toBe(true);
     expect(openRowIndex(rows, open)).toBe(rows.indexOf(street[0]));
   });
 
   it("never opens the names row for an address line", () => {
-    const rows = envelopeRows({ envelope: null, name: "Cora", slots: [{ tokens: ["A"], at: 0 }] });
-    expect(rows[openRowIndex(rows, { at: 0 })]).toEqual({ kind: "slot", tokens: ["A"], at: 0 });
+    const rows = envelopeRows({ envelope: null, name: "Cora", slots: [{ tokens: ["C"], at: 0 }] });
+    expect(rows[openRowIndex(rows, { tokens: ["C"], at: 0 })]).toEqual({ kind: "slot", tokens: ["C"], at: 0 });
+  });
+
+  it("finds the open street on the street's row after a country change moves it", () => {
+    const hungary = { ...blank, countryCode: "HU" };
+    const rows = envelopeRows({
+      envelope: null,
+      name: "Hana",
+      slots: envelopeSlots(hungary, { senderCountry: "US" }),
+    });
+    // A street opened in the US layout, where it sits at line 2; Hungary prints the city there.
+    const open = { tokens: ["A" as const], at: 2, slot: true };
+    expect(rows[openRowIndex(rows, open)]).toEqual({ kind: "slot", tokens: ["A"], at: 3 });
+    expect(envelopeRows({ envelope: null, name: "Hana", slots: envelopeSlots(hungary, { senderCountry: "US" }) }, open)).toEqual(rows);
+  });
+});
+
+describe("streetLine", () => {
+  it("is the line the country prints the street on, with whatever shares it", () => {
+    expect(streetLine(getCountry("US"))).toEqual({ tokens: ["A"], at: 2 });
+    expect(streetLine(getCountry("HU"))).toEqual({ tokens: ["A"], at: 3 });
+    expect(streetLine(getCountry("GN"))).toEqual({ tokens: ["Z", "A", "C"], at: 2 });
+    expect(streetLine(getCountry("JP")).tokens).toEqual(["A", "S"]);
+    expect(streetLine(null)).toEqual({ tokens: ["A"], at: 0 });
   });
 });
