@@ -136,8 +136,15 @@ function isRecipient(role: Role, recipient: Recipient): boolean {
 function rolePrefix(role: Role, crowded: boolean, recipient: Recipient): string {
   if (role.kind === "kid") return `Child ${role.index + 1}'s `;
   if (isRecipient(role, recipient)) return crowded ? "Your " : "";
-  if (role.kind === "partner") return "Second person's ";
-  return crowded ? "First person's " : "";
+  // Only a partner's link reaches here for the first person, so it is labelled even when alone.
+  return role.kind === "partner" ? "Second person's " : "First person's ";
+}
+
+// The server writes only the replier's own email, so removing anyone else's chip would leave their email under another name.
+function isRemovable(role: Role, recipient: Recipient): boolean {
+  if (role.kind === "primary") return false;
+  if (role.kind === "partner") return recipient === "primary";
+  return true;
 }
 
 const chipName = (person: Person) =>
@@ -194,12 +201,8 @@ export function NamesEditor({
 
   function remove(person: Person) {
     const role = roleOf(draft, person.key);
-    if (!role) return;
-    // The first person goes only when someone can take their place on the envelope.
-    if (role.kind === "primary") {
-      if (!draft.partner) return;
-      onChange({ ...draft, primary: { ...draft.partner, key: draft.primary.key }, partner: null });
-    } else if (role.kind === "partner") {
+    if (!role || !isRemovable(role, recipient)) return;
+    if (role.kind === "partner") {
       onChange({ ...draft, partner: null });
     } else {
       onChange({ ...draft, kids: draft.kids.filter((kid) => kid.key !== person.key) });
@@ -236,7 +239,7 @@ export function NamesEditor({
           const role = roleOf(draft, person.key);
           if (!role) return null;
           if (person.key !== editing) {
-            const removable = role.kind !== "primary" || draft.partner !== null;
+            const removable = isRemovable(role, recipient);
             return (
               <span
                 key={person.key}
