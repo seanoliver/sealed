@@ -1,5 +1,5 @@
 import { type AddressPreview } from "@/components/address-fields";
-import { type FormatField } from "@/lib/address/countries";
+import { type Country, type FormatField } from "@/lib/address/countries";
 
 export type Row =
   | { kind: "line"; text: string; tokens: FormatField[]; at: number; uppercased: boolean }
@@ -26,7 +26,24 @@ export function envelopeRows(preview: RowsPreview, open: OpenAddress | null = nu
 }
 
 /** The one row that holds the open editor: a local-script street prints several rows at the same `at`. */
-export function openRowIndex(rows: Row[], open: Pick<OpenAddress, "at"> | null): number {
+export function openRowIndex(rows: Row[], open: Pick<OpenAddress, "tokens" | "at"> | null): number {
   if (!open) return -1;
+  // The street is found by its token, not its `at`: a country change can move it to another line.
+  if (open.tokens.includes("A")) return rows.findIndex((row) => row.tokens.includes("A"));
   return rows.findIndex((row) => !row.tokens.includes("N") && row.at === open.at);
+}
+
+const FORMAT_FIELDS = new Set<string>(["N", "O", "A", "D", "C", "S", "Z"]);
+
+/** The street's line in a country's format. Tokens cover both scripts' formats, which differ only in what shares the street's line. */
+export function streetLine(country: Country | null): Pick<OpenAddress, "tokens" | "at"> {
+  const formats = country ? [country.fmt, country.lfmt ?? country.fmt] : ["%A"];
+  const lines = formats.map((fmt) => fmt.split("%n").find((line) => line.includes("%A")) ?? "%A");
+  const tokens = new Set(
+    lines.flatMap((line) => [...line.matchAll(/%([A-Z])/g)].map((match) => match[1])),
+  );
+  return {
+    tokens: [...tokens].filter((token): token is FormatField => FORMAT_FIELDS.has(token)),
+    at: Math.max(0, formats[0].split("%n").findIndex((line) => line.includes("%A"))),
+  };
 }

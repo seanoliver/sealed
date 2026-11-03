@@ -6,6 +6,7 @@ import {
   useEffectEvent,
   useRef,
   useState,
+  type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
@@ -19,7 +20,7 @@ import {
 } from "@/components/address-fields";
 import { type EnabledFields } from "@/components/recipient-fields";
 import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-widget";
-import { type Country, type FormatField } from "@/lib/address/countries";
+import { getCountry, type Country, type FormatField } from "@/lib/address/countries";
 import { fieldLabel, type AddressField } from "@/lib/address/fields";
 import { COUNTRY_LINE_AT } from "@/lib/address/format";
 import { normCity, zipDisagrees, type ZipPlace } from "@/lib/address/zip-agree";
@@ -37,11 +38,10 @@ import {
   NamesEditor,
   personWithError,
   pruneDraft,
-  valuesFromDraft,
   type HouseholdDraft,
   type Recipient,
 } from "./envelope-names";
-import { envelopeRows, openRowIndex, type Row } from "./envelope-rows";
+import { envelopeRows, openRowIndex, streetLine, type Row } from "./envelope-rows";
 import { whatChanged, type Change, type ReplySnapshot } from "./what-changed";
 import { lookupZip } from "./zip-action";
 
@@ -50,6 +50,7 @@ type FormField = AddressField | "country_code";
 type Open =
   | { kind: "names" }
   | { kind: "details" }
+  | { kind: "country" }
   | { kind: "address"; tokens: FormatField[]; at: number; slot: boolean };
 
 type Saved = { lines: { text: string; changed: boolean }[]; changes: Change[] };
@@ -88,10 +89,8 @@ const TOKEN_FIELDS: Record<FormatField, AddressField[]> = {
 const NAME_KEY = /^(first_name|last_name|partner_|kid_|kids_section)/;
 const IGNORED_KEYS = new Set(["cf-turnstile-response", "seen_at"]);
 
-function openFields(open: Open & { kind: "address" }): FormField[] {
-  if (open.at === COUNTRY_LINE_AT) return ["country_code"];
-  const fields: FormField[] = open.tokens.flatMap((token) => TOKEN_FIELDS[token]);
-  return open.slot && open.tokens.includes("A") ? ["country_code", ...fields] : fields;
+function openFields(open: Open & { kind: "address" | "country" }): FormField[] {
+  return open.kind === "country" ? ["country_code"] : open.tokens.flatMap((token) => TOKEN_FIELDS[token]);
 }
 
 function lineKeys(tokens: FormatField[], at: number): (key: string) => boolean {
@@ -161,11 +160,20 @@ function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | 
   return null;
 }
 
-/** Labels the phone keyboard's Return key on the address inputs, which AddressFields renders. */
-function EnterHint({ within, hint }: { within: RefObject<HTMLElement | null>; hint: "next" | "done" }) {
+/** The fields Return steps through in an open line, in order. */
+function lineFields(block: HTMLElement | null): (HTMLInputElement | HTMLSelectElement)[] {
+  if (!block) return [];
+  return [...block.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input:not([type=hidden]), select")].filter(
+    (field) => field.getClientRects().length > 0,
+  );
+}
+
+/** Labels the phone keyboard's Return key to match onOpenKeyDown: "next" until the line's last field. */
+function EnterHints({ within, last }: { within: RefObject<HTMLElement | null>; last: "next" | "done" }) {
   useEffect(() => {
-    within.current?.querySelectorAll("input").forEach((input) => {
-      input.enterKeyHint = hint;
+    const fields = lineFields(within.current);
+    fields.forEach((field, i) => {
+      field.enterKeyHint = i === fields.length - 1 ? last : "next";
     });
   });
   return null;
@@ -448,7 +456,6 @@ export function EnvelopeEditor({
     // The names editor may already have focused a person; Next keeps this block mounted, so focus on its button doesn't count.
     const settled = block?.contains(active) && active?.matches("input, select") && visible(active);
     if (block && !settled) {
-      // A street slot shows Country first; start on the street, not the select.
       const first = (selector: string) =>
         [...block.querySelectorAll<HTMLElement>(selector)].find(visible);
       (first("input:not([type=hidden])") ?? first("select, button"))?.focus({ preventScroll: true });
@@ -505,17 +512,22 @@ export function EnvelopeEditor({
       close();
       return;
     }
-    // Enter would submit the whole reply mid-edit; it does what the block's Next/Done button does.
+    // Enter never submits the reply from an open line: it moves to the line's next field, and from the last does what Next/Done does.
     if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing) return;
-    if (!(event.target instanceof HTMLInputElement)) return;
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) return;
     event.preventDefault();
-    done();
+    const fields = lineFields(event.currentTarget);
+    const next = fields[fields.indexOf(field) + 1];
+    if (next) next.focus();
+    else done();
   }
 
   const layout = ({ fields, preview }: { fields: ReactNode; preview: AddressPreview }) => {
     const openAddress = open?.kind === "address" ? open : null;
     const rows = envelopeRows(preview, openAddress);
     const openIndex = openRowIndex(rows, openAddress);
+    const openAt = openIndex === -1 ? null : rows[openIndex].at;
     const missing = rows.filter((row) => row.kind === "slot");
     // Only a missing street or name blocks sending: contacts imported with the
     // whole address in the street must still be able to confirm.
@@ -526,7 +538,7 @@ export function EnvelopeEditor({
     const count = changedLines + (emailChanged ? 1 : 0);
     const nextSlot =
       open?.kind === "address" && open.slot
-        ? missing.find((row) => row.at !== open.at && !row.tokens.includes("N"))
+        ? missing.find((row) => row.at !== openAt && !row.tokens.includes("N"))
         : undefined;
 
     const { values } = preview;
@@ -582,6 +594,7 @@ export function EnvelopeEditor({
 
     function openRow(row: Row, opener: HTMLElement) {
       if (row.tokens.includes("N")) return show({ kind: "names" }, opener);
+      if (row.at === COUNTRY_LINE_AT) return show({ kind: "country" }, opener);
       show({ kind: "address", tokens: row.tokens, at: row.at, slot: row.kind === "slot" }, opener);
     }
 
@@ -629,6 +642,15 @@ export function EnvelopeEditor({
 
     const addressOpen = open?.kind === "address";
 
+    // Any country change re-lays the envelope, so pick up at the street wherever that country prints it.
+    function onCountryChange(event: ChangeEvent<HTMLElement>) {
+      if (!(event.target instanceof HTMLSelectElement) || event.target.name !== "country_code") return;
+      const code = event.target.value || (legacyCountry?.trim() ? null : senderCountry);
+      setOpen({ kind: "address", ...streetLine(getCountry(code)), slot: preview.envelope === null });
+    }
+
+    const countryName = preview.country?.name ?? (legacyCountry?.trim() || "none yet");
+
     return (
       <>
         <div ref={envelopeRef} className="scroll-mt-3">
@@ -636,7 +658,7 @@ export function EnvelopeEditor({
             <address
               className={cn(
                 "mt-4 flex flex-col items-start gap-0.5 font-serif text-lg leading-relaxed not-italic text-foreground transition-[padding]",
-                open && open.kind !== "details" ? "pl-1" : "pl-6",
+                open?.kind === "names" || addressOpen ? "pl-1" : "pl-6",
               )}
             >
               {rows.map((row, i) => {
@@ -669,11 +691,11 @@ export function EnvelopeEditor({
                       ) : (
                         <div ref={shakeRef} className="w-full">
                           {fields}
-                          <EnterHint within={shakeRef} hint={nextSlot ? "next" : "done"} />
                         </div>
                       )}
                       {!isNames && row.tokens.includes("Z") ? zipWarning : null}
                       {doneButton(nextSlot ? "Next" : "Done", isNames ? close : finish)}
+                      {isNames ? null : <EnterHints within={openRef} last={nextSlot ? "next" : "done"} />}
                       {row.kind === "line" ? (
                         <span hidden data-print-line={kind}>
                           {row.text}
@@ -682,7 +704,7 @@ export function EnvelopeEditor({
                     </div>
                   );
                 }
-                if (openAddress && !isNames && row.at === openAddress.at) {
+                if (openAddress && !isNames && row.at === openAt) {
                   return row.kind === "line" ? (
                     <span key={`line-${row.at}-${i}`} data-print-line={kind} style={style} className="block">
                       {row.text}
@@ -736,13 +758,41 @@ export function EnvelopeEditor({
           </Paper>
           {lookUp && zip ? <ZipLookup key={zip} zip={zip} onPlace={onPlace} /> : null}
           {/* Every address field stays mounted, so closed lines still post. */}
-          {addressOpen ? null : <div hidden>{fields}</div>}
+          {addressOpen || open?.kind === "country" ? null : <div hidden>{fields}</div>}
         </div>
 
         {touched || open ? null : (
           <p className="hint-nudge self-center text-xs font-medium text-muted-foreground">
             {blocked ? "Tap a dashed line to add it" : "Tap any line to fix it"}
           </p>
+        )}
+
+        {open?.kind === "country" ? (
+          <div
+            ref={openRef}
+            data-open-line="country"
+            onKeyDown={(event) => onOpenKeyDown(event, close)}
+            onChange={onCountryChange}
+            className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
+          >
+            {fields}
+            {doneButton("Done", close)}
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-line-focus="country"
+            onClick={(event) => show({ kind: "country" }, event.currentTarget)}
+            className={cn(
+              "flex min-h-11 items-center justify-between gap-3 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
+              changed.has("country_code") && "text-accent-foreground",
+            )}
+          >
+            <span className="min-w-0 truncate">
+              Country: <span className="text-foreground">{countryName}</span>
+            </span>
+            <span className="shrink-0 font-semibold text-primary">Change</span>
+          </button>
         )}
 
         {open?.kind === "details" ? (
@@ -761,7 +811,6 @@ export function EnvelopeEditor({
                 name="email"
                 type="email"
                 autoComplete="email"
-                enterKeyHint="done"
                 maxLength={320}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -784,6 +833,7 @@ export function EnvelopeEditor({
               </div>
             ) : null}
             {doneButton("Done", close)}
+            <EnterHints within={openRef} last="done" />
           </div>
         ) : (
           <>
@@ -845,8 +895,8 @@ export function EnvelopeEditor({
         setSent({
           lines: lines.map((text) => ({ text, changed: !start.lines.includes(text) })),
           changes: whatChanged(
-            reply({ household, address: start.address }, defaults),
-            reply({ household: valuesFromDraft(pruneDraft(draft)), address: read("address") }, null),
+            reply({ household: draftFromValues(household), address: start.address }, defaults),
+            reply({ household: pruneDraft(draft), address: read("address") }, null),
           ),
         });
       }}
@@ -892,7 +942,7 @@ export function EnvelopeEditor({
         errors={{ postal_code: state.fieldErrors?.postal_code }}
         errorsKey={state}
         preview={layout}
-        focus={open?.kind === "address" ? new Set(openFields(open)) : null}
+        focus={open?.kind === "address" || open?.kind === "country" ? new Set(openFields(open)) : null}
         handleRef={addressRef}
         postcodeFirstIn="US"
       />

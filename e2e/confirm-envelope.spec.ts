@@ -45,6 +45,9 @@ let keepKidToken: string;
 let followToken: string;
 let ownLastToken: string;
 let enterToken: string;
+let canadaEnterToken: string;
+let toCanadaToken: string;
+let toHungaryToken: string;
 const familyOwnerEmail = uniqueEmail("confirm-family-owner");
 
 test.beforeAll(async ({ browser }) => {
@@ -294,6 +297,33 @@ test.beforeAll(async ({ browser }) => {
   );
   enterToken = await seedUpdateToken(
     await seedContact({ bookId, fullName: "Eli Enter", email: "eli@e2e.test" }),
+  );
+  canadaEnterToken = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Cleo Canada",
+      email: "cleo.canada@e2e.test",
+      addressLine1: "100 Queen St W",
+      city: "Toronto",
+      stateRegion: "ON",
+      postalCode: "M5H 2N2",
+      countryCode: "CA",
+    }),
+  );
+  toCanadaToken = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Cam Move",
+      email: "cam@e2e.test",
+      addressLine1: "1 Main St",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      countryCode: "US",
+    }),
+  );
+  toHungaryToken = await seedUpdateToken(
+    await seedContact({ bookId, fullName: "Hana Move", email: "hana@e2e.test" }),
   );
   soloPartnerToken = await seedUpdateToken(
     await seedContact({
@@ -752,6 +782,11 @@ test("fixing the household last name carries to people who share it", async ({ p
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: /^Send it here/ }).click();
   await expect(saved(page)).toBeVisible();
+  await expect(page.getByRole("region", { name: "What changed" }).getByRole("listitem")).toHaveText([
+    "Ana Olivr → Ana Oliver",
+    "Ben Olivr → Ben Oliver",
+    "Kit Olivr → Kit Oliver",
+  ]);
   const stored = await getContactNamesByEmail("ana.olivr@e2e.test");
   expect([stored.lastName, stored.partnerLastName]).toEqual(["Oliver", "Oliver"]);
   expect(stored.kids).toEqual([{ first: "Kit", last: "Oliver" }]);
@@ -779,16 +814,30 @@ test("Enter in an open address line or the email moves on instead of sending", a
   await expect(envelope.locator("#address_line1")).toHaveAttribute("enterkeyhint", "next");
   await envelope.locator("#address_line1").fill("1550 Larkin St");
   await envelope.locator("#address_line1").press("Enter");
+  await expect(envelope.locator("#address_line2")).toBeFocused();
+  // The street's last field still says Next: a blank line follows.
+  await expect(envelope.locator("#address_line2")).toHaveAttribute("enterkeyhint", "next");
+  await envelope.locator("#address_line2").press("Enter");
   await expect(envelope.locator("#postal_code")).toBeFocused();
   await expect(saved(page)).toHaveCount(0);
-  await expect(envelope.locator("#postal_code")).toHaveAttribute("enterkeyhint", "done");
+
+  // The US city line: ZIP, then city, then state; only the last field closes it.
+  await expect(envelope.locator("#postal_code")).toHaveAttribute("enterkeyhint", "next");
+  await expect(envelope.locator("#city")).toHaveAttribute("enterkeyhint", "next");
+  await expect(envelope.locator("#state_region")).toHaveAttribute("enterkeyhint", "done");
   await envelope.locator("#postal_code").fill("94109");
   await expect(envelope.locator("#city")).toHaveValue("San Francisco");
   await envelope.locator("#postal_code").press("Enter");
+  await expect(envelope.locator("#city")).toBeFocused();
+  await envelope.locator("#city").press("Enter");
+  await expect(envelope.locator("#state_region")).toBeFocused();
+  await expect(envelope.locator("#postal_code")).toBeVisible();
+  await envelope.locator("#state_region").press("Enter");
   await expect(envelope.locator("#postal_code")).toBeHidden();
   await expect(saved(page)).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Email:/ }).click();
+  await expect(page.locator("#email")).toHaveAttribute("enterkeyhint", "done");
   await page.locator("#email").fill("eli.new@e2e.test");
   await page.locator("#email").press("Enter");
   await expect(page.locator("#email")).toHaveCount(0);
@@ -797,6 +846,65 @@ test("Enter in an open address line or the email moves on instead of sending", a
   await page.getByRole("button", { name: /^Send it here/ }).click();
   await expect(saved(page)).toBeVisible();
   await expect(page.locator("address")).toContainText("1550 Larkin St");
+});
+
+test("Enter in a Canadian city line steps through province and postal code before closing", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${canadaEnterToken}/confirm`);
+  await waitForTurnstile(page);
+  const envelope = page.locator("address");
+  await page.getByRole("button", { name: /^TORONTO ON {1,2}M5H 2N2\. Edit/ }).click();
+  await expect(envelope.locator("#city")).toBeFocused();
+  await expect(envelope.locator("#city")).toHaveAttribute("enterkeyhint", "next");
+  await expect(envelope.locator("#state_region")).toHaveAttribute("enterkeyhint", "next");
+  await expect(envelope.locator("#postal_code")).toHaveAttribute("enterkeyhint", "done");
+  await envelope.locator("#city").press("Enter");
+  await expect(envelope.locator("#state_region")).toBeFocused();
+  await envelope.locator("#state_region").press("Enter");
+  await expect(envelope.locator("#postal_code")).toBeFocused();
+  await envelope.locator("#postal_code").press("Enter");
+  await expect(envelope.locator("#postal_code")).toBeHidden();
+  await expect(saved(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Yes, send it here" })).toBeVisible();
+});
+
+test("changing the country re-lays the envelope and opens the street", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${toCanadaToken}/confirm`);
+  await waitForTurnstile(page);
+  const envelope = page.locator("address");
+  const country = page.getByRole("button", { name: /^Country:/ });
+  await expect(country).toHaveText(/Country: United States\s*Change/);
+  await country.click();
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("CA");
+  await expect(envelope.locator("#address_line1")).toBeVisible();
+  await expect(envelope.locator("#address_line1")).toBeFocused();
+  await expect(envelope).toContainText("PORTLAND");
+  await expect(envelope).toContainText("CANADA");
+  await expect(page.getByRole("button", { name: /^Country:/ })).toHaveText(/Country: Canada\s*Change/);
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(envelope.getByRole("button", { name: /^1 MAIN ST\. Edit/ })).toBeVisible();
+  await expect(saved(page)).toHaveCount(0);
+});
+
+test("switching a blank address to Hungary opens the street on Hungary's street line", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${toHungaryToken}/confirm`);
+  await waitForTurnstile(page);
+  const envelope = page.locator("address");
+  await page.getByRole("button", { name: "+ Add street address" }).click();
+  await page.getByRole("button", { name: /^Country:/ }).click();
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("HU");
+  await expect(envelope.locator("#address_line1")).toBeFocused();
+  await expect(page.getByRole("button", { name: "+ Add street address" })).toHaveCount(0);
+  // Hungary prints the city above the street.
+  const order = await envelope
+    .locator("[data-envelope-slot], [data-open-line]")
+    .evaluateAll((els) => els.map((el) => (el instanceof HTMLElement && el.dataset.openLine ? "open" : el.textContent)));
+  expect(order).toEqual(["+ Add city", "open", "+ Add postal code"]);
+  await envelope.locator("#address_line1").fill("Váci utca 1");
+  await envelope.getByRole("button", { name: "Next" }).click();
+  await expect(envelope.locator("#city")).toBeFocused();
 });
 
 test("a partner's link labels the partner as the one replying", async ({ page }) => {

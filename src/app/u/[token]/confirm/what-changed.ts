@@ -1,8 +1,8 @@
 import { formatPerson } from "@/lib/names";
-import { type HouseholdValues } from "@/lib/validation/household";
+import { type HouseholdDraft, type Person } from "./envelope-names";
 
 export type ReplySnapshot = {
-  household: HouseholdValues;
+  household: HouseholdDraft;
   address: string[];
   email: string;
   birthday: string;
@@ -16,10 +16,11 @@ export type Change =
   | { kind: "email"; from: string; to: string }
   | { kind: "birthday"; from: string; to: string };
 
-const personName = (person: { first: string; last: string } | null): string | null =>
-  person === null
-    ? null
-    : formatPerson({ first: person.first.trim(), last: person.last.trim() });
+const personName = (person: Person | undefined): string | null =>
+  person === undefined ? null : formatPerson({ first: person.first.trim(), last: person.last.trim() });
+
+const people = ({ primary, partner, kids }: HouseholdDraft): Person[] =>
+  partner ? [primary, partner, ...kids] : [primary, ...kids];
 
 function personChange(from: string | null, to: string | null): Change | null {
   if (from === to) return null;
@@ -28,30 +29,21 @@ function personChange(from: string | null, to: string | null): Change | null {
   return { kind: "renamed", from, to };
 }
 
-function without(list: string[], drop: string[]): string[] {
-  const left = [...drop];
-  return list.filter((item) => {
-    const at = left.indexOf(item);
-    if (at === -1) return true;
-    left.splice(at, 1);
-    return false;
-  });
-}
-
 export function whatChanged(before: ReplySnapshot, after: ReplySnapshot): Change[] {
   const changes: Change[] = [];
   const push = (change: Change | null) => {
     if (change) changes.push(change);
   };
 
-  const primary = ({ household }: ReplySnapshot) =>
-    personName({ first: household.first_name, last: household.last_name });
-  push(personChange(primary(before), primary(after)));
-  push(personChange(personName(before.household.partner), personName(after.household.partner)));
-  const kidsBefore = before.household.kids.map(personName).filter((n): n is string => n !== null);
-  const kidsAfter = after.household.kids.map(personName).filter((n): n is string => n !== null);
-  for (const name of without(kidsBefore, kidsAfter)) push({ kind: "removed", name });
-  for (const name of without(kidsAfter, kidsBefore)) push({ kind: "added", name });
+  // People are matched by draft key, so a name edit is one rename even when a last name followed the household.
+  const was = people(before.household);
+  const now = people(after.household);
+  for (const person of was) {
+    push(personChange(personName(person), personName(now.find((p) => p.key === person.key))));
+  }
+  for (const person of now) {
+    if (!was.some((p) => p.key === person.key)) push(personChange(null, personName(person)));
+  }
 
   const from = before.address.join(", ");
   const to = after.address.join(", ");
