@@ -437,9 +437,10 @@ export function EnvelopeEditor({
     // The names editor may already have focused a person; Next keeps this block mounted, so focus on its button doesn't count.
     const settled = block?.contains(active) && active?.matches("input, select") && visible(active);
     if (block && !settled) {
-      [...block.querySelectorAll<HTMLElement>("input:not([type=hidden]), select, button")]
-        .find(visible)
-        ?.focus({ preventScroll: true });
+      // A street slot shows Country first; start on the street, not the select.
+      const first = (selector: string) =>
+        [...block.querySelectorAll<HTMLElement>(selector)].find(visible);
+      (first("input:not([type=hidden])") ?? first("select, button"))?.focus({ preventScroll: true });
     }
     envelopeRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
     const viewport = window.visualViewport;
