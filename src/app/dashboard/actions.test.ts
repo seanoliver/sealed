@@ -284,6 +284,19 @@ describe("requestAddresses", () => {
     expect(await isLive(A, second)).toBe(true);
   });
 
+  it("retires an old link the recipient already used, since used links stay open", async () => {
+    answer();
+    await requestAddresses({ contactIds: [A] });
+    const first = sentLinks()["ana@ra.test"];
+    await dbAdmin.update(updateTokens).set({ usedAt: new Date() }).where(eq(updateTokens.contactId, A));
+
+    send.mockReset();
+    answer();
+    await requestAddresses({ contactIds: [A] });
+    expect(await isLive(A, first)).toBe(false);
+    expect(await isLive(A, sentLinks()["ana@ra.test"])).toBe(true);
+  });
+
   it("does not retire a link minted by a newer send", async () => {
     answer();
     let newer = "";
@@ -306,20 +319,6 @@ describe("requestAddresses", () => {
     await requestAddresses({ contactIds: [A] });
     expect(newer).not.toBe("");
     expect(await isLive(A, newer)).toBe(true);
-  });
-
-  it("never deletes a link the contact already used", async () => {
-    answer();
-    await requestAddresses({ contactIds: [A] });
-    await dbAdmin
-      .update(updateTokens)
-      .set({ usedAt: new Date() })
-      .where(eq(updateTokens.contactId, A));
-
-    send.mockReset();
-    answer();
-    await requestAddresses({ contactIds: [A] });
-    expect(await liveTokens(A)).toHaveLength(2);
   });
 
   it("returns an error and sends nothing when minting fails", async () => {

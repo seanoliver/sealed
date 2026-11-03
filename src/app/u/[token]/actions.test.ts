@@ -7,7 +7,7 @@ import { generateToken } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { sendNotification } from "@/lib/email/resend";
 import { householdPrefill } from "@/lib/names";
-import { INVALID_LINK_MESSAGE } from "../notice";
+import { INVALID_LINK_MESSAGE, STALE_REPLY_MESSAGE } from "../notice";
 import { saveTokenUpdate, submitTokenUpdate } from "./actions";
 import { redirect } from "next/navigation";
 
@@ -165,6 +165,21 @@ describe("submitTokenUpdate", () => {
       saveTokenUpdate(token, {}, prefilledForm(contact, { city: "Oslo" })),
     ).resolves.toEqual({ saved: true });
     expect(await stored()).toMatchObject({ city: "Oslo" });
+  });
+
+  it("asks a page opened before the person's own later save to reload instead of overwriting it", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const openedAt = (
+      await dbAdmin.execute(sql`select to_jsonb(updated_at) #>> '{}' as t from public.contacts where id = ${C}`)
+    )[0].t as string;
+    const stale = prefilledForm(contact, { city: "Oslo" });
+    stale.set("seen_at", openedAt);
+    const fresh = prefilledForm(contact, { city: "Bergen" });
+    fresh.set("seen_at", openedAt);
+    await expect(saveTokenUpdate(token, {}, fresh)).resolves.toEqual({ saved: true });
+    await expect(saveTokenUpdate(token, {}, stale)).resolves.toMatchObject({ error: STALE_REPLY_MESSAGE });
+    expect(await stored()).toMatchObject({ city: "Bergen" });
   });
 
   it("refuses a save once the link has expired", async () => {
