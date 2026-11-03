@@ -28,6 +28,7 @@ returns jsonb language sql security definer set search_path = '' as $$
     'enabled_fields', b.enabled_fields,
     'owner_name', p.display_name,
     'sender_full_names', b.sender_full_names,
+    'expires_at', t.expires_at,
     'sender_country', b.sender_country,
     'recipient', t.recipient,
     'updated_at', c.updated_at)

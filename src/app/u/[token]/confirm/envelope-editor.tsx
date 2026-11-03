@@ -70,6 +70,8 @@ type Props = {
   senderCountry: string;
   legacyCountry: string | null;
   seenAt: string;
+  /** When the recipient's link stops working, for the saved view. */
+  expiresAt: string;
 };
 
 const TOKEN_FIELDS: Record<FormatField, AddressField[]> = {
@@ -265,7 +267,8 @@ function ChangeItem({ change }: { change: Change }) {
   }
 }
 
-function SavedView({ ownerName, saved }: { ownerName: string; saved: Saved }) {
+function SavedView({ ownerName, saved, expiresAt }: { ownerName: string; saved: Saved; expiresAt: string }) {
+  const until = new Date(expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const [date] = useState(() =>
     new Date()
       .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -327,7 +330,7 @@ function SavedView({ ownerName, saved }: { ownerName: string; saved: Saved }) {
         </p>
       )}
       <p className="text-center text-sm leading-relaxed text-muted-foreground">
-        Need to change something later? This link keeps working.
+        Need to change something later? This link keeps working until {until}.
       </p>
       <button
         type="button"
@@ -351,6 +354,7 @@ export function EnvelopeEditor({
   senderCountry,
   legacyCountry,
   seenAt,
+  expiresAt,
 }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const addressRef = useRef<AddressFieldsHandle>(null);
@@ -477,7 +481,7 @@ export function EnvelopeEditor({
     return () => viewport.removeEventListener("resize", keepVisible);
   }, [open]);
 
-  if (state.done) return <SavedView ownerName={ownerName} saved={sent} />;
+  if (state.done) return <SavedView ownerName={ownerName} saved={sent} expiresAt={expiresAt} />;
 
   const emailChanged = changed.has("email") || changed.has("birthday");
 

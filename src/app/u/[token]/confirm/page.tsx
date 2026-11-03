@@ -51,6 +51,7 @@ export default async function ConfirmAddressPage({
         senderCountry={loaded.data.sender_country}
         legacyCountry={contact.country_code ? null : contact.country}
         seenAt={loaded.data.updated_at}
+        expiresAt={loaded.data.expires_at}
       />
     </main>
   );
