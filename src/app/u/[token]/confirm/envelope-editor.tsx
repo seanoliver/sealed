@@ -457,6 +457,7 @@ export function EnvelopeEditor({
   function show(next: Open, opener: HTMLElement | null) {
     returnTo.current = opener?.dataset.lineFocus ?? null;
     setTouched(true);
+    setDraft((current) => pruneDraft(current));
     if (next.kind === "names") {
       const alone = !draft.partner && draft.kids.length === 0;
       setEditingPerson(alone || draft.primary.first === "" ? draft.primary.key : null);
@@ -867,7 +868,7 @@ export function EnvelopeEditor({
         handleRef={addressRef}
         postcodeFirstIn="US"
       />
-      <HouseholdInputs draft={draft} enabled={enabled} />
+      <HouseholdInputs draft={pruneDraft(draft)} enabled={enabled} />
       <input type="hidden" name="seen_at" value={seenAt} />
       <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
     </form>
