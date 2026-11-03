@@ -6,16 +6,17 @@ import { loadBookSender } from "@/lib/email/sender";
 import { mintAgentToken, verifyAgentToken } from "@/lib/agent/tokens";
 import { getOwnBook, linkPendingMembership } from "./books";
 
-const OWNER = "00000000-0000-0000-0000-00000000d001";
-const MEMBER = "00000000-0000-0000-0000-00000000d002";
-const NEWCOMER = "00000000-0000-0000-0000-00000000d003";
-const UNCONFIRMED = "00000000-0000-0000-0000-00000000d004";
-const OWNS_A_BOOK = "00000000-0000-0000-0000-00000000d005";
-const BOOK = "10000000-0000-0000-0000-00000000d001";
-const OTHER_BOOK = "10000000-0000-0000-0000-00000000d005";
+const OWNER = "00000000-0000-0000-0000-0000000bb001";
+const MEMBER = "00000000-0000-0000-0000-0000000bb002";
+const NEWCOMER = "00000000-0000-0000-0000-0000000bb003";
+const UNCONFIRMED = "00000000-0000-0000-0000-0000000bb004";
+const OWNS_A_BOOK = "00000000-0000-0000-0000-0000000bb005";
+const BOOK = "10000000-0000-0000-0000-0000000bb001";
+const OTHER_BOOK = "10000000-0000-0000-0000-0000000bb005";
 
 describe("getOwnBook with a shared book", () => {
   beforeAll(async () => {
+    await dbAdmin.execute(sql`delete from auth.users where email like 'gb-%@test.dev'`);
     await dbAdmin.execute(sql`
       insert into auth.users (id, email, email_confirmed_at) values
         (${OWNER}, 'gb-owner@test.dev', now()), (${MEMBER}, 'gb-member@test.dev', now()),

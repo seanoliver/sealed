@@ -14,14 +14,15 @@ function chainMessage(e: unknown): string {
   return parts.join(" <- ");
 }
 
-const OWNER = "00000000-0000-0000-0000-00000000c001";
-const MEMBER = "00000000-0000-0000-0000-00000000c002";
-const STRANGER = "00000000-0000-0000-0000-00000000c003";
-const BOOK = "10000000-0000-0000-0000-00000000c001";
-const CONTACT = "20000000-0000-0000-0000-00000000c001";
+const OWNER = "00000000-0000-0000-0000-0000000bc001";
+const MEMBER = "00000000-0000-0000-0000-0000000bc002";
+const STRANGER = "00000000-0000-0000-0000-0000000bc003";
+const BOOK = "10000000-0000-0000-0000-0000000bc001";
+const CONTACT = "20000000-0000-0000-0000-0000000bc001";
 
 describe("book members under RLS", () => {
   beforeAll(async () => {
+    await dbAdmin.execute(sql`delete from auth.users where email like 'bm-%@test.dev'`);
     await dbAdmin.execute(sql`
       insert into auth.users (id, email) values
         (${OWNER}, 'bm-owner@test.dev'), (${MEMBER}, 'bm-member@test.dev'),
