@@ -582,6 +582,7 @@ test("a contact with no address adds one line by line", async ({ page }) => {
   const envelope = page.locator("address");
   await envelope.locator("#address_line1").fill("1550 Larkin St");
   await envelope.getByRole("button", { name: "Next" }).click();
+  await expect(envelope.locator("#postal_code")).toBeFocused();
   await envelope.locator("#postal_code").fill("94109");
   await expect(envelope.locator("#city")).toHaveValue("San Francisco");
   await expect(envelope.locator("#state_region")).toHaveValue("CA");
