@@ -38,7 +38,7 @@ The pgTAP suite (`supabase/tests/database/01_rls.sql`) asserts the exact expecte
 
 ## Database role
 
-Local development connects as `postgres` — the table owner, so it implicitly bypasses RLS (which is what `dbAdmin` relies on) but also holds DDL, every schema, and role administration. **Production SHOULD connect as a dedicated restricted role instead**: it can read and write the app's tables and call the `private.*` functions, but owns nothing — no `CREATE`/`ALTER`/`DROP`, no ability to replace the SECURITY DEFINER functions or touch other schemas (`storage`, `vault`, …), and only a two-column peek at `auth.users`. A compromised app server then can't rewrite the schema out from under the security model.
+Local development connects as `postgres` — the table owner, so it implicitly bypasses RLS (which is what `dbAdmin` relies on) but also holds DDL, every schema, and role administration. **Production SHOULD connect as a dedicated restricted role instead**: it can read and write the app's tables and call the `private.*` functions, but owns nothing — no `CREATE`/`ALTER`/`DROP`, no ability to replace the SECURITY DEFINER functions or touch other schemas (`storage`, `vault`, …), and only a three-column peek at `auth.users`. A compromised app server then can't rewrite the schema out from under the security model.
 
 Run this once against the production database as `postgres` (SQL editor or psql), then point `DATABASE_URL` at `app_server`:
 
@@ -49,7 +49,7 @@ grant usage on schema public, private to app_server;
 grant select, insert, update, delete on all tables in schema public to app_server;
 grant usage on all sequences in schema public to app_server;
 grant execute on all functions in schema private to app_server;
-grant select (id, email) on auth.users to app_server;
+grant select (id, email, email_confirmed_at) on auth.users to app_server;
 alter default privileges for role postgres in schema public
   grant select, insert, update, delete on tables to app_server;
 alter default privileges for role postgres in schema public
@@ -62,7 +62,7 @@ Notes (each verified against a local stack — the full vitest integration suite
 
 - **`bypassrls` is required, and does not weaken Wall 2.** Without it, every `dbAdmin` query is silently filtered to zero rows by the default-deny policies (webhook status updates match nothing, token minting inserts nothing). It stays safe because RLS checks the *current* role: `withRls` executes `SET ROLE authenticated`, and `authenticated` has no `BYPASSRLS`, so every owner-facing query remains policy-enforced (`src/lib/db/rls.test.ts` proves both behaviors under this role). Supabase's `postgres` role is privileged enough to create `bypassrls` roles even though it isn't a superuser.
 - **`grant authenticated`** is what allows the `SET ROLE authenticated` inside `withRls` — and membership also inherits `usage` on the `auth` schema, which the column grant below needs.
-- **`select (id, email) on auth.users`** is the only auth-schema privilege the app uses (the owner-notify email lookup in the permalink submit path). `postgres` can grant exactly this; broader DML on `auth.users` isn't grantable by `postgres` and isn't needed.
+- **`select (id, email, email_confirmed_at) on auth.users`** is the only auth-schema privilege the app uses: owner-notify and Reply-To email lookups, and the confirmed-email check when a book invite links to a member. `postgres` can grant exactly this; broader DML on `auth.users` isn't grantable by `postgres` and isn't needed.
 - The schema has no sequences today (uuid keys throughout); the sequence grants plus the `alter default privileges` lines are future-proofing so tables, identity columns, or `private` functions added by later migrations (which run as `postgres`) keep working without re-granting.
 - **Running the vitest integration suite against a restricted role** additionally needs fixture-seeding privileges the app itself never uses (`grant insert, delete on auth.users to app_server;`, run as a superuser). That's for local verification only — don't add it in production.
 
