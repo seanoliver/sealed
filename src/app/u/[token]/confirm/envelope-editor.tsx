@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { CircleAlert, Lock } from "lucide-react";
 import {
@@ -157,6 +158,16 @@ function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | 
       live = false;
     };
   }, [zip]);
+  return null;
+}
+
+/** Labels the phone keyboard's Return key on the address inputs, which AddressFields renders. */
+function EnterHint({ within, hint }: { within: RefObject<HTMLElement | null>; hint: "next" | "done" }) {
+  useEffect(() => {
+    within.current?.querySelectorAll("input").forEach((input) => {
+      input.enterKeyHint = hint;
+    });
+  });
   return null;
 }
 
@@ -488,10 +499,17 @@ export function EnvelopeEditor({
     });
   }
 
-  function onOpenKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key !== "Escape") return;
+  function onOpenKeyDown(event: KeyboardEvent<HTMLElement>, done: () => void) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    // Enter would submit the whole reply mid-edit; it does what the block's Next/Done button does.
+    if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing) return;
+    if (!(event.target instanceof HTMLInputElement)) return;
     event.preventDefault();
-    close();
+    done();
   }
 
   const layout = ({ fields, preview }: { fields: ReactNode; preview: AddressPreview }) => {
@@ -633,7 +651,7 @@ export function EnvelopeEditor({
                       key="open"
                       ref={openRef}
                       data-open-line={focusKey}
-                      onKeyDown={onOpenKeyDown}
+                      onKeyDown={(event) => onOpenKeyDown(event, isNames ? close : finish)}
                       className="my-1 flex w-full flex-col gap-3 font-sans"
                     >
                       {isNames ? (
@@ -651,6 +669,7 @@ export function EnvelopeEditor({
                       ) : (
                         <div ref={shakeRef} className="w-full">
                           {fields}
+                          <EnterHint within={shakeRef} hint={nextSlot ? "next" : "done"} />
                         </div>
                       )}
                       {!isNames && row.tokens.includes("Z") ? zipWarning : null}
@@ -730,7 +749,7 @@ export function EnvelopeEditor({
           <div
             ref={openRef}
             data-open-line="details"
-            onKeyDown={onOpenKeyDown}
+            onKeyDown={(event) => onOpenKeyDown(event, close)}
             className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
           >
             <div className="flex flex-col gap-1">
@@ -742,6 +761,7 @@ export function EnvelopeEditor({
                 name="email"
                 type="email"
                 autoComplete="email"
+                enterKeyHint="done"
                 maxLength={320}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}

@@ -44,6 +44,7 @@ let keepSelfToken: string;
 let keepKidToken: string;
 let followToken: string;
 let ownLastToken: string;
+let enterToken: string;
 const familyOwnerEmail = uniqueEmail("confirm-family-owner");
 
 test.beforeAll(async ({ browser }) => {
@@ -290,6 +291,9 @@ test.beforeAll(async ({ browser }) => {
       postalCode: "97214",
       household: { firstName: "Ada", lastName: "Olivr", partnerFirstName: "Cy", partnerLastName: "Diaz" },
     }),
+  );
+  enterToken = await seedUpdateToken(
+    await seedContact({ bookId, fullName: "Eli Enter", email: "eli@e2e.test" }),
   );
   soloPartnerToken = await seedUpdateToken(
     await seedContact({
@@ -763,6 +767,36 @@ test("fixing the household last name carries to people who share it", async ({ p
   await expect(saved(page)).toBeVisible();
   const own = await getContactNamesByEmail("ada.olivr@e2e.test");
   expect([own.lastName, own.partnerLastName]).toEqual(["Oliver", "Diaz"]);
+});
+
+test("Enter in an open address line or the email moves on instead of sending", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${enterToken}/confirm`);
+  await waitForTurnstile(page);
+  const envelope = page.locator("address");
+  await page.getByRole("button", { name: "+ Add street address" }).click();
+  await expect(envelope.locator("#address_line1")).toBeFocused();
+  await expect(envelope.locator("#address_line1")).toHaveAttribute("enterkeyhint", "next");
+  await envelope.locator("#address_line1").fill("1550 Larkin St");
+  await envelope.locator("#address_line1").press("Enter");
+  await expect(envelope.locator("#postal_code")).toBeFocused();
+  await expect(saved(page)).toHaveCount(0);
+  await expect(envelope.locator("#postal_code")).toHaveAttribute("enterkeyhint", "done");
+  await envelope.locator("#postal_code").fill("94109");
+  await expect(envelope.locator("#city")).toHaveValue("San Francisco");
+  await envelope.locator("#postal_code").press("Enter");
+  await expect(envelope.locator("#postal_code")).toBeHidden();
+  await expect(saved(page)).toHaveCount(0);
+
+  await page.getByRole("button", { name: /^Email:/ }).click();
+  await page.locator("#email").fill("eli.new@e2e.test");
+  await page.locator("#email").press("Enter");
+  await expect(page.locator("#email")).toHaveCount(0);
+  await expect(saved(page)).toHaveCount(0);
+
+  await page.getByRole("button", { name: /^Send it here/ }).click();
+  await expect(saved(page)).toBeVisible();
+  await expect(page.locator("address")).toContainText("1550 Larkin St");
 });
 
 test("a partner's link labels the partner as the one replying", async ({ page }) => {
