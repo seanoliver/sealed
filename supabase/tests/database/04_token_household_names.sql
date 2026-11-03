@@ -106,8 +106,10 @@ select results_eq(
      where id = '20000000-0000-0000-0000-0000000000d2' $$,
   $$ values ('Priya Raman-Okafor', 'Priya') $$,
   'a half name leaves the stored name alone');
+update public.update_tokens set expires_at = now() - interval '1 minute'
+where token_hash = extensions.digest('tn5', 'sha256');
 select ok(private.apply_token_reply('tn5', '{"city": "Again"}') is null,
-  'structured token updates are single-use too');
+  'an expired link applies nothing');
 select is(
   (select count(*)::int from public.contact_events
    where contact_id = '20000000-0000-0000-0000-0000000000d2' and source = 'token'),

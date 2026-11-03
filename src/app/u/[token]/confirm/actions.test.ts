@@ -7,6 +7,7 @@ import { sendNotification } from "@/lib/email/resend";
 import { generateToken } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { INVALID_LINK_MESSAGE } from "../../notice";
+import { notifyOwner, ownerForToken } from "../owner";
 import { confirmTokenAddress } from "./actions";
 
 vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
@@ -99,11 +100,21 @@ describe("confirmTokenAddress", () => {
     ).resolves.toEqual({ confirmed: true });
     await flushAfter();
     expect(sendNotification).toHaveBeenCalledTimes(1);
-    const events = await dbAdmin
-      .select()
-      .from(contactEvents)
-      .where(eq(contactEvents.contactId, C));
-    expect(events).toHaveLength(1);
+  });
+
+  it("emails the owner again when a later reply through the same link changes something", async () => {
+    const token = await seed();
+    await confirmTokenAddress(token, {}, new FormData());
+    await flushAfter();
+    await dbAdmin.execute(
+      sql`insert into public.contact_events (contact_id, source, recipient, diff)
+          values (${C}, 'token', 'primary', '{"before": {"city": "Oslo"}, "after": {"city": "Bergen"}}'::jsonb)`,
+    );
+    vi.mocked(sendNotification).mockClear();
+    const owner = await ownerForToken(token);
+    expect(owner?.repliedBefore).toBe(true);
+    await notifyOwner(owner!);
+    expect(sendNotification).toHaveBeenCalledTimes(1);
   });
 
   it("refuses an expired link that was never used", async () => {
@@ -146,22 +157,19 @@ describe("confirmTokenAddress", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
-  it("shows the invalid-link error when the spent check fails", async () => {
+  it("refuses an expired link that was used before", async () => {
     const token = await seed();
     await dbAdmin
       .update(updateTokens)
-      .set({ usedAt: new Date() })
+      .set({ usedAt: new Date(), expiresAt: new Date(Date.now() - 60_000) })
       .where(eq(updateTokens.contactId, C));
-    const execute = dbAdmin.execute.bind(dbAdmin);
-    vi.spyOn(dbAdmin, "execute")
-      .mockImplementationOnce(execute)
-      .mockImplementationOnce(execute)
-      .mockRejectedValueOnce(new Error("down"));
     await expect(
       confirmTokenAddress(token, {}, new FormData()),
     ).resolves.toEqual({
       error: INVALID_LINK_MESSAGE,
     });
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 
   it("emails the owner after confirming", async () => {
