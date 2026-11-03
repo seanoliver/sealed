@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { eq, or, sql, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 // Sanctioned dbAdmin import: book_members has no client write grants.
@@ -10,16 +10,16 @@ import { logDbError } from "@/lib/log";
 
 /** Must match the owner-or-member RLS policies in the book_members migration. */
 export function bookAccessibleBy(userId: string): SQL {
-  return or(
-    eq(books.ownerId, userId),
-    sql`exists (select 1 from ${bookMembers} m where m.book_id = ${books.id} and m.user_id = ${userId})`,
-  )!;
+  return sql`${books.id} in (
+    select b.id from ${books} b where b.owner_id = ${userId}
+    union all
+    select m.book_id from ${bookMembers} m where m.user_id = ${userId})`;
 }
 
-async function linkPendingMembership(claims: SessionClaims): Promise<boolean> {
+export async function linkPendingMembership(claims: SessionClaims): Promise<boolean> {
   try {
-    // Not claims.email: it is unconfirmed when sign-up confirmation is off,
-    // which would let anyone claim an invite.
+    // Not claims.email, which a token can carry stale. The confirmed check only
+    // protects while hosted Auth keeps mailer_autoconfirm off (runbook).
     const linked = await dbAdmin.execute<{ id: string }>(sql`
       update public.book_members m
          set user_id = u.id, linked_at = now()

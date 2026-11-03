@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { withRls } from "./index";
 import { dbAdmin } from "./admin";
-import { bookMembers, books, contacts, submissions } from "./schema";
+import { bookMembers, books, contactEvents, contacts, emailSends, submissions } from "./schema";
 
 function chainMessage(e: unknown): string {
   const parts: string[] = [];
@@ -76,12 +76,40 @@ describe("book members under RLS", () => {
       expect(deleted).toHaveLength(1);
     });
 
-    it("the member can read submissions on the shared book", async () => {
-      await expect(
-        withRls({ sub: MEMBER }, (tx) =>
-          tx.select().from(submissions).where(eq(submissions.bookId, BOOK)),
-        ),
-      ).resolves.toBeDefined();
+    it("the member reads, updates and deletes submissions on the shared book", async () => {
+      const [{ id }] = await dbAdmin
+        .insert(submissions)
+        .values({ bookId: BOOK, payload: { full_name: "Pending P" } })
+        .returning({ id: submissions.id });
+      const read = await withRls({ sub: MEMBER }, (tx) =>
+        tx.select().from(submissions).where(eq(submissions.id, id)),
+      );
+      expect(read).toHaveLength(1);
+      const updated = await withRls({ sub: MEMBER }, (tx) =>
+        tx.update(submissions).set({ status: "rejected" }).where(eq(submissions.id, id)).returning(),
+      );
+      expect(updated).toHaveLength(1);
+      const deleted = await withRls({ sub: MEMBER }, (tx) =>
+        tx.delete(submissions).where(eq(submissions.id, id)).returning(),
+      );
+      expect(deleted).toHaveLength(1);
+    });
+
+    it("the member reads sends and contact history on the shared book", async () => {
+      await dbAdmin.insert(emailSends).values({ contactId: CONTACT, bookId: BOOK });
+      await dbAdmin.insert(contactEvents).values({ contactId: CONTACT, source: "owner", diff: {} });
+      const sends = await withRls({ sub: MEMBER }, (tx) =>
+        tx.select().from(emailSends).where(eq(emailSends.contactId, CONTACT)),
+      );
+      const events = await withRls({ sub: MEMBER }, (tx) =>
+        tx.select().from(contactEvents).where(eq(contactEvents.contactId, CONTACT)),
+      );
+      expect(sends.length).toBeGreaterThan(0);
+      expect(events.length).toBeGreaterThan(0);
+      const strangerSends = await withRls({ sub: STRANGER }, (tx) =>
+        tx.select().from(emailSends).where(eq(emailSends.contactId, CONTACT)),
+      );
+      expect(strangerSends).toHaveLength(0);
     });
 
     it("the member cannot change book settings", async () => {

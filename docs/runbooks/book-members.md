@@ -17,6 +17,8 @@ Every address-request email signs with the **owner's** name, whoever presses sen
 - A Supabase Management API token (`SUPABASE_ACCESS_TOKEN`) with access to `ivwrvilpjhqhmlzwgyot`.
 - The member's email address, exactly as they will sign in with it (for Google sign-in, their Google account email).
 - The member must not already own a book: a person sees one book, and an owned book wins.
+- Hosted Auth keeps `mailer_autoconfirm = false` and `mailer_secure_email_change_enabled = true` (both verified on 2026-11-03). Linking trusts `auth.users.email_confirmed_at`; with autoconfirm on, anyone could sign up or change their email to an invited address and claim the invite.
+- Tell the member first: every address-request email lists the owner's and each member's sign-in email in Reply-To.
 
 ## Procedure
 

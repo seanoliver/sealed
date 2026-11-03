@@ -37,6 +37,7 @@ const eslintConfig = defineConfig([
       "src/app/b/**",
       "src/app/dashboard/actions.ts",
       "src/app/dashboard/actions.test.ts",
+      "src/app/dashboard/member-access.test.ts",
       // Sanctioned: the public permalink surface is unauthenticated (no
       // claims for withRls); this module selects ONLY title/owner name/
       // enabled-field flags by slug — never ids, counts, or contact data.

@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { dbAdmin } from "@/lib/db/admin";
 import { bookMembers } from "@/lib/db/schema";
 import { loadBookSender } from "@/lib/email/sender";
-import { getOwnBook } from "./books";
+import { getOwnBook, linkPendingMembership } from "./books";
 
 const OWNER = "00000000-0000-0000-0000-00000000d001";
 const MEMBER = "00000000-0000-0000-0000-00000000d002";
@@ -74,6 +74,7 @@ describe("getOwnBook with a shared book", () => {
 
   it("never links someone who already owns a book", async () => {
     expect((await getOwnBook({ sub: OWNS_A_BOOK, email: "gb-owns@test.dev" }))?.id).toBe(OTHER_BOOK);
+    expect(await linkPendingMembership({ sub: OWNS_A_BOOK, email: "gb-owns@test.dev" })).toBe(false);
     const [row] = await dbAdmin
       .select()
       .from(bookMembers)
@@ -85,7 +86,7 @@ describe("getOwnBook with a shared book", () => {
     await expect(
       dbAdmin.execute(sql`
         insert into public.books (owner_id, slug) values (${MEMBER}, 'gb-member-second-book')`),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy((e) => /cannot own another/.test(String((e as Error).cause ?? e)));
   });
 
   it("signs emails with the owner's name and replies to owner then member", async () => {
