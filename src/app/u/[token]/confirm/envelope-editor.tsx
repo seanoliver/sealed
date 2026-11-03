@@ -21,7 +21,7 @@ import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-wi
 import { type Country, type FormatField } from "@/lib/address/countries";
 import { fieldLabel, type AddressField } from "@/lib/address/fields";
 import { COUNTRY_LINE_AT } from "@/lib/address/format";
-import { type ZipPlace } from "@/lib/address/us-zip";
+import { normCity, zipDisagrees, type ZipPlace } from "@/lib/address/zip-agree";
 import { ownerVerb } from "@/lib/owner-name";
 import { cn } from "@/lib/utils";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
@@ -38,7 +38,9 @@ import {
   pruneDraft,
   valuesFromDraft,
   type HouseholdDraft,
+  type Recipient,
 } from "./envelope-names";
+import { envelopeRows, openRowIndex, type Row } from "./envelope-rows";
 import { whatChanged, type Change, type ReplySnapshot } from "./what-changed";
 import { lookupZip } from "./zip-action";
 
@@ -64,6 +66,7 @@ type Props = {
   senderNames: string;
   defaults: TokenUpdateValues;
   household: HouseholdValues;
+  recipient: Recipient;
   enabled: EnabledFields;
   senderCountry: string;
   legacyCountry: string | null;
@@ -128,24 +131,6 @@ function changedKeys(base: Map<string, string>, now: Map<string, string>): Set<s
   return keys;
 }
 
-type Row =
-  | { kind: "line"; text: string; tokens: FormatField[]; at: number; uppercased: boolean }
-  | { kind: "slot"; tokens: FormatField[]; at: number };
-
-function envelopeRows(preview: AddressPreview): Row[] {
-  const rows: Row[] = preview.envelope
-    ? preview.envelope.lines.map((line) => ({ kind: "line", ...line }))
-    : preview.name
-      ? [{ kind: "line", text: preview.name, tokens: ["N"], at: 0, uppercased: false }]
-      : [];
-  if (!rows.some((row) => row.tokens.includes("N"))) rows.unshift({ kind: "slot", tokens: ["N"], at: 0 });
-  for (const slot of preview.slots) rows.push({ kind: "slot", ...slot });
-  return rows
-    .map((row, i) => ({ row, i }))
-    .sort((a, b) => a.row.at - b.row.at || a.i - b.i)
-    .map(({ row }) => row);
-}
-
 /** "City, state and ZIP code" → "city, state and ZIP code", for use mid-sentence. */
 function midSentence(title: string): string {
   return /^[A-Z]{2}/.test(title) ? title : title.charAt(0).toLowerCase() + title.slice(1);
@@ -156,14 +141,6 @@ function slotLabel(tokens: FormatField[], country: Country | null): string {
 }
 
 const ZIP5 = /^(\d{5})(-\d{4})?$/;
-const norm = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
-
-/** True when the typed city or state disagrees with where the ZIP is. Blank fields agree. */
-function disagrees(place: ZipPlace, { city, state }: { city: string; state: string }): boolean {
-  const cityOk = city.trim() === "" || norm(city) === norm(place.city);
-  const stateOk = state.trim() === "" || state.trim().toUpperCase() === place.state;
-  return !(cityOk && stateOk);
-}
 
 /** Looks a ZIP up once per mount; key it by ZIP. */
 function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | null) => void }) {
@@ -346,6 +323,7 @@ export function EnvelopeEditor({
   senderNames,
   defaults,
   household,
+  recipient,
   enabled,
   senderCountry,
   legacyCountry,
@@ -482,6 +460,7 @@ export function EnvelopeEditor({
   function show(next: Open, opener: HTMLElement | null) {
     returnTo.current = opener?.dataset.lineFocus ?? null;
     setTouched(true);
+    setDraft((current) => pruneDraft(current));
     if (next.kind === "names") {
       const alone = !draft.partner && draft.kids.length === 0;
       setEditingPerson(alone || draft.primary.first === "" ? draft.primary.key : null);
@@ -512,7 +491,9 @@ export function EnvelopeEditor({
   }
 
   const layout = ({ fields, preview }: { fields: ReactNode; preview: AddressPreview }) => {
-    const rows = envelopeRows(preview);
+    const openAddress = open?.kind === "address" ? open : null;
+    const rows = envelopeRows(preview, openAddress);
+    const openIndex = openRowIndex(rows, openAddress);
     const missing = rows.filter((row) => row.kind === "slot");
     // Only a missing street or name blocks sending: contacts imported with the
     // whole address in the street must still be able to confirm.
@@ -533,8 +514,8 @@ export function EnvelopeEditor({
     const lookUp = zip !== null && !(zip in zipPlaces) && (zipOpen || changed.has("postal_code"));
     const place = zip ? (zipPlaces[zip] ?? null) : null;
     const where = { city: values.city, state: values.state_region };
-    const keepKey = `${zip}|${norm(where.city)}|${where.state}`;
-    const mismatch = place !== null && disagrees(place, where) && !kept.has(keepKey) ? place : null;
+    const keepKey = `${zip}|${normCity(where.city)}|${where.state}`;
+    const mismatch = place !== null && zipDisagrees(place, where) && !kept.has(keepKey) ? place : null;
 
     function onPlace(found: ZipPlace | null) {
       if (zip === null) return;
@@ -639,15 +620,13 @@ export function EnvelopeEditor({
               {rows.map((row, i) => {
                 const style = { "--i": i } as CSSProperties;
                 const isNames = row.tokens.includes("N");
-                const isOpen =
-                  (open?.kind === "names" && isNames) ||
-                  (open?.kind === "address" && !isNames && row.at === open.at);
+                const isOpen = (open?.kind === "names" && isNames) || i === openIndex;
                 const focusKey = isNames ? "names" : String(row.at);
                 const kind = isNames ? "names" : "address";
                 if (isOpen) {
                   return (
                     <div
-                      key={`open-${row.at}-${i}`}
+                      key="open"
                       ref={openRef}
                       data-open-line={focusKey}
                       onKeyDown={onOpenKeyDown}
@@ -658,6 +637,7 @@ export function EnvelopeEditor({
                           draft={draft}
                           onChange={setDraft}
                           enabled={enabled}
+                          recipient={recipient}
                           editing={editingPerson}
                           onEdit={setEditingPerson}
                           newKey={() => nextKey.current++}
@@ -678,6 +658,13 @@ export function EnvelopeEditor({
                       ) : null}
                     </div>
                   );
+                }
+                if (openAddress && !isNames && row.at === openAddress.at) {
+                  return row.kind === "line" ? (
+                    <span key={`line-${row.at}-${i}`} data-print-line={kind} style={style} className="block">
+                      {row.text}
+                    </span>
+                  ) : null;
                 }
                 if (row.kind === "slot") {
                   return (
@@ -885,7 +872,7 @@ export function EnvelopeEditor({
         handleRef={addressRef}
         postcodeFirstIn="US"
       />
-      <HouseholdInputs draft={draft} enabled={enabled} />
+      <HouseholdInputs draft={pruneDraft(draft)} enabled={enabled} />
       <input type="hidden" name="seen_at" value={seenAt} />
       <TurnstileWidget resetOn={state} onStatusChange={setTurnstile} />
     </form>

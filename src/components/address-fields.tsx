@@ -568,7 +568,8 @@ export function AddressFields({
       fields,
       preview: {
         envelope,
-        slots: envelopeSlots(typed, { senderCountry }),
+        // Nothing prints without line 1, so line 2 alone must not count as a street.
+        slots: envelopeSlots(envelope ? typed : { ...typed, addressLine2: "" }, { senderCountry }),
         name,
         country,
         caption: envelope ? previewCaption(envelope, values, audience) : null,

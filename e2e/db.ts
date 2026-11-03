@@ -231,6 +231,16 @@ export async function seedUpdateToken(
   return token;
 }
 
+/** A token the recipient already used, whose window has since closed. */
+export async function seedSpentExpiredToken(contactId: string): Promise<string> {
+  const { token, hash } = generateToken();
+  await db`
+    insert into public.update_tokens (contact_id, token_hash, created_at, expires_at, used_at)
+    values (${contactId}, ${hash}, now() - interval '40 days', now() - interval '10 days',
+            now() - interval '20 days')`;
+  return token;
+}
+
 /** An email_sends row in its insert-time state ('sent'), as requestAddresses writes it. */
 export async function seedEmailSend(opts: {
   contactId: string;
