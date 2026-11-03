@@ -12,7 +12,8 @@ import {
   type HouseholdValues,
 } from "@/lib/validation/household";
 
-export type Person = { key: number; first: string; last: string };
+/** `added`: created by "+ Add" this visit. */
+export type Person = { key: number; first: string; last: string; added?: boolean };
 
 /** The recipient's household while they edit it. Keys keep chips stable as people come and go. */
 export type HouseholdDraft = { primary: Person; partner: Person | null; kids: Person[] };
@@ -34,15 +35,15 @@ export function valuesFromDraft(draft: HouseholdDraft): HouseholdValues {
   };
 }
 
-// The last name is prefilled from the household's, so only the first name says someone was added.
-const isBlank = (person: Person) => person.first.trim() === "";
+// Saved people post even when blank, so the server's required-name error comes back instead of a silent removal.
+const isAbandoned = (person: Person) => person.added === true && person.first.trim() === "";
 
-/** Drops added people left empty, so an abandoned "+ Add" never posts a blank row. */
+/** Drops people added this visit and left without a first name, so an abandoned "+ Add" never posts a blank row. */
 export function pruneDraft(draft: HouseholdDraft): HouseholdDraft {
   return {
     ...draft,
-    partner: draft.partner && !isBlank(draft.partner) ? draft.partner : null,
-    kids: draft.kids.filter((kid) => !isBlank(kid)),
+    partner: draft.partner && !isAbandoned(draft.partner) ? draft.partner : null,
+    kids: draft.kids.filter((kid) => !isAbandoned(kid)),
   };
 }
 
@@ -55,8 +56,9 @@ export function personWithError(
   if ((errors.partner_first_name || errors.partner_last_name) && draft.partner) {
     return draft.partner.key;
   }
-  const kid = draft.kids.findIndex((_, i) => errors[`kids.${i}.first`] || errors[`kids.${i}.last`]);
-  return kid === -1 ? null : draft.kids[kid].key;
+  const posted = pruneDraft(draft).kids;
+  const kid = posted.findIndex((_, i) => errors[`kids.${i}.first`] || errors[`kids.${i}.last`]);
+  return kid === -1 ? null : posted[kid].key;
 }
 
 /** What the form posts: the same keys the household builder posts, read by parseHouseholdForm. */
@@ -119,12 +121,20 @@ function withPerson(draft: HouseholdDraft, role: Role, person: Person): Househol
   return { ...draft, kids: draft.kids.map((kid, i) => (i === role.index ? person : kid)) };
 }
 
-function roleErrors(role: Role, errors: HouseholdFieldErrors) {
+function roleErrors(
+  draft: HouseholdDraft,
+  role: Role,
+  key: number,
+  errors: HouseholdFieldErrors,
+): { first?: string; last?: string } {
   if (role.kind === "primary") return { first: errors.first_name, last: errors.last_name };
   if (role.kind === "partner") {
     return { first: errors.partner_first_name, last: errors.partner_last_name };
   }
-  return { first: errors[`kids.${role.index}.first`], last: errors[`kids.${role.index}.last`] };
+  // The server's kids.N errors index the posted list, which skips abandoned rows.
+  const index = pruneDraft(draft).kids.findIndex((kid) => kid.key === key);
+  if (index === -1) return {};
+  return { first: errors[`kids.${index}.first`], last: errors[`kids.${index}.last`] };
 }
 
 export type Recipient = "primary" | "partner";
@@ -214,7 +224,7 @@ export function NamesEditor({
   }
 
   function add(kind: "partner" | "kid") {
-    const person: Person = { key: newKey(), first: "", last: draft.primary.last };
+    const person: Person = { key: newKey(), first: "", last: draft.primary.last, added: true };
     const next =
       kind === "partner"
         ? { ...pruneDraft(draft), partner: person }
@@ -271,7 +281,7 @@ export function NamesEditor({
           }
           const current = personOf(draft, role) ?? person;
           const prefix = rolePrefix(role, crowded, recipient);
-          const fieldErrors = roleErrors(role, errors);
+          const fieldErrors = roleErrors(draft, role, person.key, errors);
           const ids =
             role.kind === "primary"
               ? ["first_name", "last_name"]
