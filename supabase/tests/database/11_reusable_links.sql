@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(12);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000eb001', 'rlk@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -54,6 +54,21 @@ select is(private.apply_token_reply('rlk-eli', '{"city": "Rome"}', now() - inter
 select private.apply_token_reply('rlk-dee', '{"city": "Paris"}', now() - interval '1 minute');
 select is(private.apply_token_reply('rlk-dee', '{"city": "Paris"}', now() - interval '1 minute'), 'queued_again',
   'a retry of a queued reply is not queued twice');
+select is(private.apply_token_reply('rlk-dee', '{"city": "Madrid"}', now() - interval '1 minute'), 'queued',
+  'a different reply while one is pending is queued too');
+select is((select count(*)::int from public.submissions
+           where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'), 2,
+  'both distinct replies wait for review');
+
+-- A no-change reply from this person never makes an older page stale.
+insert into public.contacts (id, book_id, full_name, first_name, last_name, email, city) values
+  ('20000000-0000-4000-8000-0000000eb004', '10000000-0000-4000-8000-0000000eb001',
+   'Fay Lin', 'Fay', 'Lin', 'fay@rlk.test', 'Oslo');
+insert into public.update_tokens (contact_id, token_hash, expires_at) values
+  ('20000000-0000-4000-8000-0000000eb004', extensions.digest('rlk-fay', 'sha256'), now() + interval '1 day');
+select private.apply_token_reply('rlk-fay', '{}', now() - interval '1 minute');
+select is(private.apply_token_reply('rlk-fay', '{"city": "Lima"}', now() - interval '1 minute'), 'applied',
+  'a page older than a no-change confirm still saves');
 
 select * from finish();
 rollback;
