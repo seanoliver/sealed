@@ -160,11 +160,20 @@ function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | 
   return null;
 }
 
-/** Labels the phone keyboard's Return key on the address inputs, which AddressFields renders. */
-function EnterHint({ within, hint }: { within: RefObject<HTMLElement | null>; hint: "next" | "done" }) {
+/** The fields Return steps through in an open line, in order. */
+function lineFields(block: HTMLElement | null): (HTMLInputElement | HTMLSelectElement)[] {
+  if (!block) return [];
+  return [...block.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input:not([type=hidden]), select")].filter(
+    (field) => field.getClientRects().length > 0,
+  );
+}
+
+/** Labels the phone keyboard's Return key to match onOpenKeyDown: "next" until the line's last field. */
+function EnterHints({ within, last }: { within: RefObject<HTMLElement | null>; last: "next" | "done" }) {
   useEffect(() => {
-    within.current?.querySelectorAll("input").forEach((input) => {
-      input.enterKeyHint = hint;
+    const fields = lineFields(within.current);
+    fields.forEach((field, i) => {
+      field.enterKeyHint = i === fields.length - 1 ? last : "next";
     });
   });
   return null;
@@ -504,11 +513,15 @@ export function EnvelopeEditor({
       close();
       return;
     }
-    // Enter would submit the whole reply mid-edit; it does what the block's Next/Done button does.
+    // Enter never submits the reply from an open line: it moves to the line's next field, and from the last does what Next/Done does.
     if (event.key !== "Enter" || event.defaultPrevented || event.nativeEvent.isComposing) return;
-    if (!(event.target instanceof HTMLInputElement)) return;
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) return;
     event.preventDefault();
-    done();
+    const fields = lineFields(event.currentTarget);
+    const next = fields[fields.indexOf(field) + 1];
+    if (next) next.focus();
+    else done();
   }
 
   const layout = ({ fields, preview }: { fields: ReactNode; preview: AddressPreview }) => {
@@ -668,11 +681,11 @@ export function EnvelopeEditor({
                       ) : (
                         <div ref={shakeRef} className="w-full">
                           {fields}
-                          <EnterHint within={shakeRef} hint={nextSlot ? "next" : "done"} />
                         </div>
                       )}
                       {!isNames && row.tokens.includes("Z") ? zipWarning : null}
                       {doneButton(nextSlot ? "Next" : "Done", isNames ? close : finish)}
+                      {isNames ? null : <EnterHints within={openRef} last={nextSlot ? "next" : "done"} />}
                       {row.kind === "line" ? (
                         <span hidden data-print-line={kind}>
                           {row.text}
@@ -760,7 +773,6 @@ export function EnvelopeEditor({
                 name="email"
                 type="email"
                 autoComplete="email"
-                enterKeyHint="done"
                 maxLength={320}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -783,6 +795,7 @@ export function EnvelopeEditor({
               </div>
             ) : null}
             {doneButton("Done", close)}
+            <EnterHints within={openRef} last="done" />
           </div>
         ) : (
           <>
