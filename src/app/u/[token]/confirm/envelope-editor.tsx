@@ -39,6 +39,7 @@ import {
   valuesFromDraft,
   type HouseholdDraft,
 } from "./envelope-names";
+import { envelopeRows, openRowIndex, type Row } from "./envelope-rows";
 import { whatChanged, type Change, type ReplySnapshot } from "./what-changed";
 import { lookupZip } from "./zip-action";
 
@@ -126,24 +127,6 @@ function changedKeys(base: Map<string, string>, now: Map<string, string>): Set<s
     if ((base.get(key) ?? "") !== (now.get(key) ?? "")) keys.add(key);
   }
   return keys;
-}
-
-type Row =
-  | { kind: "line"; text: string; tokens: FormatField[]; at: number; uppercased: boolean }
-  | { kind: "slot"; tokens: FormatField[]; at: number };
-
-function envelopeRows(preview: AddressPreview): Row[] {
-  const rows: Row[] = preview.envelope
-    ? preview.envelope.lines.map((line) => ({ kind: "line", ...line }))
-    : preview.name
-      ? [{ kind: "line", text: preview.name, tokens: ["N"], at: 0, uppercased: false }]
-      : [];
-  if (!rows.some((row) => row.tokens.includes("N"))) rows.unshift({ kind: "slot", tokens: ["N"], at: 0 });
-  for (const slot of preview.slots) rows.push({ kind: "slot", ...slot });
-  return rows
-    .map((row, i) => ({ row, i }))
-    .sort((a, b) => a.row.at - b.row.at || a.i - b.i)
-    .map(({ row }) => row);
 }
 
 /** "City, state and ZIP code" → "city, state and ZIP code", for use mid-sentence. */
@@ -504,7 +487,9 @@ export function EnvelopeEditor({
   }
 
   const layout = ({ fields, preview }: { fields: ReactNode; preview: AddressPreview }) => {
-    const rows = envelopeRows(preview);
+    const openAddress = open?.kind === "address" ? open : null;
+    const rows = envelopeRows(preview, openAddress);
+    const openIndex = openRowIndex(rows, openAddress);
     const missing = rows.filter((row) => row.kind === "slot");
     // Only a missing street or name blocks sending: contacts imported with the
     // whole address in the street must still be able to confirm.
@@ -631,15 +616,13 @@ export function EnvelopeEditor({
               {rows.map((row, i) => {
                 const style = { "--i": i } as CSSProperties;
                 const isNames = row.tokens.includes("N");
-                const isOpen =
-                  (open?.kind === "names" && isNames) ||
-                  (open?.kind === "address" && !isNames && row.at === open.at);
+                const isOpen = (open?.kind === "names" && isNames) || i === openIndex;
                 const focusKey = isNames ? "names" : String(row.at);
                 const kind = isNames ? "names" : "address";
                 if (isOpen) {
                   return (
                     <div
-                      key={`open-${row.at}-${i}`}
+                      key="open"
                       ref={openRef}
                       data-open-line={focusKey}
                       onKeyDown={onOpenKeyDown}
@@ -670,6 +653,13 @@ export function EnvelopeEditor({
                       ) : null}
                     </div>
                   );
+                }
+                if (openAddress && !isNames && row.at === openAddress.at) {
+                  return row.kind === "line" ? (
+                    <span key={`line-${row.at}-${i}`} data-print-line={kind} style={style} className="block">
+                      {row.text}
+                    </span>
+                  ) : null;
                 }
                 if (row.kind === "slot") {
                   return (
