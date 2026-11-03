@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ownerVerb } from "@/lib/owner-name";
 
 export function WhyExplainer({ ownerName }: { ownerName: string }) {
   return (
@@ -25,12 +26,12 @@ export function WhyExplainer({ ownerName }: { ownerName: string }) {
           <strong className="font-semibold text-foreground">
             {ownerName} sent this.
           </strong>{" "}
-          {ownerName} is collecting addresses for holiday cards and used Sealed
+          {ownerName} {ownerVerb(ownerName, "is", "are")} collecting addresses for holiday cards and used Sealed
           to ask.
         </p>
         <p>
           <strong className="font-semibold text-foreground">
-            Only {ownerName} sees what you enter.
+            Only {ownerName} {ownerVerb(ownerName, "sees", "see")} what you enter.
           </strong>{" "}
           It isn’t sold or shared.
         </p>

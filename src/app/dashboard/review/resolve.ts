@@ -1,5 +1,6 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
+import { bookAccessibleBy } from "@/lib/queries/books";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db/errors";
@@ -64,11 +65,11 @@ async function winApprovalFlip(
 }
 
 /** Read-only: winApprovalFlip, not this select, is the authoritative pending check. */
-async function loadPendingSubmission(tx: RlsTx, ownerId: string, id: string) {
+async function loadPendingSubmission(tx: RlsTx, userId: string, id: string) {
   const [book] = await tx
     .select({ id: books.id, enabledFields: books.enabledFields })
     .from(books)
-    .where(eq(books.ownerId, ownerId))
+    .where(bookAccessibleBy(userId))
     .limit(1);
   if (!book) return undefined;
   const [submission] = await tx
@@ -247,7 +248,7 @@ export async function rejectAs(claims: SessionClaims, id: string): Promise<Resol
       const [book] = await tx
         .select({ id: books.id })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
       const [row] = await tx

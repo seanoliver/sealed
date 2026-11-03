@@ -19,6 +19,19 @@ const addressRequest = {
 const noAddress = { ...addressRequest, envelope: { household: "Satya & Family", lines: null } };
 
 describe("addressRequestEmail", () => {
+  it("agrees in number with a couple's name", () => {
+    for (const input of [addressRequest, noAddress]) {
+      const { html, text } = addressRequestEmail({ ...input, ownerName: "Sean & Tina" });
+      expect(text).toContain("Sean & Tina are addressing holiday cards");
+      expect(html).toContain("Sean &amp; Tina are addressing holiday cards");
+      expect(text).not.toContain("Tina is addressing");
+    }
+    expect(addressRequestEmail({ ...noAddress, ownerName: "Sean & Tina" }).text).toContain(
+      "and want to send you one",
+    );
+    expect(addressRequestEmail(noAddress).text).toContain("Sean O is addressing holiday cards and wants");
+  });
+
   it("identifies Sealed in every email representation", () => {
     for (const input of [addressRequest, noAddress]) {
       const { subject, html, text } = addressRequestEmail(input);

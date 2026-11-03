@@ -9,6 +9,7 @@ import { type StoredNames } from "@/lib/names";
 import { readingsForContact } from "@/lib/pinyin";
 import { isPinyinQuery, matchesReading } from "@/lib/readings";
 import { type Recipient } from "@/lib/recipients";
+import { bookAccessibleBy } from "@/lib/queries/books";
 
 export const SEND_STATUSES = [
   "sent",
@@ -86,7 +87,7 @@ export async function listContacts(
     const [book] = await tx
       .select({ id: books.id })
       .from(books)
-      .where(eq(books.ownerId, claims.sub))
+      .where(bookAccessibleBy(claims.sub))
       .limit(1);
     if (!book) return [];
 

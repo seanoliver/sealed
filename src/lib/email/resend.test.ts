@@ -10,7 +10,30 @@ vi.mock("resend", () => ({
   },
 }));
 
-import { sendAddressRequests, sendNotification } from "./resend";
+import { fromWithName, sendAddressRequests, sendNotification } from "./resend";
+
+describe("fromWithName", () => {
+  it("puts the owner name in front of the verified address", () => {
+    expect(fromWithName("Sealed <hello@mail.sealed.page>", "Sean & Tina")).toBe(
+      '"Sean & Tina via Sealed" <hello@mail.sealed.page>',
+    );
+    expect(fromWithName("hello@mail.sealed.page", "Sean")).toBe('"Sean via Sealed" <hello@mail.sealed.page>');
+  });
+  it("keeps the configured sender when no name is set", () => {
+    expect(fromWithName("Sealed <hello@x.test>", "  ")).toBe("Sealed <hello@x.test>");
+    expect(fromWithName("Sealed <hello@x.test>", undefined)).toBe("Sealed <hello@x.test>");
+  });
+  it("strips characters that could break the header", () => {
+    expect(fromWithName("Sealed <hello@x.test>", 'Eve" <evil@x.test>\r\nBcc: v@x.test')).toBe(
+      '"Eve evil x.test Bcc: v x.test via Sealed" <hello@x.test>',
+    );
+  });
+  it("drops invisible format characters and keeps accents", () => {
+    expect(fromWithName("Sealed <hello@x.test>", "Zo\u00eb\u202e & Tina")).toBe(
+      '"Zo\u00eb & Tina via Sealed" <hello@x.test>',
+    );
+  });
+});
 
 const item = {
   to: "a@example.test",
@@ -105,6 +128,19 @@ describe("sendAddressRequests", () => {
     batchSend.mockReset();
   });
 
+  it("signs as the owner and routes replies to the owner and members", async () => {
+    batchSend.mockImplementation(async (payload: unknown[]) => ok(payload.map((_, i) => `id${i}`)));
+    await sendAddressRequests(items(2), {
+      ...opts,
+      senderName: "Sean & Tina",
+      replyTo: ["sean@x.test", "tina@x.test"],
+    });
+    for (const email of batchSend.mock.calls[0][0]) {
+      expect(email.from).toBe('"Sean & Tina via Sealed" <hello@example.test>');
+      expect(email.replyTo).toEqual(["sean@x.test", "tina@x.test"]);
+    }
+  });
+
   it("sends permissively with a per-chunk idempotency key, 100 per call", async () => {
     batchSend.mockImplementation(async (payload: unknown[]) =>
       ok(payload.map((_, i) => `id${i}`)),
@@ -122,6 +158,8 @@ describe("sendAddressRequests", () => {
       idempotencyKey: "k1/1",
     });
     expect(results.every((r) => r.status === "sent")).toBe(true);
+    expect(batchSend.mock.calls[0][0][0].from).toBe("Sealed <hello@example.test>");
+    expect(batchSend.mock.calls[0][0][0]).not.toHaveProperty("replyTo");
     expect(results[149]).toEqual({
       status: "sent",
       id: "id49",

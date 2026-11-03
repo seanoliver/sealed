@@ -37,12 +37,18 @@ const eslintConfig = defineConfig([
       "src/app/b/**",
       "src/app/dashboard/actions.ts",
       "src/app/dashboard/actions.test.ts",
+      "src/app/dashboard/member-access.test.ts",
       // Sanctioned: the public permalink surface is unauthenticated (no
       // claims for withRls); this module selects ONLY title/owner name/
       // enabled-field flags by slug — never ids, counts, or contact data.
       "src/lib/queries/public-book.ts",
       // ... and its integration test, which seeds fixtures as admin.
       "src/lib/queries/public-book.test.ts",
+      // Sanctioned for linking book_members invites only.
+      "src/lib/queries/books.ts",
+      "src/lib/queries/books.test.ts",
+      // Sanctioned for reading the sender name and Reply-To emails only.
+      "src/lib/email/sender.ts",
       // Sanctioned for contact_events audit appends only. Contact writes in
       // this file must stay on withRls; lint no longer checks them here.
       "src/app/dashboard/contacts/write.ts",

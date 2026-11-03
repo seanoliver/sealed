@@ -12,6 +12,7 @@ import {
   type AgentTokenSummary,
 } from "@/lib/agent/tokens";
 import { logDbError } from "@/lib/log";
+import { getOwnBook } from "@/lib/queries/books";
 
 export type CreateAgentTokenResult =
   | { token: string; summary: AgentTokenSummary }
@@ -21,6 +22,11 @@ export async function createAgentToken(input: AgentTokenInput): Promise<CreateAg
   const claims = await requireUser();
   const parsed = agentTokenInputSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  // A member's agent writes would always fail RLS (contact_events_insert_agent).
+  const book = await getOwnBook(claims);
+  if (book && book.ownerId !== claims.sub) {
+    return { error: "Only the address book's owner can connect agents." };
+  }
   try {
     const created = await mintAgentToken(claims.sub, parsed.data);
     revalidatePath("/dashboard/agents");

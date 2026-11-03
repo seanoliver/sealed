@@ -1,5 +1,6 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
+import { bookAccessibleBy } from "@/lib/queries/books";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { dbAdmin } from "@/lib/db/admin";
@@ -319,7 +320,7 @@ export async function patchContactAs(
       const [book] = await tx
         .select({ id: books.id })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return { kind: "missing" };
       const [existing] = await tx
@@ -456,7 +457,7 @@ export async function createContactAs(
       const [book] = await tx
         .select({ id: books.id })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
       const [created] = await tx

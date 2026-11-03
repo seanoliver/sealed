@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { bookAccessibleBy } from "@/lib/queries/books";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -186,7 +187,7 @@ export async function updateContact(
       const [book] = await tx
         .select({ id: books.id })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
       // Scoped by id AND bookId (RLS backstops the same predicate).
@@ -304,7 +305,7 @@ export async function deleteContact(
       const [book] = await tx
         .select({ id: books.id })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
       const [row] = await tx

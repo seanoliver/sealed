@@ -1,4 +1,5 @@
 import { TOKEN_TTL_DAYS } from "@/lib/tokens";
+import { ownerVerb } from "@/lib/owner-name";
 
 /** User-controlled values must be escaped before HTML interpolation. */
 function escapeHtml(value: string): string {
@@ -54,14 +55,16 @@ export function addressRequestEmail({
     : `Where should ${safeOwnerName} send your holiday card? · Sealed`;
 
   const owner = escapeHtml(safeOwnerName);
+  const isAre = ownerVerb(safeOwnerName, "is", "are");
+  const wantsWant = ownerVerb(safeOwnerName, "wants", "want");
   const lines = printed.map(escapeHtml);
   const envelopeHtml = `<div style="margin:0 0 24px;background:#fffdf8;border:1px solid #ddd3c3;border-radius:6px;padding:18px 18px 26px">
     <p style="margin:0 0 22px;font-size:11px;color:#6a6157">${owner}</p>
     <p style="margin:0 0 0 48px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.5;color:#3a332c">${lines.join("<br>")}</p>
   </div>`;
   const intro = hasAddress
-    ? `${owner} is addressing holiday cards. Here&#39;s exactly how yours will look:`
-    : `${owner} is addressing holiday cards and wants to send you one. Here&#39;s what&#39;s on your envelope so far:`;
+    ? `${owner} ${isAre} addressing holiday cards. Here&#39;s exactly how yours will look:`
+    : `${owner} ${isAre} addressing holiday cards and ${wantsWant} to send you one. Here&#39;s what&#39;s on your envelope so far:`;
   const actions = hasAddress
     ? `<p style="margin:0 0 16px;font-size:17px;font-weight:600;text-align:center">Will this reach you?</p>
   <p style="margin:0 0 10px"><a href="${escapeHtml(confirmUrl)}" style="${BUTTON}">Yes, send it here</a></p>
@@ -77,7 +80,7 @@ export function addressRequestEmail({
 
   const plainLines = printed.map((line) => `  ${line}`).join("\n");
   const text = hasAddress
-    ? `${greeting} ${safeOwnerName} is addressing holiday cards. Here's exactly how yours will look:
+    ? `${greeting} ${safeOwnerName} ${isAre} addressing holiday cards. Here's exactly how yours will look:
 
 ${plainLines}
 
@@ -88,7 +91,7 @@ Fix a name or the address: ${updateUrl}
 
 Sent with Sealed (${aboutUrl}). This link is personal to you, so please don't forward it. It expires in ${TOKEN_TTL_DAYS} days.
 `
-    : `${greeting} ${safeOwnerName} is addressing holiday cards and wants to send you one. Here's what's on your envelope so far:
+    : `${greeting} ${safeOwnerName} ${isAre} addressing holiday cards and ${wantsWant} to send you one. Here's what's on your envelope so far:
 
 ${plainLines}
 
