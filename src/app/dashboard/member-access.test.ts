@@ -17,6 +17,14 @@ import { createAgentToken } from "./settings/agent-token-actions";
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+const senderFailure = vi.hoisted(() => ({ fail: false }));
+vi.mock("@/lib/email/sender", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/email/sender")>();
+  return {
+    loadBookSender: (...args: Parameters<typeof original.loadBookSender>) =>
+      senderFailure.fail ? Promise.reject(new Error("db down")) : original.loadBookSender(...args),
+  };
+});
 vi.mock("@/lib/email/resend", () => ({
   isEmailDryRun: () => false,
   sendAddressRequests: vi.fn(),
@@ -104,6 +112,21 @@ describe("a linked member working in the owner's book", () => {
     });
     expect(items[0].text).toContain("Sean & Tina are addressing holiday cards");
     expect(items[0].text).not.toContain("Tina is");
+  });
+
+  it("sends nothing and mints no link when the sender lookup fails", async () => {
+    send.mockClear();
+    senderFailure.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const tokensBefore = await dbAdmin.execute(sql`select count(*)::int as n from public.update_tokens where contact_id = ${CONTACT}`);
+    await expect(requestAddresses({ contactIds: [CONTACT] })).resolves.toEqual({
+      error: "Something went wrong. Please try again.",
+    });
+    const tokensAfter = await dbAdmin.execute(sql`select count(*)::int as n from public.update_tokens where contact_id = ${CONTACT}`);
+    expect(tokensAfter[0].n).toBe(tokensBefore[0].n);
+    expect(send).not.toHaveBeenCalled();
+    senderFailure.fail = false;
+    vi.mocked(console.error).mockRestore();
   });
 
   it("cannot change the owner's settings", async () => {
