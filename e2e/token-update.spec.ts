@@ -180,14 +180,11 @@ test("recipient submits an update; owner sees the Updated chip and new values", 
   await expect(history.locator("pre")).toHaveCount(0);
 });
 
-test("a used link renders the generic invalid page", async ({ browser }) => {
+test("a used link still opens until it expires", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`/u/${token}`);
-  await expect(
-    page.getByRole("heading", { name: "Link not available" }),
-  ).toBeVisible();
-  await expect(page.locator("#first_name")).toHaveCount(0);
+  await expect(page.locator("#first_name")).toBeVisible();
   await context.close();
 });
 

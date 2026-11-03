@@ -184,7 +184,7 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   await expect(saved(page)).toBeVisible();
   await expect(page.getByText("You confirmed this address. Nothing changed.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "What changed" })).toHaveCount(0);
-  await expect(page.getByText("This link keeps working.")).toBeVisible();
+  await expect(page.getByText(/^Need to change something later\? This link keeps working until [A-Z][a-z]{2} \d{1,2}\.$/)).toBeVisible();
 
   // Links are reusable until they expire: the envelope opens again.
   await page.goto(`/u/${token}/confirm`);
