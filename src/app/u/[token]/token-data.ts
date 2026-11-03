@@ -34,7 +34,6 @@ export const tokenDataSchema = z.object({
     birthday: z.boolean(),
   }),
   owner_name: z.string(),
-  /** Full names for the "From ..." line, e.g. "Sean Oliver and Tina Hee"; null falls back to owner_name. */
   sender_full_names: z.string().nullable(),
   expires_at: z.string(),
   sender_country: z.string(),

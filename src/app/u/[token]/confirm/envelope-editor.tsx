@@ -44,7 +44,6 @@ import { lookupZip } from "./zip-action";
 
 type FormField = AddressField | "country_code";
 
-/** The one line open for editing on the envelope, if any. */
 type Open =
   | { kind: "names" }
   | { kind: "details" }
@@ -62,7 +61,6 @@ type Props = {
   confirm: (state: ConfirmState, formData: FormData) => Promise<ConfirmState>;
   save: (state: TokenUpdateState, formData: FormData) => Promise<TokenUpdateState>;
   ownerName: string;
-  /** "Sean Oliver and Tina Hee" for the From line; the owner name when unset. */
   senderNames: string;
   defaults: TokenUpdateValues;
   household: HouseholdValues;
@@ -70,7 +68,6 @@ type Props = {
   senderCountry: string;
   legacyCountry: string | null;
   seenAt: string;
-  /** When the recipient's link stops working, for the saved view. */
   expiresAt: string;
 };
 
@@ -177,7 +174,6 @@ function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | 
       (place) => {
         if (live) report(place);
       },
-      // Advisory only: a failed lookup just means no suggestion.
       () => {},
     );
     return () => {
@@ -377,7 +373,6 @@ export function EnvelopeEditor({
   const [turnstile, setTurnstile] = useState<TurnstileStatus>("checking");
   const [zipPlaces, setZipPlaces] = useState<Record<string, ZipPlace | null>>({});
   const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
-  /** What the latest submit sent, shown once it saves. */
   const [sent, setSent] = useState<Saved>({ lines: [], changes: [] });
 
   const [state, formAction, pending] = useActionState(
@@ -412,7 +407,6 @@ export function EnvelopeEditor({
     }
   }
 
-  // A postcode the server turned down opens its line, like the client check does.
   useEffect(() => {
     if (!state.fieldErrors?.postal_code) return;
     formRef.current?.querySelector<HTMLElement>("[data-postcode-line]")?.click();
@@ -532,8 +526,6 @@ export function EnvelopeEditor({
         ? missing.find((row) => row.at !== open.at && !row.tokens.includes("N"))
         : undefined;
 
-    // ZIP first for US addresses: a 5-digit ZIP fills city and state, and a
-    // ZIP that disagrees with them gets an advisory fix, never a block.
     const { values } = preview;
     const us = preview.country?.code === "US";
     const zip = us ? (values.postal_code.trim().match(ZIP5)?.[1] ?? null) : null;

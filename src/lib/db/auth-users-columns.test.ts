@@ -2,9 +2,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-// Production's app_server role can read only these auth.users columns
-// (docs/SECURITY.md, Database role). Local and CI connect as postgres, so a
-// query reading any other column passes every test and fails in production.
+// Production's app_server role reads only these columns; CI runs as postgres,
+// so any other column passes every test and fails in production.
 const GRANTED = new Set(["id", "email", "email_confirmed_at"]);
 
 function sourceFiles(dir: string): string[] {

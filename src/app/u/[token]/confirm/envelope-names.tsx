@@ -46,7 +46,6 @@ export function pruneDraft(draft: HouseholdDraft): HouseholdDraft {
   };
 }
 
-/** The key of the first person a server error points at, if any. */
 export function personWithError(
   draft: HouseholdDraft,
   errors: HouseholdFieldErrors | undefined,
@@ -128,7 +127,6 @@ function roleErrors(role: Role, errors: HouseholdFieldErrors) {
   return { first: errors[`kids.${role.index}.first`], last: errors[`kids.${role.index}.last`] };
 }
 
-/** Screen-reader context only: one person on the envelope never gets a "First person" label. */
 function rolePrefix(role: Role, crowded: boolean): string {
   if (role.kind === "partner") return "Second person's ";
   if (role.kind === "kid") return `Child ${role.index + 1}'s `;
@@ -149,7 +147,6 @@ type NamesEditorProps = {
   onDone: () => void;
 };
 
-/** The names line, opened: a chip per person, inputs for the one being typed, and add buttons. */
 export function NamesEditor({
   draft,
   onChange,
@@ -172,7 +169,6 @@ export function NamesEditor({
   useEffect(() => {
     if (editing === null) return;
     const person = rootRef.current?.querySelector(`[data-person="${editing}"]`);
-    // A name the server turned down takes focus before the first field.
     (
       person?.querySelector<HTMLInputElement>('input[aria-invalid="true"]') ??
       person?.querySelector<HTMLInputElement>("input")

@@ -186,7 +186,6 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   await expect(page.getByRole("heading", { name: "What changed" })).toHaveCount(0);
   await expect(page.getByText(/^Need to change something later\? This link keeps working until [A-Z][a-z]{2} \d{1,2}\.$/)).toBeVisible();
 
-  // Links are reusable until they expire: the envelope opens again.
   await page.goto(`/u/${token}/confirm`);
   await expect(page.getByRole("button", { name: /^Cora Confirm\. Edit/ })).toBeVisible();
   await context.close();
@@ -302,7 +301,6 @@ test("edits survive moving between lines, and Escape closes a line", async ({ pa
   await stubTurnstile(page);
   await page.goto(`/u/${fixToken}/confirm`);
   await page.getByRole("button", { name: /^Finn Fix\. Edit/ }).click();
-  // One person: inputs straight away, and no "First person" label.
   await expect(page.locator("#first_name")).toBeFocused();
   await expect(page.getByText("First person")).toHaveCount(0);
   await page.locator("#last_name").fill("Fixer");
@@ -339,7 +337,6 @@ test("tapping a line edits it in place, a ZIP fills city and state, and sending 
   await expect(envelope).toContainText("11 Elm St");
 
   await page.getByRole("button", { name: "+ Add city, state and ZIP code" }).click();
-  // ZIP first: it sits above city and state.
   const zip = envelope.locator("#postal_code");
   const zipBox = await zip.boundingBox();
   const cityBox = await envelope.locator("#city").boundingBox();
@@ -377,7 +374,6 @@ test("a ZIP that disagrees with the city offers a fix or keeps theirs, and Edit 
   const envelope = page.locator("address");
   await envelope.locator("#postal_code").fill("94112");
   await expect(envelope.getByText("94112 is in San Francisco, CA")).toBeVisible();
-  // Advisory: the button never blocks on it.
   await expect(page.getByRole("button", { name: /^Send it here/ })).toBeEnabled();
   await envelope.getByRole("button", { name: "Keep mine" }).click();
   await expect(envelope.getByText("94112 is in San Francisco, CA")).toHaveCount(0);
@@ -428,7 +424,6 @@ test("a recipient adds people on the envelope itself", async ({ page }) => {
   await names.getByRole("button", { name: "Add", exact: true }).click();
   await expect(names.getByRole("button", { name: "Edit Theo Lee" })).toBeVisible();
 
-  // An abandoned add leaves nothing behind.
   await names.getByRole("button", { name: "Add kids" }).click();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(names).toHaveCount(0);

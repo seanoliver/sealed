@@ -1,10 +1,8 @@
 import { formatPerson } from "@/lib/names";
 import { type HouseholdValues } from "@/lib/validation/household";
 
-/** What the recipient sees and sends: everything the saved page compares. */
 export type ReplySnapshot = {
   household: HouseholdValues;
-  /** Printed envelope lines without the names line. */
   address: string[];
   email: string;
   birthday: string;
@@ -30,7 +28,6 @@ function personChange(from: string | null, to: string | null): Change | null {
   return { kind: "renamed", from, to };
 }
 
-/** Removes each of `drop` from `list` once, keeping order. */
 function without(list: string[], drop: string[]): string[] {
   const left = [...drop];
   return list.filter((item) => {
@@ -41,7 +38,6 @@ function without(list: string[], drop: string[]): string[] {
   });
 }
 
-/** The changes between the page as it loaded and what the recipient sent, in envelope order. */
 export function whatChanged(before: ReplySnapshot, after: ReplySnapshot): Change[] {
   const changes: Change[] = [];
   const push = (change: Change | null) => {

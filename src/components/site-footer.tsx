@@ -16,7 +16,6 @@ export function SiteFooter({ lead = "Sent with Sealed" }: { lead?: string } = {}
   );
 }
 
-/** Recipient pages: who made this, with the brand linking to the explainer. */
 export function RecipientFooter() {
   return (
     <footer className="flex items-center justify-center gap-1.5 px-4 pt-2 pb-6 text-[13px] text-muted-foreground">

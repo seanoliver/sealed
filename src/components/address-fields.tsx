@@ -41,7 +41,6 @@ export const BLANK_ADDRESS: AddressValues = {
 
 export type AddressFieldsHandle = {
   validate: () => boolean;
-  /** Fill fields from outside, e.g. city and state from a ZIP lookup. */
   set: (next: Partial<Record<AddressField, string>>) => void;
 };
 
@@ -78,7 +77,6 @@ type AddressFieldsProps = {
   /** Off for a saved contact: prefilling there would save a country nobody picked. */
   prefillCountry?: boolean;
   requireStreet?: boolean;
-  /** For this country, put the postcode before city and state so a lookup can fill them. */
   postcodeFirstIn?: string;
 };
 
@@ -109,7 +107,6 @@ function placeName(country: Country): string {
   );
 }
 
-/** Moves the postcode to its own row just above the city, with city and state side by side. */
 function postcodeFirstRows(rows: AddressRow[]): AddressRow[] {
   const postcode = rows.flatMap((row) => row.fields).find((field) => field.name === "postal_code");
   if (!postcode) return rows;

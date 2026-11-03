@@ -16,7 +16,6 @@ export type TokenOwner = {
   email: string;
   recipient: Recipient;
   household: string | null;
-  /** This recipient had already replied through the link before this reply. */
   repliedBefore: boolean;
 };
 
