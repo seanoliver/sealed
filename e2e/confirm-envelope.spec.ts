@@ -752,6 +752,11 @@ test("fixing the household last name carries to people who share it", async ({ p
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: /^Send it here/ }).click();
   await expect(saved(page)).toBeVisible();
+  await expect(page.getByRole("region", { name: "What changed" }).getByRole("listitem")).toHaveText([
+    "Ana Olivr → Ana Oliver",
+    "Ben Olivr → Ben Oliver",
+    "Kit Olivr → Kit Oliver",
+  ]);
   const stored = await getContactNamesByEmail("ana.olivr@e2e.test");
   expect([stored.lastName, stored.partnerLastName]).toEqual(["Oliver", "Oliver"]);
   expect(stored.kids).toEqual([{ first: "Kit", last: "Oliver" }]);

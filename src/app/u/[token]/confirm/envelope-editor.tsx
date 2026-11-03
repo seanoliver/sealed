@@ -37,7 +37,6 @@ import {
   NamesEditor,
   personWithError,
   pruneDraft,
-  valuesFromDraft,
   type HouseholdDraft,
   type Recipient,
 } from "./envelope-names";
@@ -845,8 +844,8 @@ export function EnvelopeEditor({
         setSent({
           lines: lines.map((text) => ({ text, changed: !start.lines.includes(text) })),
           changes: whatChanged(
-            reply({ household, address: start.address }, defaults),
-            reply({ household: valuesFromDraft(pruneDraft(draft)), address: read("address") }, null),
+            reply({ household: draftFromValues(household), address: start.address }, defaults),
+            reply({ household: pruneDraft(draft), address: read("address") }, null),
           ),
         });
       }}

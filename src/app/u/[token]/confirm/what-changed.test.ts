@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { draftFromValues, type HouseholdDraft } from "./envelope-names";
 import { whatChanged, type ReplySnapshot } from "./what-changed";
 
 const before: ReplySnapshot = {
-  household: {
+  household: draftFromValues({
     first_name: "Maya",
     last_name: "Chen",
     partner: { first: "Jordan", last: "Lee" },
     kids: [{ first: "Ivy", last: "Chen" }],
-  },
+  }),
   address: ["2217 Alder Street", "Portland, OR 97214"],
   email: "maya@example.test",
   birthday: "",
 };
+
+const withHousehold = (snap: ReplySnapshot, household: HouseholdDraft): ReplySnapshot => ({ ...snap, household });
 
 describe("whatChanged", () => {
   it("is empty for a plain confirm", () => {
@@ -20,13 +23,43 @@ describe("whatChanged", () => {
 
   it("lists added, removed and renamed people", () => {
     const after = structuredClone(before);
-    after.household.last_name = "Lee";
+    after.household.primary.last = "Lee";
     after.household.partner = null;
-    after.household.kids.push({ first: "Theo", last: "Lee" });
+    after.household.kids.push({ key: 9, first: "Theo", last: "Lee" });
     expect(whatChanged(before, after)).toEqual([
       { kind: "renamed", from: "Maya Chen", to: "Maya Lee" },
       { kind: "removed", name: "Jordan Lee" },
       { kind: "added", name: "Theo Lee" },
+    ]);
+  });
+
+  it("reports a last name that followed the household as renames, not remove and add", () => {
+    const start = withHousehold(
+      before,
+      draftFromValues({
+        first_name: "Ana",
+        last_name: "Olivr",
+        partner: { first: "Ben", last: "Olivr" },
+        kids: [{ first: "Kit", last: "Olivr" }],
+      }),
+    );
+    const after = structuredClone(start);
+    for (const person of [after.household.primary, after.household.partner!, ...after.household.kids]) {
+      person.last = "Oliver";
+    }
+    expect(whatChanged(start, after)).toEqual([
+      { kind: "renamed", from: "Ana Olivr", to: "Ana Oliver" },
+      { kind: "renamed", from: "Ben Olivr", to: "Ben Oliver" },
+      { kind: "renamed", from: "Kit Olivr", to: "Kit Oliver" },
+    ]);
+  });
+
+  it("reports a removed kid and a new kid with the same name as remove and add", () => {
+    const after = structuredClone(before);
+    after.household.kids = [{ key: 9, first: "Ivy", last: "Chen" }];
+    expect(whatChanged(before, after)).toEqual([
+      { kind: "removed", name: "Ivy Chen" },
+      { kind: "added", name: "Ivy Chen" },
     ]);
   });
 
@@ -46,11 +79,10 @@ describe("whatChanged", () => {
     ]);
   });
 
-  it("ignores whitespace-only name edits and reordered kids", () => {
-    const start = { ...before, household: { ...before.household, kids: [{ first: "A", last: "" }, { first: "B", last: "" }] } };
-    const after = structuredClone(start);
-    after.household.first_name = " Maya ";
-    after.household.kids.reverse();
-    expect(whatChanged(start, after)).toEqual([]);
+  it("ignores whitespace-only name edits", () => {
+    const after = structuredClone(before);
+    after.household.primary.first = " Maya ";
+    after.household.kids[0].last = "Chen ";
+    expect(whatChanged(before, after)).toEqual([]);
   });
 });
