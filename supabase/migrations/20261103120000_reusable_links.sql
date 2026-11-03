@@ -1,11 +1,7 @@
 set lock_timeout = '5s';
 
--- Recipients can reopen their link and change their reply until it expires,
--- instead of seeing "You're already on the list" after one save. used_at
--- still records the latest reply.
---
--- A changed email must still kill the old address's link, so the email-change
--- trigger now deletes every token for that recipient, used ones included.
+-- Links stay usable until expiry, so the email-change trigger must delete used
+-- tokens too, or the old address keeps a live link.
 
 alter table public.books
   add column sender_full_names text
