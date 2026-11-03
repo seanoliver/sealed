@@ -7,6 +7,7 @@ import {
   seedContact,
   seedEmailSend,
   seedOwnerBook,
+  seedSpentExpiredToken,
   seedUpdateToken,
 } from "./db";
 import {
@@ -30,6 +31,12 @@ let guardToken: string;
 let lostToken: string;
 let familyToken: string;
 let zipToken: string;
+let line2Token: string;
+let pruneToken: string;
+let partnerToken: string;
+let emailToken: string;
+let expiredToken: string;
+let staleToken: string;
 const familyOwnerEmail = uniqueEmail("confirm-family-owner");
 
 test.beforeAll(async ({ browser }) => {
@@ -144,6 +151,69 @@ test.beforeAll(async ({ browser }) => {
       postalCode: "97214",
       household: { firstName: "Maya", lastName: "Chen" },
     }),
+  );
+  line2Token = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Lena Line",
+      email: "lena@e2e.test",
+      addressLine1: "7 Cove Rd",
+      addressLine2: "Apt 4B",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+    }),
+  );
+  emailToken = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Ema Mail",
+      email: "ema@e2e.test",
+      addressLine1: "12 Wren Way",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+    }),
+  );
+  expiredToken = await seedSpentExpiredToken(
+    await seedContact({ bookId, fullName: "Old Reply", addressLine1: "1 Past Ln" }),
+  );
+  staleToken = await seedUpdateToken(
+    await seedContact({
+      bookId,
+      fullName: "Sam Stale",
+      email: "sam@e2e.test",
+      addressLine1: "3 Twin Ct",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+    }),
+  );
+  pruneToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Pia Prune",
+      email: "pia@e2e.test",
+      addressLine1: "40 Ash St",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: { firstName: "Pia", lastName: "Prune" },
+    }),
+  );
+  partnerToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Ana Park & Ben Park",
+      email: "ana@e2e.test",
+      partnerEmail: "ben@e2e.test",
+      addressLine1: "9 Gate Rd",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: { firstName: "Ana", lastName: "Park", partnerFirstName: "Ben", partnerLastName: "Park" },
+    }),
+    { recipient: "partner" },
   );
 });
 
@@ -499,6 +569,115 @@ test("a contact with no address adds one line by line", async ({ page }) => {
   );
   await page.getByRole("button", { name: /^Send it here/ }).click();
   await expect(saved(page)).toBeVisible();
+});
+
+test("clearing the street while line 2 is set keeps the editor open and saves the retyped street", async ({
+  page,
+}) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${line2Token}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: /^7 Cove Rd, Apt 4B\. Edit/ }).click();
+  const envelope = page.locator("address");
+  await envelope.locator("#address_line1").fill("");
+  await expect(envelope.locator("#address_line1")).toBeVisible();
+  await expect(envelope.getByRole("button", { name: "Done" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "+ Add street address" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add your address to continue" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "+ Add street address" }).click();
+  await envelope.locator("#address_line1").fill("70 Cove Rd");
+  await expect(envelope.locator("#address_line1")).toBeFocused();
+  await envelope.getByRole("button", { name: "Done" }).click();
+  await expect(envelope).toContainText("70 Cove Rd, Apt 4B");
+  await page.getByRole("button", { name: "Send it here · 1 change" }).click();
+  await expect(saved(page)).toBeVisible();
+  await expect(page.locator("address")).toContainText("70 Cove Rd, Apt 4B");
+});
+
+test("an abandoned + Add posts no blank person and counts no change", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${pruneToken}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: /^Pia Prune\. Edit/ }).click();
+  const names = page.getByRole("group", { name: "Names on the envelope" });
+  await names.getByRole("button", { name: "Add kids" }).click();
+  await expect(names.getByLabel("Child 1's first name")).toBeVisible();
+  await page.getByRole("button", { name: /^40 Ash St\. Edit/ }).click();
+  await expect(names).toHaveCount(0);
+  await page.getByRole("button", { name: "Yes, send it here" }).click();
+  await expect(saved(page)).toBeVisible();
+  await expect(page.getByText("You confirmed this address. Nothing changed.")).toBeVisible();
+});
+
+test("a partner's link labels the partner as the one replying", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${partnerToken}/confirm`);
+  await page.getByRole("button", { name: /^Ana .*Park\. Edit/ }).click();
+  const names = page.getByRole("group", { name: "Names on the envelope" });
+  await names.getByRole("button", { name: "Edit Ben Park" }).click();
+  await expect(names.getByLabel("Your first name")).toHaveValue("Ben");
+  await expect(names.getByLabel("Your first name")).toHaveAttribute("autocomplete", "given-name");
+  await expect(names.getByText("Second person's first name")).toHaveCount(0);
+
+  await names.getByRole("button", { name: "Edit Ana Park" }).click();
+  await expect(names.getByLabel("First person's first name")).toHaveValue("Ana");
+  await expect(names.getByLabel("First person's first name")).toHaveAttribute("autocomplete", "off");
+  await expect(names.getByText("Your first name")).toHaveCount(0);
+});
+
+test("a recipient who changes their email can Edit again with the same link", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${emailToken}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: /^Email:/ }).click();
+  await page.locator("#email").fill("ema.new@e2e.test");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Send it here · 1 change" }).click();
+  await expect(saved(page)).toBeVisible();
+  await expect(page.getByText("Email: ema.new@e2e.test")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit again" }).click();
+  await expect(page.getByRole("button", { name: /^Email:/ })).toContainText("ema.new@e2e.test");
+  await expect(page.getByRole("button", { name: /^12 Wren Way\. Edit/ })).toBeVisible();
+});
+
+test("a used link past its expiry says so on /confirm", async ({ page }) => {
+  await page.goto(`/u/${expiredToken}/confirm`);
+  await expect(page.getByRole("heading", { name: "This link has expired" })).toBeVisible();
+  await expect(page.getByText("Your reply is saved.")).toBeVisible();
+  await expect(page.locator("form")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /send it here/i })).toHaveCount(0);
+});
+
+test("a save from a second open page is refused as stale", async ({ browser }) => {
+  const context = await browser.newContext();
+  const first = await context.newPage();
+  const second = await context.newPage();
+  for (const page of [first, second]) {
+    await stubTurnstile(page);
+    await page.goto(`/u/${staleToken}/confirm`);
+    await waitForTurnstile(page);
+  }
+
+  await first.getByRole("button", { name: /^Email:/ }).click();
+  await first.locator("#email").fill("sam.first@e2e.test");
+  await first.getByRole("button", { name: "Done" }).click();
+  await first.getByRole("button", { name: "Send it here · 1 change" }).click();
+  await expect(saved(first)).toBeVisible();
+
+  await second.getByRole("button", { name: /^3 Twin Ct\. Edit/ }).click();
+  await second.locator("address #address_line1").fill("33 Twin Ct");
+  await second.locator("address").getByRole("button", { name: "Done" }).click();
+  await second.getByRole("button", { name: "Send it here · 1 change" }).click();
+  await expect(
+    second.getByRole("alert").filter({
+      hasText: "You changed this from another page since opening this one. Reload to see the latest.",
+    }),
+  ).toBeVisible();
+  await expect(saved(second)).toHaveCount(0);
+  await context.close();
 });
 
 test("unknown and malformed tokens get the generic page on /confirm", async ({
