@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(15);
+select plan(17);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000eb001', 'rlk@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -77,6 +77,13 @@ insert into public.update_tokens (contact_id, token_hash, expires_at) values
 select private.apply_token_reply('rlk-fay', '{}', now() - interval '1 minute');
 select is(private.apply_token_reply('rlk-fay', '{"city": "Lima"}', now() - interval '1 minute'), 'applied',
   'a page older than a no-change confirm still saves');
+
+-- Expiry is the only thing that retires an unrevoked link now, used or not.
+insert into public.update_tokens (contact_id, token_hash, expires_at, used_at) values
+  ('20000000-0000-4000-8000-0000000eb004', extensions.digest('rlk-expired', 'sha256'),
+   now() - interval '1 minute', now() - interval '1 day');
+select ok(private.get_contact_for_token('rlk-expired') is null, 'an expired used link reads nothing');
+select ok(private.apply_token_reply('rlk-expired', '{"city": "Quito"}') is null, 'an expired used link applies nothing');
 
 select * from finish();
 rollback;
