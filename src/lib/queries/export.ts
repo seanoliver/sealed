@@ -1,18 +1,19 @@
 import "server-only";
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { countryName, DEFAULT_SENDER_COUNTRY, envelopeLines, rowAddress } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { type ContactCsvRow } from "@/lib/csv/export";
 import { withRls } from "@/lib/db";
 import { books, contacts } from "@/lib/db/schema";
 import { householdLine, pickStoredNames } from "@/lib/names";
+import { bookAccessibleBy } from "@/lib/queries/books";
 
 export async function listCsvRows(claims: SessionClaims): Promise<ContactCsvRow[]> {
   const { rows, senderCountry } = await withRls(claims, async (tx) => {
     const [book] = await tx
       .select({ senderCountry: books.senderCountry })
       .from(books)
-      .where(eq(books.ownerId, claims.sub))
+      .where(bookAccessibleBy(claims.sub))
       .limit(1);
     const found = await tx
       .select()

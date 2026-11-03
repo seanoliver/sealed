@@ -38,7 +38,11 @@ export async function saveBook(
   const claims = await requireUser();
   // Settings updates an established address book; onboarding is the only
   // creation path, including for direct invocations of this server action.
-  if (!(await getOwnBook(claims))) redirect("/onboarding");
+  const book = await getOwnBook(claims);
+  if (!book) redirect("/onboarding");
+  if (book.ownerId !== claims.sub) {
+    return { error: "Only the address book's owner can change these settings." };
+  }
 
   const submitted: BookFormValues = {
     display_name: String(formData.get("display_name") ?? ""),

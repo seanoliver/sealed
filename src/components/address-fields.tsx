@@ -1,5 +1,6 @@
 "use client";
 
+import { ownerVerb } from "@/lib/owner-name";
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 import {
   CountrySelect,
@@ -196,7 +197,7 @@ function previewCaption(
   }
   if (country && envelope.domestic && values.country_code !== "") {
     const sender =
-      audience.kind === "owner" ? "you mail" : `${audience.ownerName || "the sender"} mails`;
+      audience.kind === "owner" ? "you mail" : `${audience.ownerName || "the sender"} ${ownerVerb(audience.ownerName, "mails", "mail")}`;
     notes.push(`No country line: ${sender} from ${placeName(country)}.`);
   }
   return notes.length > 0 ? notes.join(" ") : null;

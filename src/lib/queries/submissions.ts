@@ -4,6 +4,7 @@ import { type SessionClaims } from "@/lib/auth";
 import { withRls } from "@/lib/db";
 import { books, contacts, submissions } from "@/lib/db/schema";
 import { type Recipient } from "@/lib/recipients";
+import { bookAccessibleBy } from "@/lib/queries/books";
 
 export type PendingSubmission = {
   submission: typeof submissions.$inferSelect;
@@ -31,7 +32,7 @@ export async function listPendingSubmissions(
     const [book] = await tx
       .select({ id: books.id })
       .from(books)
-      .where(eq(books.ownerId, claims.sub))
+      .where(bookAccessibleBy(claims.sub))
       .limit(1);
     if (!book) return [];
 
@@ -81,7 +82,7 @@ export async function listPendingReplies(
     const [book] = await tx
       .select({ id: books.id })
       .from(books)
-      .where(eq(books.ownerId, claims.sub))
+      .where(bookAccessibleBy(claims.sub))
       .limit(1);
     if (!book) return [];
 

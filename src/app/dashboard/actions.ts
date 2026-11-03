@@ -6,13 +6,15 @@ import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
+import { bookAccessibleBy } from "@/lib/queries/books";
 // Sanctioned dbAdmin import (allowlisted in eslint.config.mjs): update_tokens
 // has zero grants for client roles by design, so token minting/cleanup and
 // email_sends bookkeeping go through the admin connection. The contact ids
 // they operate on come exclusively from the RLS-scoped select below — the
 // RLS query IS the authorization.
 import { dbAdmin } from "@/lib/db/admin";
-import { books, contacts, emailSends, profiles, updateTokens } from "@/lib/db/schema";
+import { books, contacts, emailSends, updateTokens } from "@/lib/db/schema";
+import { loadBookSender, type BookSender } from "@/lib/email/sender";
 import { isEmailDryRun, sendAddressRequests } from "@/lib/email/resend";
 import { addressRequestEmail } from "@/lib/email/templates";
 import { envelopeLines, rowAddress } from "@/lib/address";
@@ -83,7 +85,7 @@ export async function requestAddresses(
   let scope:
     | {
         bookId: string;
-        ownerName: string;
+        ownerId: string;
         showPartner: boolean;
         senderCountry: string;
         rows: (typeof contacts.$inferSelect)[];
@@ -92,17 +94,16 @@ export async function requestAddresses(
   try {
     scope = await withRls(claims, async (tx) => {
       const [book] = await tx
-        .select({ id: books.id, enabledFields: books.enabledFields, senderCountry: books.senderCountry })
+        .select({
+          id: books.id,
+          ownerId: books.ownerId,
+          enabledFields: books.enabledFields,
+          senderCountry: books.senderCountry,
+        })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
-
-      const [profile] = await tx
-        .select({ displayName: profiles.displayName })
-        .from(profiles)
-        .where(eq(profiles.id, claims.sub))
-        .limit(1);
 
       const rows = await tx
         .select()
@@ -116,7 +117,7 @@ export async function requestAddresses(
 
       return {
         bookId: book.id,
-        ownerName: profile?.displayName.trim() ?? "",
+        ownerId: book.ownerId,
         showPartner: book.enabledFields.partner_name,
         senderCountry: book.senderCountry,
         rows,
@@ -127,6 +128,15 @@ export async function requestAddresses(
     return { error: "Something went wrong. Please try again." };
   }
   if (!scope) return { error: "Set up your address book first." };
+
+  // Not claims.sub: a member's send must still sign with the owner's name.
+  let sender: BookSender;
+  try {
+    sender = await loadBookSender(scope.bookId, scope.ownerId);
+  } catch (err) {
+    logDbError("[ra] [requestAddresses] sender lookup failed", err);
+    return { error: "Something went wrong. Please try again." };
+  }
 
   const targets = scope.rows.flatMap((row) =>
     recipientsOf(row).map((recipient) => ({ ...recipient, row })),
@@ -175,7 +185,7 @@ export async function requestAddresses(
       return {
         to: target.email,
         ...addressRequestEmail({
-          ownerName: scope.ownerName,
+          ownerName: sender.name,
           recipientName: target.firstName,
           updateUrl: `${appUrl}/u/${token}/confirm`,
           confirmUrl: `${appUrl}/u/${token}/confirm`,
@@ -189,7 +199,7 @@ export async function requestAddresses(
         }),
       };
     }),
-    { batchKey: randomUUID() },
+    { batchKey: randomUUID(), senderName: sender.name, replyTo: sender.replyTo },
   );
 
   // Positional: results[i] corresponds to minted[i].

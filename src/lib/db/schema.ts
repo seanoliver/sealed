@@ -25,6 +25,15 @@ export const books = pgTable("books", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const bookMembers = pgTable("book_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookId: uuid("book_id").notNull(),
+  email: citext("email").notNull(),
+  userId: uuid("user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  linkedAt: timestamp("linked_at", { withTimezone: true }),
+});
+
 export const contacts = pgTable("contacts", {
   id: uuid("id").primaryKey().defaultRandom(),
   bookId: uuid("book_id").notNull(),

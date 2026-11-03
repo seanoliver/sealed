@@ -43,6 +43,11 @@ const eslintConfig = defineConfig([
       "src/lib/queries/public-book.ts",
       // ... and its integration test, which seeds fixtures as admin.
       "src/lib/queries/public-book.test.ts",
+      // Sanctioned for linking book_members invites only.
+      "src/lib/queries/books.ts",
+      "src/lib/queries/books.test.ts",
+      // Sanctioned for reading the sender name and Reply-To emails only.
+      "src/lib/email/sender.ts",
       // Sanctioned for contact_events audit appends only. Contact writes in
       // this file must stay on withRls; lint no longer checks them here.
       "src/app/dashboard/contacts/write.ts",

@@ -85,6 +85,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   }
 }
 
+/** `"Sean & Tina via Sealed" <verified address>`. The character strip blocks header injection and address spoofing. */
+export function fromWithName(from: string, senderName: string | undefined): string {
+  const name = (senderName ?? "").replace(/[\p{Cc}\p{Cf}"\\<>@]+/gu, " ").replace(/\s+/g, " ").trim();
+  if (name === "") return from;
+  const address = from.match(/<([^>]+)>/)?.[1] ?? from.trim();
+  return `"${name} via Sealed" <${address}>`;
+}
+
 /**
  * Send address-request emails via Resend's batch API, chunked to its
  * 100-email limit. Results map positionally onto `items`. Permissive
@@ -101,8 +109,12 @@ export async function sendAddressRequests(
     retryDelaysMs = [1000, 2000, 4000],
     attemptTimeoutMs = 20_000,
     budgetMs = 240_000,
+    senderName,
+    replyTo,
   }: {
     batchKey: string;
+    senderName?: string;
+    replyTo?: string[];
     retryDelaysMs?: number[];
     attemptTimeoutMs?: number;
     /** Stays under the dashboard's maxDuration so bookkeeping still runs. */
@@ -126,8 +138,9 @@ export async function sendAddressRequests(
     });
   }
 
-  const from = process.env.EMAIL_FROM;
-  if (!from) throw new Error("EMAIL_FROM is not set");
+  const envFrom = process.env.EMAIL_FROM;
+  if (!envFrom) throw new Error("EMAIL_FROM is not set");
+  const from = fromWithName(envFrom, senderName);
   const resend = getClient();
 
   const deadline = Date.now() + budgetMs;
@@ -136,6 +149,7 @@ export async function sendAddressRequests(
     const chunk = items.slice(start, start + BATCH_LIMIT);
     const payload = chunk.map((item) => ({
       from,
+      ...(replyTo && replyTo.length > 0 ? { replyTo } : {}),
       to: item.to,
       subject: item.subject,
       html: item.html,

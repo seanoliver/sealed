@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
@@ -9,6 +9,7 @@ import { contactInputToRow } from "@/lib/db/contact-row";
 import { books, contacts } from "@/lib/db/schema";
 import { logDbError } from "@/lib/log";
 import { checkAddress, contactSchema, withoutSamePartnerEmail } from "@/lib/validation/contact";
+import { bookAccessibleBy } from "@/lib/queries/books";
 
 const importSchema = z
   .array(contactSchema.extend({ country: z.string().trim().min(1).max(120).optional() }))
@@ -37,7 +38,7 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
       const [book] = await tx
         .select({ id: books.id })
         .from(books)
-        .where(eq(books.ownerId, claims.sub))
+        .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
 

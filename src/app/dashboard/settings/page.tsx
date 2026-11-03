@@ -11,6 +11,22 @@ export default async function SettingsPage() {
   ]);
   if (!book) redirect("/onboarding");
 
+  if (book.ownerId !== claims.sub) {
+    return (
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <h1 className="font-serif text-2xl leading-tight text-foreground">
+            Address book settings
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This address book is shared with you. Its owner manages the name on
+            emails, the public link and the invite fields.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   const urlPrefix = `${process.env.APP_URL}/b/`;
   const defaults = {
     display_name: profile?.displayName ?? "",
