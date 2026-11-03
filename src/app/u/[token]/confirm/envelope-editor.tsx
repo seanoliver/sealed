@@ -38,6 +38,7 @@ import {
   pruneDraft,
   valuesFromDraft,
   type HouseholdDraft,
+  type Recipient,
 } from "./envelope-names";
 import { envelopeRows, openRowIndex, type Row } from "./envelope-rows";
 import { whatChanged, type Change, type ReplySnapshot } from "./what-changed";
@@ -65,6 +66,7 @@ type Props = {
   senderNames: string;
   defaults: TokenUpdateValues;
   household: HouseholdValues;
+  recipient: Recipient;
   enabled: EnabledFields;
   senderCountry: string;
   legacyCountry: string | null;
@@ -321,6 +323,7 @@ export function EnvelopeEditor({
   senderNames,
   defaults,
   household,
+  recipient,
   enabled,
   senderCountry,
   legacyCountry,
@@ -634,6 +637,7 @@ export function EnvelopeEditor({
                           draft={draft}
                           onChange={setDraft}
                           enabled={enabled}
+                          recipient={recipient}
                           editing={editingPerson}
                           onEdit={setEditingPerson}
                           newKey={() => nextKey.current++}

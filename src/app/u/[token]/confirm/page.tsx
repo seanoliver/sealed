@@ -47,6 +47,7 @@ export default async function ConfirmAddressPage({
         senderNames={loaded.data.sender_full_names ?? ownerName}
         defaults={defaults}
         household={household}
+        recipient={loaded.data.recipient}
         enabled={enabled_fields}
         senderCountry={loaded.data.sender_country}
         legacyCountry={contact.country_code ? null : contact.country}

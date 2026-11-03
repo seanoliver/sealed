@@ -127,10 +127,17 @@ function roleErrors(role: Role, errors: HouseholdFieldErrors) {
   return { first: errors[`kids.${role.index}.first`], last: errors[`kids.${role.index}.last`] };
 }
 
-function rolePrefix(role: Role, crowded: boolean): string {
-  if (role.kind === "partner") return "Second person's ";
+export type Recipient = "primary" | "partner";
+
+function isRecipient(role: Role, recipient: Recipient): boolean {
+  return role.kind === recipient;
+}
+
+function rolePrefix(role: Role, crowded: boolean, recipient: Recipient): string {
   if (role.kind === "kid") return `Child ${role.index + 1}'s `;
-  return crowded ? "Your " : "";
+  if (isRecipient(role, recipient)) return crowded ? "Your " : "";
+  if (role.kind === "partner") return "Second person's ";
+  return crowded ? "First person's " : "";
 }
 
 const chipName = (person: Person) =>
@@ -140,6 +147,8 @@ type NamesEditorProps = {
   draft: HouseholdDraft;
   onChange: (draft: HouseholdDraft) => void;
   enabled: Pick<EnabledFields, "partner_name" | "kids_names">;
+  /** Who the link was sent to: a partner's link opens on the second person. */
+  recipient: Recipient;
   editing: number | null;
   onEdit: (key: number | null) => void;
   newKey: () => number;
@@ -151,6 +160,7 @@ export function NamesEditor({
   draft,
   onChange,
   enabled,
+  recipient,
   editing,
   onEdit,
   newKey,
@@ -257,7 +267,7 @@ export function NamesEditor({
             );
           }
           const current = personOf(draft, role) ?? person;
-          const prefix = rolePrefix(role, crowded);
+          const prefix = rolePrefix(role, crowded, recipient);
           const fieldErrors = roleErrors(role, errors);
           const ids =
             role.kind === "primary"
@@ -281,7 +291,7 @@ export function NamesEditor({
                       <input
                         id={ids[i]}
                         type="text"
-                        autoComplete={role.kind === "primary" ? (part === "first" ? "given-name" : "family-name") : "off"}
+                        autoComplete={isRecipient(role, recipient) ? (part === "first" ? "given-name" : "family-name") : "off"}
                         maxLength={NAME_MAX}
                         value={current[part]}
                         onChange={(event) => set({ [part]: event.target.value })}
