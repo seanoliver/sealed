@@ -42,6 +42,8 @@ let expiredToken: string;
 let staleToken: string;
 let keepSelfToken: string;
 let keepKidToken: string;
+let followToken: string;
+let ownLastToken: string;
 const familyOwnerEmail = uniqueEmail("confirm-family-owner");
 
 test.beforeAll(async ({ browser }) => {
@@ -257,6 +259,36 @@ test.beforeAll(async ({ browser }) => {
       stateRegion: "OR",
       postalCode: "97214",
       household: { firstName: "Kay", lastName: "Kidd", kids: [{ first: "Tom", last: "Kidd" }] },
+    }),
+  );
+  followToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Ana Olivr",
+      email: "ana.olivr@e2e.test",
+      addressLine1: "19 Gate Rd",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: {
+        firstName: "Ana",
+        lastName: "Olivr",
+        partnerFirstName: "Ben",
+        partnerLastName: "Olivr",
+        kids: [{ first: "Kit" }],
+      },
+    }),
+  );
+  ownLastToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Ada Olivr & Cy Diaz",
+      email: "ada.olivr@e2e.test",
+      addressLine1: "21 Gate Rd",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: { firstName: "Ada", lastName: "Olivr", partnerFirstName: "Cy", partnerLastName: "Diaz" },
     }),
   );
   soloPartnerToken = await seedUpdateToken(
@@ -701,6 +733,36 @@ test("clearing a saved kid's first name shows the names error instead of removin
   await expect(names.getByLabel("Child 1's first name")).toHaveAttribute("aria-invalid", "true");
   await expect(names.getByText("Add a first name, or remove this row.")).toBeVisible();
   expect((await getContactNamesByEmail("kay@e2e.test")).kids).toEqual([{ first: "Tom", last: "Kidd" }]);
+});
+
+test("fixing the household last name carries to people who share it", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${followToken}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: /^Ana .*Olivr.*\. Edit/ }).click();
+  const names = page.getByRole("group", { name: "Names on the envelope" });
+  await names.getByRole("button", { name: "Edit Ana Olivr" }).click();
+  await names.locator("#last_name").fill("Oliver");
+  await expect(names.getByRole("button", { name: "Edit Ben Oliver" })).toBeVisible();
+  await expect(names.getByRole("button", { name: "Edit Kit Oliver" })).toBeVisible();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: /^Send it here/ }).click();
+  await expect(saved(page)).toBeVisible();
+  const stored = await getContactNamesByEmail("ana.olivr@e2e.test");
+  expect([stored.lastName, stored.partnerLastName]).toEqual(["Oliver", "Oliver"]);
+  expect(stored.kids).toEqual([{ first: "Kit", last: "Oliver" }]);
+
+  await page.goto(`/u/${ownLastToken}/confirm`);
+  await waitForTurnstile(page);
+  await page.getByRole("button", { name: /^Ada .*Diaz\. Edit/ }).click();
+  await names.getByRole("button", { name: "Edit Ada Olivr" }).click();
+  await names.locator("#last_name").fill("Oliver");
+  await expect(names.getByRole("button", { name: "Edit Cy Diaz" })).toBeVisible();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: /^Send it here/ }).click();
+  await expect(saved(page)).toBeVisible();
+  const own = await getContactNamesByEmail("ada.olivr@e2e.test");
+  expect([own.lastName, own.partnerLastName]).toEqual(["Oliver", "Diaz"]);
 });
 
 test("a partner's link labels the partner as the one replying", async ({ page }) => {

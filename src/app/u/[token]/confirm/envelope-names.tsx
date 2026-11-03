@@ -12,8 +12,8 @@ import {
   type HouseholdValues,
 } from "@/lib/validation/household";
 
-/** `added`: created by "+ Add" this visit. */
-export type Person = { key: number; first: string; last: string; added?: boolean };
+/** `added`: created by "+ Add" this visit. `follows`: the last name tracks the first person's until edited. */
+export type Person = { key: number; first: string; last: string; added?: boolean; follows?: boolean };
 
 /** The recipient's household while they edit it. Keys keep chips stable as people come and go. */
 export type HouseholdDraft = { primary: Person; partner: Person | null; kids: Person[] };
@@ -21,8 +21,10 @@ export type HouseholdDraft = { primary: Person; partner: Person | null; kids: Pe
 export function draftFromValues(values: HouseholdValues): HouseholdDraft {
   return {
     primary: { key: 0, first: values.first_name, last: values.last_name },
-    partner: values.partner ? { key: 1, ...values.partner } : null,
-    kids: values.kids.map((kid, i) => ({ key: i + 2, ...kid })),
+    partner: values.partner
+      ? { key: 1, ...values.partner, follows: values.partner.last === values.last_name }
+      : null,
+    kids: values.kids.map((kid, i) => ({ key: i + 2, ...kid, follows: kid.last === values.last_name })),
   };
 }
 
@@ -116,7 +118,10 @@ function personOf(draft: HouseholdDraft, role: Role): Person | null {
 }
 
 function withPerson(draft: HouseholdDraft, role: Role, person: Person): HouseholdDraft {
-  if (role.kind === "primary") return { ...draft, primary: person };
+  if (role.kind === "primary") {
+    const follow = (other: Person) => (other.follows ? { ...other, last: person.last } : other);
+    return { primary: person, partner: draft.partner && follow(draft.partner), kids: draft.kids.map(follow) };
+  }
   if (role.kind === "partner") return { ...draft, partner: person };
   return { ...draft, kids: draft.kids.map((kid, i) => (i === role.index ? person : kid)) };
 }
@@ -224,7 +229,7 @@ export function NamesEditor({
   }
 
   function add(kind: "partner" | "kid") {
-    const person: Person = { key: newKey(), first: "", last: draft.primary.last, added: true };
+    const person: Person = { key: newKey(), first: "", last: draft.primary.last, added: true, follows: true };
     const next =
       kind === "partner"
         ? { ...pruneDraft(draft), partner: person }
@@ -307,7 +312,13 @@ export function NamesEditor({
                         autoComplete={isRecipient(role, recipient) ? (part === "first" ? "given-name" : "family-name") : "off"}
                         maxLength={NAME_MAX}
                         value={current[part]}
-                        onChange={(event) => set({ [part]: event.target.value })}
+                        onChange={(event) =>
+                          set(
+                            part === "first"
+                              ? { first: event.target.value }
+                              : { last: event.target.value, follows: false },
+                          )
+                        }
                         onKeyDown={(event) => {
                           if (event.key !== "Enter") return;
                           event.preventDefault();
