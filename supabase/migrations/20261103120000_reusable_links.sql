@@ -48,6 +48,7 @@ declare
   v_after jsonb;
   v_updated_at timestamptz;
   v_conflict boolean;
+  v_stale boolean;
   v_audited jsonb;
   v_email extensions.citext;
   v_first text;
@@ -127,17 +128,16 @@ begin
   from public.contacts c where c.id = v_contact_id
   for update;
 
-  -- Any change by the other person since the page loaded, even one the owner
-  -- edited over since. Their no-op confirm (before = after) is not a change.
-  -- A tab opened before this recipient's own later save would silently undo it.
-  if p_seen_at is not null and v_updated_at > p_seen_at and exists (
+  -- A page opened before this recipient's own later save would undo it. Measured
+  -- like a conflict; a lost-response retry changes nothing and still applies.
+  v_stale := p_seen_at is not null and v_updated_at > p_seen_at and exists (
     select 1 from public.contact_events e
     where e.contact_id = v_contact_id and e.created_at > p_seen_at
       and e.source = 'token' and e.recipient = v_recipient
-      and e.diff -> 'before' is distinct from e.diff -> 'after') then
-    return 'stale';
-  end if;
+      and e.diff -> 'before' is distinct from e.diff -> 'after');
 
+  -- Any change by the other person since the page loaded, even one the owner
+  -- edited over since. Their no-op confirm (before = after) is not a change.
   v_conflict := p_seen_at is not null and v_updated_at > p_seen_at and exists (
     select 1 from public.contact_events e
     where e.contact_id = v_contact_id and e.created_at > p_seen_at
@@ -194,12 +194,16 @@ begin
 
     select to_jsonb(c) - 'created_at' - 'updated_at' into v_after
     from public.contacts c where c.id = v_contact_id;
-    if v_conflict then
+    if v_conflict or v_stale then
       raise exception using errcode = 'SL001';
     end if;
   exception when sqlstate 'SL001' then
     null;
   end;
+
+  if v_stale and v_after is distinct from v_before then
+    return 'stale';
+  end if;
 
   update public.update_tokens
     set used_at = now()

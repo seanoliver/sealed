@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(6);
+select plan(7);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000eb001', 'rlk@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -39,6 +39,8 @@ select is(private.apply_token_reply('rlk-tabs', '{"city": "Bergen"}', now() - in
   'applied', 'the first tab saves');
 select is(private.apply_token_reply('rlk-tabs', '{"city": "Oslo"}', now() - interval '1 minute'),
   'stale', 'a tab opened before that save is told to reload');
+select is(private.apply_token_reply('rlk-tabs', '{"city": "Bergen"}', now() - interval '1 minute'),
+  'applied', 'a retry of the saved answer after a lost response still applies');
 
 select * from finish();
 rollback;
