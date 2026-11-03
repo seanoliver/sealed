@@ -21,7 +21,7 @@ import { TurnstileWidget, type TurnstileStatus } from "@/components/turnstile-wi
 import { type Country, type FormatField } from "@/lib/address/countries";
 import { fieldLabel, type AddressField } from "@/lib/address/fields";
 import { COUNTRY_LINE_AT } from "@/lib/address/format";
-import { type ZipPlace } from "@/lib/address/us-zip";
+import { normCity, zipDisagrees, type ZipPlace } from "@/lib/address/zip-agree";
 import { ownerVerb } from "@/lib/owner-name";
 import { cn } from "@/lib/utils";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
@@ -156,14 +156,6 @@ function slotLabel(tokens: FormatField[], country: Country | null): string {
 }
 
 const ZIP5 = /^(\d{5})(-\d{4})?$/;
-const norm = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
-
-/** True when the typed city or state disagrees with where the ZIP is. Blank fields agree. */
-function disagrees(place: ZipPlace, { city, state }: { city: string; state: string }): boolean {
-  const cityOk = city.trim() === "" || norm(city) === norm(place.city);
-  const stateOk = state.trim() === "" || state.trim().toUpperCase() === place.state;
-  return !(cityOk && stateOk);
-}
 
 /** Looks a ZIP up once per mount; key it by ZIP. */
 function ZipLookup({ zip, onPlace }: { zip: string; onPlace: (place: ZipPlace | null) => void }) {
@@ -533,8 +525,8 @@ export function EnvelopeEditor({
     const lookUp = zip !== null && !(zip in zipPlaces) && (zipOpen || changed.has("postal_code"));
     const place = zip ? (zipPlaces[zip] ?? null) : null;
     const where = { city: values.city, state: values.state_region };
-    const keepKey = `${zip}|${norm(where.city)}|${where.state}`;
-    const mismatch = place !== null && disagrees(place, where) && !kept.has(keepKey) ? place : null;
+    const keepKey = `${zip}|${normCity(where.city)}|${where.state}`;
+    const mismatch = place !== null && zipDisagrees(place, where) && !kept.has(keepKey) ? place : null;
 
     function onPlace(found: ZipPlace | null) {
       if (zip === null) return;
