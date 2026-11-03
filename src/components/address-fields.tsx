@@ -16,6 +16,7 @@ import {
   fieldLabel,
   type AddressField,
   type AddressFieldSpec,
+  type AddressRow,
 } from "@/lib/address/fields";
 import {
   envelopeSlots,
@@ -40,6 +41,8 @@ export const BLANK_ADDRESS: AddressValues = {
 
 export type AddressFieldsHandle = {
   validate: () => boolean;
+  /** Fill fields from outside, e.g. city and state from a ZIP lookup. */
+  set: (next: Partial<Record<AddressField, string>>) => void;
 };
 
 export type AddressFieldStyles = { input: string; label: string };
@@ -51,6 +54,7 @@ export type AddressPreview = {
   country: Country | null;
   caption: ReactNode;
   postcodeError: string | null;
+  values: AddressValues;
 };
 
 export type AddressPreviewLayout = (parts: {
@@ -74,6 +78,8 @@ type AddressFieldsProps = {
   /** Off for a saved contact: prefilling there would save a country nobody picked. */
   prefillCountry?: boolean;
   requireStreet?: boolean;
+  /** For this country, put the postcode before city and state so a lookup can fill them. */
+  postcodeFirstIn?: string;
 };
 
 const LANGUAGE: Record<string, string> = {
@@ -101,6 +107,28 @@ function placeName(country: Country): string {
     SHORT_NAMES[country.code] ??
     (WITH_THE.test(country.name) ? `the ${country.name}` : country.name)
   );
+}
+
+/** Moves the postcode to its own row just above the city, with city and state side by side. */
+function postcodeFirstRows(rows: AddressRow[]): AddressRow[] {
+  const postcode = rows.flatMap((row) => row.fields).find((field) => field.name === "postal_code");
+  if (!postcode) return rows;
+  const rest = rows
+    .map((row) => ({ ...row, fields: row.fields.filter((field) => field.name !== "postal_code") }))
+    .filter((row) => row.fields.length > 0);
+  const at = rest.findIndex((row) =>
+    row.fields.some((field) => field.name === "city" || field.name === "state_region"),
+  );
+  if (at === -1) return [...rest, { fields: [postcode], wideOnly: false }];
+  const next = rest[at + 1];
+  const merge =
+    rest[at].fields.length === 1 && next?.fields.length === 1 && next.fields[0].name === "state_region";
+  return [
+    ...rest.slice(0, at),
+    { fields: [postcode], wideOnly: false },
+    merge ? { fields: [...rest[at].fields, ...next.fields], wideOnly: false } : rest[at],
+    ...rest.slice(at + (merge ? 2 : 1)),
+  ];
 }
 
 function initialValues(defaults: AddressValues): AddressValues {
@@ -216,6 +244,7 @@ export function AddressFields({
   handleRef,
   prefillCountry = true,
   requireStreet = false,
+  postcodeFirstIn,
 }: AddressFieldsProps) {
   const anchor = useRef<HTMLDivElement>(null);
   const initial = useRef(initialValues(defaults));
@@ -270,6 +299,9 @@ export function AddressFields({
         field?.focus({ preventScroll: true });
       }
       return found === null;
+    },
+    set(next) {
+      setValues((current) => ({ ...current, ...next }));
     },
   }));
 
@@ -360,7 +392,11 @@ export function AddressFields({
         ],
         wideOnly: false,
       }));
-  const rows = [...layout.rows, ...extraRows];
+  const baseRows =
+    postcodeFirstIn !== undefined && layoutCode === postcodeFirstIn
+      ? postcodeFirstRows(layout.rows)
+      : layout.rows;
+  const rows = [...baseRows, ...extraRows];
   const shown = new Set(
     rows.flatMap((row) => row.fields.filter(visible).map((field) => field.name)),
   );
@@ -540,6 +576,7 @@ export function AddressFields({
         country,
         caption: envelope ? previewCaption(envelope, values, audience) : null,
         postcodeError: postcodeError?.text ?? null,
+        values,
       },
     });
   }
