@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(15);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000eb001', 'rlk@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -57,8 +57,16 @@ select is(private.apply_token_reply('rlk-dee', '{"city": "Paris"}', now() - inte
 select is(private.apply_token_reply('rlk-dee', '{"city": "Madrid"}', now() - interval '1 minute'), 'queued',
   'a different reply while one is pending is queued too');
 select is((select count(*)::int from public.submissions
-           where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'), 2,
-  'both distinct replies wait for review');
+           where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'), 1,
+  'the newer reply replaces the older one in review');
+select ok((select payload ->> 'city' = 'Madrid' from public.submissions
+           where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'),
+  'the reply left in review is the newer one');
+select is(private.apply_token_reply('rlk-dee', '{"city": "Lima"}'), 'applied',
+  'a reload and save applies directly');
+select is((select count(*)::int from public.submissions
+           where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'), 0,
+  'an applied reply closes the same person''s reply still in review');
 
 -- A no-change reply from this person never makes an older page stale.
 insert into public.contacts (id, book_id, full_name, first_name, last_name, email, city) values

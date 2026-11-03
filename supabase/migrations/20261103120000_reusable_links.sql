@@ -231,12 +231,23 @@ begin
                  and s.payload = v_queued) then
       return 'queued_again';
     end if;
+    -- This person's newer reply replaces their own older one still in review;
+    -- approving the older one later would undo it.
+    update public.submissions
+       set status = 'rejected'
+     where matched_contact_id = v_contact_id and source = 'token'
+       and recipient = v_recipient and status = 'pending';
     insert into public.submissions
       (book_id, payload, matched_contact_id, source, recipient, saved_by)
     values (v_book_id, v_queued, v_contact_id, 'token', v_recipient,
             case v_recipient when 'primary' then 'partner' else 'primary' end);
     return 'queued';
   end if;
+
+  update public.submissions
+     set status = 'rejected'
+   where matched_contact_id = v_contact_id and source = 'token'
+     and recipient = v_recipient and status = 'pending';
 
   insert into public.contact_events (contact_id, source, recipient, diff)
   values (v_contact_id, 'token', v_recipient,
