@@ -841,7 +841,7 @@ export function EnvelopeEditor({
         <p className="mt-2 flex items-start gap-2 text-sm leading-snug text-muted-foreground">
           <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <span>
-            {`Only ${ownerName} ${ownerVerb(ownerName, "sees", "see")} what you enter. It isn't sold or shared.`}
+            {`Only ${senderNames} ${ownerVerb(senderNames, "sees", "see")} what you enter. It isn't sold or shared.`}
           </span>
         </p>
       </header>
