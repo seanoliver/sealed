@@ -196,6 +196,7 @@ async function applyTokenUpdate(
     return { error: GENERIC_ERROR, ...echo };
   }
   if (outcome === "stale") return { error: STALE_REPLY_MESSAGE, ...echo };
+  if (outcome === "queued_again") return "saved";
   if (outcome !== "applied" && outcome !== "queued") {
     return { error: INVALID_LINK_MESSAGE, ...echo };
   }

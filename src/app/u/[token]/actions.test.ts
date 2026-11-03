@@ -182,6 +182,20 @@ describe("submitTokenUpdate", () => {
     expect(await stored()).toMatchObject({ city: "Bergen" });
   });
 
+  it("treats a retry of a reply already waiting for review as saved, without emailing again", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const execute = dbAdmin.execute.bind(dbAdmin);
+    vi.spyOn(dbAdmin, "execute").mockImplementation(((query: Parameters<typeof execute>[0]) =>
+      JSON.stringify(query).includes("apply_token_reply")
+        ? Promise.resolve([{ outcome: "queued_again" }])
+        : execute(query)) as typeof execute);
+    await expect(saveTokenUpdate(token, {}, prefilledForm(contact))).resolves.toEqual({ saved: true });
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+    vi.mocked(dbAdmin.execute).mockRestore();
+  });
+
   it("refuses a save once the link has expired", async () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);

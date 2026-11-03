@@ -7,7 +7,7 @@ import { sendNotification } from "@/lib/email/resend";
 import { generateToken } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { INVALID_LINK_MESSAGE } from "../../notice";
-import { notifyOwner, ownerForToken } from "../owner";
+import { isSpentToken, notifyOwner, ownerForToken } from "../owner";
 import { confirmTokenAddress } from "./actions";
 
 vi.mock("@/lib/db/rate-limit", () => ({ checkRateLimit: vi.fn() }));
@@ -100,6 +100,18 @@ describe("confirmTokenAddress", () => {
     ).resolves.toEqual({ confirmed: true });
     await flushAfter();
     expect(sendNotification).toHaveBeenCalledTimes(1);
+    const events = await dbAdmin.select().from(contactEvents).where(eq(contactEvents.contactId, C));
+    expect(events).toHaveLength(2); // every reply is audited, even a no-change retap
+  });
+
+  it("knows a used link from an unused, unknown or unreadable one", async () => {
+    const token = await seed();
+    expect(await isSpentToken(token)).toBe(false);
+    await confirmTokenAddress(token, {}, new FormData());
+    expect(await isSpentToken(token)).toBe(true);
+    expect(await isSpentToken(generateToken().token)).toBe(false);
+    vi.spyOn(dbAdmin, "execute").mockRejectedValueOnce(new Error("down"));
+    expect(await isSpentToken(token)).toBe(false);
   });
 
   it("emails the owner again when a later reply through the same link changes something", async () => {

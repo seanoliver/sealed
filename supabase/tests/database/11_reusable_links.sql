@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(7);
+select plan(9);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000eb001', 'rlk@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -41,6 +41,19 @@ select is(private.apply_token_reply('rlk-tabs', '{"city": "Oslo"}', now() - inte
   'stale', 'a tab opened before that save is told to reload');
 select is(private.apply_token_reply('rlk-tabs', '{"city": "Bergen"}', now() - interval '1 minute'),
   'applied', 'a retry of the saved answer after a lost response still applies');
+
+-- A retry of a reply queued for review (it crossed the partner's change) queues once.
+insert into public.contacts (id, book_id, full_name, first_name, last_name, email, partner_email, city) values
+  ('20000000-0000-4000-8000-0000000eb003', '10000000-0000-4000-8000-0000000eb001',
+   'Dee Park', 'Dee', 'Park', 'dee@rlk.test', 'eli@rlk.test', 'Oslo');
+insert into public.update_tokens (contact_id, token_hash, expires_at, recipient) values
+  ('20000000-0000-4000-8000-0000000eb003', extensions.digest('rlk-dee', 'sha256'), now() + interval '1 day', 'primary'),
+  ('20000000-0000-4000-8000-0000000eb003', extensions.digest('rlk-eli', 'sha256'), now() + interval '1 day', 'partner');
+select is(private.apply_token_reply('rlk-eli', '{"city": "Rome"}', now() - interval '1 minute'), 'applied',
+  'the partner saves first');
+select private.apply_token_reply('rlk-dee', '{"city": "Paris"}', now() - interval '1 minute');
+select is(private.apply_token_reply('rlk-dee', '{"city": "Paris"}', now() - interval '1 minute'), 'queued_again',
+  'a retry of a queued reply is not queued twice');
 
 select * from finish();
 rollback;

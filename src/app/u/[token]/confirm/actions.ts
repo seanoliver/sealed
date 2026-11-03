@@ -10,7 +10,7 @@ import { logDbError } from "@/lib/log";
 import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { TOKEN_SHAPE } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { INVALID_LINK_MESSAGE, STALE_REPLY_MESSAGE } from "../../notice";
+import { INVALID_LINK_MESSAGE } from "../../notice";
 import { notifyOwner, ownerForToken } from "../owner";
 import { readSeenAt } from "../token-data";
 
@@ -54,7 +54,6 @@ export async function confirmTokenAddress(
       sql`select private.apply_token_reply(${token}, '{}'::jsonb,
             ${readSeenAt(formData)}::timestamptz) as outcome`,
     );
-    if (rows[0]?.outcome === "stale") return { error: STALE_REPLY_MESSAGE };
     applied = rows[0]?.outcome === "applied";
   } catch (err) {
     logDbError("[tu] [confirmTokenAddress] apply_token_reply failed", err);

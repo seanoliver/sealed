@@ -49,6 +49,7 @@ declare
   v_updated_at timestamptz;
   v_conflict boolean;
   v_stale boolean;
+  v_queued jsonb;
   v_audited jsonb;
   v_email extensions.citext;
   v_first text;
@@ -218,15 +219,22 @@ begin
 
   -- Empty values stay: approving the reply must be able to clear a field.
   if v_conflict and v_after is distinct from v_before then
+    select coalesce(jsonb_object_agg(
+             case when k = 'email' and v_recipient = 'partner' then 'partner_email' else k end, v),
+             '{}'::jsonb)
+      into v_queued
+    from jsonb_each(v_audited) e(k, v);
+    -- A retry of a reply already waiting for review must not queue (or email) twice.
+    if exists (select 1 from public.submissions s
+               where s.matched_contact_id = v_contact_id and s.source = 'token'
+                 and s.recipient = v_recipient and s.status = 'pending'
+                 and s.payload = v_queued) then
+      return 'queued_again';
+    end if;
     insert into public.submissions
       (book_id, payload, matched_contact_id, source, recipient, saved_by)
-    select v_book_id,
-           coalesce(jsonb_object_agg(
-             case when k = 'email' and v_recipient = 'partner' then 'partner_email' else k end, v),
-             '{}'::jsonb),
-           v_contact_id, 'token', v_recipient,
-           case v_recipient when 'primary' then 'partner' else 'primary' end
-    from jsonb_each(v_audited) e(k, v);
+    values (v_book_id, v_queued, v_contact_id, 'token', v_recipient,
+            case v_recipient when 'primary' then 'partner' else 'primary' end);
     return 'queued';
   end if;
 

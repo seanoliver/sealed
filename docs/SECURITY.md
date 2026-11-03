@@ -17,7 +17,7 @@ A leak requires **two independent failures** — a bug in server code *and* a bu
 The two unauthenticated flows — token updates (`/u/[token]`) and permalink self-adds (`/b/[slug]`) — go through four narrow `SECURITY DEFINER` functions in a `private` schema (`supabase/migrations/00000000000002_private_functions.sql`):
 
 - `private.get_contact_for_token` — token lookup, returns only the contact's own fields plus display metadata
-- `private.apply_token_update` — single-use update, re-gated against the book's enabled fields server-side
+- `private.apply_token_reply` — applies a recipient's reply through a live link, re-gated against the book's enabled fields server-side
 - `private.submit_to_book` — write-only permalink insert
 - `private.check_rate_limit` — Postgres-backed fixed-window rate limiter
 
@@ -73,8 +73,8 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 - **32 bytes CSPRNG** (`crypto.randomBytes`), 43-char unpadded base64url in the URL
 - **SHA-256 at rest** — the database stores only `update_tokens.token_hash`; a DB leak exposes no live links
 - **30-day TTL** (`TOKEN_TTL_DAYS`)
-- **Single-use** — consumed (`used_at`) on successful update, inside a `SELECT … FOR UPDATE` so concurrent submits can't double-spend
-- **Single-active-per-contact** — re-running "Request addresses" deletes the contact's previous unused tokens before minting, so old links die immediately instead of living out their expiry
+- **Reusable until expiry** — a recipient can reopen their link and change their reply until it expires (`used_at` records the latest reply). The row is locked (`SELECT … FOR UPDATE`) per reply, and a reply from a page opened before the same person's own later change is refused as stale. Anyone holding the URL can read and edit that contact until expiry, so a forwarded link stays live; the owner retires it with a re-send or an email change
+- **Single-active-per-person** — once a re-sent "Request addresses" email is delivered, every earlier link for that person is deleted, used or not. An owner changing a person's email also deletes all of that person's links; a recipient changing their own email keeps only the link they used
 - **Shape gate before DB** — both the page and the action test the token against `TOKEN_SHAPE` (`^[A-Za-z0-9_-]{43}$`) before any query; malformed tokens cost zero DB work
 - **Never logged** — the raw token exists only in the emailed URL; `logDbError` strips query params, and the sole exception is the `EMAIL_DRY_RUN=1` non-production log, which is hard-disabled when `APP_ENV=production`
 - `/u/*` responses carry `X-Robots-Tag: noindex, nofollow` (`next.config.ts`) so a leaked link can't end up in a search index
