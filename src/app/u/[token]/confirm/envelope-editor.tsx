@@ -432,10 +432,13 @@ export function EnvelopeEditor({
   useEffect(() => {
     if (!open) return;
     const block = openRef.current;
-    // The names editor may already have focused the person it opened on.
-    if (block && !block.contains(document.activeElement)) {
+    const visible = (el: Element | null) => el !== null && el.getClientRects().length > 0;
+    const active = document.activeElement;
+    // The names editor may already have focused a person; Next keeps this block mounted, so focus on its button doesn't count.
+    const settled = block?.contains(active) && active?.matches("input, select") && visible(active);
+    if (block && !settled) {
       [...block.querySelectorAll<HTMLElement>("input:not([type=hidden]), select, button")]
-        .find((el) => el.getClientRects().length > 0)
+        .find(visible)
         ?.focus({ preventScroll: true });
     }
     envelopeRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -838,7 +841,7 @@ export function EnvelopeEditor({
         <p className="mt-2 flex items-start gap-2 text-sm leading-snug text-muted-foreground">
           <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <span>
-            {`Only ${ownerName} ${ownerVerb(ownerName, "sees", "see")} what you enter. It isn't sold or shared.`}
+            {`Only ${senderNames} ${ownerVerb(senderNames, "sees", "see")} what you enter. It isn't sold or shared.`}
           </span>
         </p>
       </header>

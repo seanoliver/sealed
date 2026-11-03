@@ -28,6 +28,22 @@ describe("envelopeRows", () => {
     expect(rows[openRowIndex(rows, open)]).toEqual({ kind: "slot", tokens: ["A"], at: 2 });
   });
 
+  it("puts out-of-order slots and the open row in print order", () => {
+    const rows = envelopeRows(
+      {
+        envelope: null,
+        name: "Cora",
+        slots: [
+          { tokens: ["Z"], at: 4 },
+          { tokens: ["A"], at: 2 },
+        ],
+      },
+      { tokens: ["C"], at: 3, slot: true },
+    );
+    expect(rows.map((row) => row.at)).toEqual([0, 2, 3, 4]);
+    expect(rows.map((row) => row.tokens[0])).toEqual(["N", "A", "C", "Z"]);
+  });
+
   it("adds no row when nothing is open", () => {
     const rows = envelopeRows({ envelope: null, name: "Cora", slots: [] });
     expect(rows).toEqual([{ kind: "line", text: "Cora", tokens: ["N"], at: 0, uppercased: false }]);

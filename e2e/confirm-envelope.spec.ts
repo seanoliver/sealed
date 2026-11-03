@@ -34,6 +34,8 @@ let zipToken: string;
 let line2Token: string;
 let pruneToken: string;
 let partnerToken: string;
+let coupleNamesToken: string;
+let soloPartnerToken: string;
 let emailToken: string;
 let expiredToken: string;
 let staleToken: string;
@@ -212,6 +214,33 @@ test.beforeAll(async ({ browser }) => {
       stateRegion: "OR",
       postalCode: "97214",
       household: { firstName: "Ana", lastName: "Park", partnerFirstName: "Ben", partnerLastName: "Park" },
+    }),
+    { recipient: "partner" },
+  );
+  coupleNamesToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Rae Rowe & Sol Rowe",
+      email: "rae@e2e.test",
+      partnerEmail: "sol@e2e.test",
+      addressLine1: "11 Gate Rd",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: { firstName: "Rae", lastName: "Rowe", partnerFirstName: "Sol", partnerLastName: "Rowe" },
+    }),
+  );
+  soloPartnerToken = await seedUpdateToken(
+    await seedContact({
+      bookId: family.bookId,
+      fullName: "Nia Solo",
+      email: "nia@e2e.test",
+      partnerEmail: "oz@e2e.test",
+      addressLine1: "13 Gate Rd",
+      city: "Portland",
+      stateRegion: "OR",
+      postalCode: "97214",
+      household: { firstName: "Nia", lastName: "Solo" },
     }),
     { recipient: "partner" },
   );
@@ -553,6 +582,7 @@ test("a contact with no address adds one line by line", async ({ page }) => {
   const envelope = page.locator("address");
   await envelope.locator("#address_line1").fill("1550 Larkin St");
   await envelope.getByRole("button", { name: "Next" }).click();
+  await expect(envelope.locator("#postal_code")).toBeFocused();
   await envelope.locator("#postal_code").fill("94109");
   await expect(envelope.locator("#city")).toHaveValue("San Francisco");
   await expect(envelope.locator("#state_region")).toHaveValue("CA");
@@ -625,6 +655,31 @@ test("a partner's link labels the partner as the one replying", async ({ page })
   await expect(names.getByLabel("First person's first name")).toHaveValue("Ana");
   await expect(names.getByLabel("First person's first name")).toHaveAttribute("autocomplete", "off");
   await expect(names.getByText("Your first name")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: /^Ana .*Park\. Edit/ }).click();
+  await expect(names.getByRole("button", { name: "Edit Ana Park" })).toBeVisible();
+  await expect(names.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
+});
+
+test("on the primary's link only the partner's chip can be removed", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${coupleNamesToken}/confirm`);
+  await page.getByRole("button", { name: /^Rae .*Rowe\. Edit/ }).click();
+  const names = page.getByRole("group", { name: "Names on the envelope" });
+  await expect(names.getByRole("button", { name: "Edit Rae Rowe" })).toBeVisible();
+  await expect(names.getByRole("button", { name: "Remove Rae Rowe" })).toHaveCount(0);
+  await expect(names.getByRole("button", { name: "Remove Sol Rowe" })).toBeVisible();
+});
+
+test("a partner's link labels the first person when only they are on the envelope", async ({ page }) => {
+  await stubTurnstile(page);
+  await page.goto(`/u/${soloPartnerToken}/confirm`);
+  await page.getByRole("button", { name: /^Nia Solo\. Edit/ }).click();
+  const names = page.getByRole("group", { name: "Names on the envelope" });
+  await expect(names.getByLabel("First person's first name")).toHaveValue("Nia");
+  await expect(names.getByLabel("First person's last name")).toHaveValue("Solo");
+  await expect(names.getByLabel("First name", { exact: true })).toHaveCount(0);
 });
 
 test("a recipient who changes their email can Edit again with the same link", async ({ page }) => {
