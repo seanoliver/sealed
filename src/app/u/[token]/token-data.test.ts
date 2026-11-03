@@ -24,6 +24,7 @@ const data = (enabled: TokenData["enabled_fields"]): TokenData => ({
   },
   enabled_fields: enabled,
   owner_name: "Owner",
+  sender_full_names: null,
   sender_country: "US",
   recipient: "primary",
   updated_at: "2026-11-01T00:00:00+00:00",
