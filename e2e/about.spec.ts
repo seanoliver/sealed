@@ -56,14 +56,12 @@ test("the about page answers who sent this and who sees the address", async ({ p
   await expect(page.getByRole("button", { name: "← Back" })).toHaveCount(0);
 });
 
-test("a recipient can open the explainer and come back to their link", async ({ page }) => {
+test("a recipient can open the about page and come back to their link", async ({ page }) => {
   await stubTurnstile(page);
   await page.goto(`/u/${token}/confirm`);
   await page.waitForFunction(() => "__ts" in window);
-  const explainer = page.getByText("Why am I getting this?");
-  await explainer.click();
   await expect(page.getByText("Only About Owner sees what you enter.")).toBeVisible();
-  await page.getByRole("link", { name: "More about Sealed →" }).click();
+  await page.getByRole("link", { name: "Sealed", exact: true }).click();
   await expect(page).toHaveURL(/\/about$/);
   await page.getByRole("button", { name: "← Back" }).click();
   await expect(page).toHaveURL(new RegExp(`/u/${token}/confirm$`));
@@ -71,10 +69,13 @@ test("a recipient can open the explainer and come back to their link", async ({ 
 
 test("recipient pages and the homepage link to the about page", async ({ page }) => {
   await stubTurnstile(page);
-  for (const path of [`/u/${token}`, `/u/${token}/confirm`, "/"]) {
+  for (const path of [`/u/${token}`, `/u/${token}/confirm`]) {
     await page.goto(path);
-    await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
+    await expect(page.getByRole("link", { name: "Sealed", exact: true })).toHaveAttribute("href", "/about");
+    await expect(page.getByText("A small project by Sean Oliver")).toBeVisible();
   }
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
 });
 
 test("a visitor from another site gets no Back button", async ({ page }) => {
@@ -90,7 +91,9 @@ test("the update form and the public book page explain themselves", async ({ pag
     await page.goto(path);
     await page.getByText("Why am I getting this?").click();
     await expect(page.getByText("Only About Owner sees what you enter.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
+    await expect(
+      page.getByRole("link", { name: path === `/b/${slug}` ? "What is this?" : "Sealed", exact: true }),
+    ).toHaveAttribute("href", "/about");
   }
 });
 

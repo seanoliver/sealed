@@ -22,6 +22,7 @@ export const books = pgTable("books", {
     partner_name: boolean; kids_names: boolean; birthday: boolean;
   }>().default({ partner_name: false, kids_names: false, birthday: false }),
   senderCountry: text("sender_country").notNull().default("US"),
+  senderFullNames: text("sender_full_names"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -1,10 +1,10 @@
-import { SiteFooter } from "@/components/site-footer";
+import { RecipientFooter } from "@/components/site-footer";
 
 export default function RecipientLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      <SiteFooter />
+      <RecipientFooter />
     </>
   );
 }

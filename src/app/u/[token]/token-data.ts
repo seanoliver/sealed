@@ -34,6 +34,8 @@ export const tokenDataSchema = z.object({
     birthday: z.boolean(),
   }),
   owner_name: z.string(),
+  sender_full_names: z.string().nullable(),
+  expires_at: z.string(),
   sender_country: z.string(),
   recipient: z.enum(["primary", "partner"]),
   /** A string, not a Date: a Date drops the microseconds seen_at is compared at. */

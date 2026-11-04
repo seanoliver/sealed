@@ -47,6 +47,15 @@ test("a recipient of a couple's book reads plural copy", async ({ page }) => {
   await expect(page.getByText("Only Sean & Tina see what you enter.")).toBeVisible();
 });
 
+test("the confirm page names every sender as who sees the reply", async ({ page }) => {
+  await db`update public.books set sender_full_names = 'Sean Oliver & Tina Oliver' where id = ${bookId}`;
+  await stubTurnstile(page);
+  await page.goto(`/u/${token}/confirm`);
+  await expect(
+    page.getByText("Only Sean Oliver & Tina Oliver see what you enter. It isn't sold or shared."),
+  ).toBeVisible();
+});
+
 test("an invited member lands in the shared book and cannot edit its settings", async ({ page }) => {
   await signupAndLogin(page, memberEmail);
   await expect(page).toHaveURL(/\/dashboard$/);

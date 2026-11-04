@@ -22,8 +22,8 @@ update public.contacts set email = 'ana@new.test'
 where id = '20000000-0000-4000-8000-0000000ce001';
 select is((select count(*)::int from public.update_tokens where token_hash = 'a1'), 0,
   'a new email revokes the unused link');
-select is((select count(*)::int from public.update_tokens where token_hash = 'a2'), 1,
-  'a used link stays as history');
+select is((select count(*)::int from public.update_tokens where token_hash = 'a2'), 0,
+  'a new email revokes a used link too, since used links stay live');
 select is((select count(*)::int from public.update_tokens where token_hash = 'c1'), 1,
   'other contacts keep their links');
 

@@ -1,4 +1,5 @@
 # Google libaddressinput data for per-country addresses
+> Stale as of 2026-10-29: src/components/country-picker.tsx no longer exists.
 
 - **Date:** 2026-10-20
 - **Status:** Current

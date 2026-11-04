@@ -27,7 +27,7 @@ select ok(not (private.get_contact_for_token('testtoken') ? 'book_title'),
 select ok(private.get_contact_for_token('expiredtoken') is null, 'expired token returns null');
 select ok(private.get_contact_for_token('nosuchtoken') is null, 'unknown token returns null');
 
--- apply_token_reply: happy path, respects enabled_fields, single-use
+-- apply_token_reply: happy path, respects enabled_fields, reusable until expiry
 select is(private.apply_token_reply('testtoken',
   '{"full_name": "Alice Updated", "city": "Newtown", "kids_names": "ShouldBeIgnored"}'), 'applied',
   'apply_token_reply reports the update applied');
@@ -36,12 +36,12 @@ select results_eq(
      where id = '20000000-0000-0000-0000-0000000000a1' $$,
   $$ values ('Alice Updated', 'Newtown', null::text) $$,
   'update applied; disabled field ignored');
-select ok(private.apply_token_reply('testtoken', '{"city": "Again"}') is null,
-  'token is single-use');
+select is(private.apply_token_reply('testtoken', '{"city": "Again"}'), 'applied',
+  'a used link still applies a later reply until it expires');
 select results_eq(
   $$ select count(*) from public.contact_events
      where contact_id = '20000000-0000-0000-0000-0000000000a1' and source = 'token' $$,
-  array[1::bigint], 'audit row written');
+  array[2::bigint], 'each reply writes an audit row');
 
 -- audit whitelist: unmapped keys from the untrusted payload never reach storage
 select is(private.apply_token_reply('secondtoken', '{"city": "JunkTown", "hax": "pwn"}'), 'applied',

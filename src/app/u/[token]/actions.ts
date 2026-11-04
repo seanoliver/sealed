@@ -32,7 +32,7 @@ import {
 // Type-only import from a client module — erased at compile time, so no
 // client code is pulled into this server action bundle.
 import { type RecipientFormState } from "@/components/recipient-form";
-import { INVALID_LINK_MESSAGE } from "../notice";
+import { INVALID_LINK_MESSAGE, STALE_REPLY_MESSAGE } from "../notice";
 import { notifyOwner, ownerForToken } from "./owner";
 import { readSeenAt, storedNames, type TokenData, tokenDataSchema } from "./token-data";
 
@@ -181,8 +181,7 @@ async function applyTokenUpdate(
   // Look up before applying: an email change deletes the token with the update.
   const owner = await ownerForToken(token);
 
-  // 6. Single-use apply. NULL (unknown/expired/used token, bad payload) gets the
-  //    generic copy. 'queued' still thanks the recipient: anything else would
+  // 6. Apply. NULL (unknown/expired token, bad payload) gets the generic copy. 'queued' still thanks the recipient: anything else would
   //    leak the other person's answer.
   let outcome: unknown = null;
   try {
@@ -196,6 +195,8 @@ async function applyTokenUpdate(
     logDbError("[tu] [submitTokenUpdate] apply_token_reply failed", err);
     return { error: GENERIC_ERROR, ...echo };
   }
+  if (outcome === "stale") return { error: STALE_REPLY_MESSAGE, ...echo };
+  if (outcome === "queued_again") return "saved";
   if (outcome !== "applied" && outcome !== "queued") {
     return { error: INVALID_LINK_MESSAGE, ...echo };
   }

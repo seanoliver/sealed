@@ -17,7 +17,7 @@ A leak requires **two independent failures** — a bug in server code *and* a bu
 The two unauthenticated flows — token updates (`/u/[token]`) and permalink self-adds (`/b/[slug]`) — go through four narrow `SECURITY DEFINER` functions in a `private` schema (`supabase/migrations/00000000000002_private_functions.sql`):
 
 - `private.get_contact_for_token` — token lookup, returns only the contact's own fields plus display metadata
-- `private.apply_token_update` — single-use update, re-gated against the book's enabled fields server-side
+- `private.apply_token_reply` — applies a recipient's reply through a live link, re-gated against the book's enabled fields server-side
 - `private.submit_to_book` — write-only permalink insert
 - `private.check_rate_limit` — Postgres-backed fixed-window rate limiter
 
@@ -38,7 +38,7 @@ The pgTAP suite (`supabase/tests/database/01_rls.sql`) asserts the exact expecte
 
 ## Database role
 
-Local development connects as `postgres` — the table owner, so it implicitly bypasses RLS (which is what `dbAdmin` relies on) but also holds DDL, every schema, and role administration. **Production SHOULD connect as a dedicated restricted role instead**: it can read and write the app's tables and call the `private.*` functions, but owns nothing — no `CREATE`/`ALTER`/`DROP`, no ability to replace the SECURITY DEFINER functions or touch other schemas (`storage`, `vault`, …), and only a two-column peek at `auth.users`. A compromised app server then can't rewrite the schema out from under the security model.
+Local development connects as `postgres` — the table owner, so it implicitly bypasses RLS (which is what `dbAdmin` relies on) but also holds DDL, every schema, and role administration. **Production SHOULD connect as a dedicated restricted role instead**: it can read and write the app's tables and call the `private.*` functions, but owns nothing — no `CREATE`/`ALTER`/`DROP`, no ability to replace the SECURITY DEFINER functions or touch other schemas (`storage`, `vault`, …), and only a three-column peek at `auth.users`. A compromised app server then can't rewrite the schema out from under the security model.
 
 Run this once against the production database as `postgres` (SQL editor or psql), then point `DATABASE_URL` at `app_server`:
 
@@ -49,7 +49,7 @@ grant usage on schema public, private to app_server;
 grant select, insert, update, delete on all tables in schema public to app_server;
 grant usage on all sequences in schema public to app_server;
 grant execute on all functions in schema private to app_server;
-grant select (id, email) on auth.users to app_server;
+grant select (id, email, email_confirmed_at) on auth.users to app_server;
 alter default privileges for role postgres in schema public
   grant select, insert, update, delete on tables to app_server;
 alter default privileges for role postgres in schema public
@@ -62,7 +62,7 @@ Notes (each verified against a local stack — the full vitest integration suite
 
 - **`bypassrls` is required, and does not weaken Wall 2.** Without it, every `dbAdmin` query is silently filtered to zero rows by the default-deny policies (webhook status updates match nothing, token minting inserts nothing). It stays safe because RLS checks the *current* role: `withRls` executes `SET ROLE authenticated`, and `authenticated` has no `BYPASSRLS`, so every owner-facing query remains policy-enforced (`src/lib/db/rls.test.ts` proves both behaviors under this role). Supabase's `postgres` role is privileged enough to create `bypassrls` roles even though it isn't a superuser.
 - **`grant authenticated`** is what allows the `SET ROLE authenticated` inside `withRls` — and membership also inherits `usage` on the `auth` schema, which the column grant below needs.
-- **`select (id, email) on auth.users`** is the only auth-schema privilege the app uses (the owner-notify email lookup in the permalink submit path). `postgres` can grant exactly this; broader DML on `auth.users` isn't grantable by `postgres` and isn't needed.
+- **`select (id, email, email_confirmed_at) on auth.users`** is the only auth-schema privilege the app uses: owner-notify and Reply-To email lookups, and the confirmed-email check when a book invite links to a member. `postgres` can grant exactly this; broader DML on `auth.users` isn't grantable by `postgres` and isn't needed.
 - The schema has no sequences today (uuid keys throughout); the sequence grants plus the `alter default privileges` lines are future-proofing so tables, identity columns, or `private` functions added by later migrations (which run as `postgres`) keep working without re-granting.
 - **Running the vitest integration suite against a restricted role** additionally needs fixture-seeding privileges the app itself never uses (`grant insert, delete on auth.users to app_server;`, run as a superuser). That's for local verification only — don't add it in production.
 
@@ -73,8 +73,8 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 - **32 bytes CSPRNG** (`crypto.randomBytes`), 43-char unpadded base64url in the URL
 - **SHA-256 at rest** — the database stores only `update_tokens.token_hash`; a DB leak exposes no live links
 - **30-day TTL** (`TOKEN_TTL_DAYS`)
-- **Single-use** — consumed (`used_at`) on successful update, inside a `SELECT … FOR UPDATE` so concurrent submits can't double-spend
-- **Single-active-per-contact** — re-running "Request addresses" deletes the contact's previous unused tokens before minting, so old links die immediately instead of living out their expiry
+- **Reusable until expiry** — a recipient can reopen their link and change their reply until it expires (`used_at` records the latest reply). The row is locked (`SELECT … FOR UPDATE`) per reply, and a reply from a page opened before the same person's own later change is refused as stale. Anyone holding the URL can read and edit that contact until expiry, so a forwarded link stays live; the owner retires it with a re-send or an email change
+- **Single-active-per-person** — once a re-sent "Request addresses" email is delivered, every earlier link for that person is deleted, used or not. An owner changing a person's email also deletes all of that person's links; a recipient changing their own email keeps only the link they used
 - **Shape gate before DB** — both the page and the action test the token against `TOKEN_SHAPE` (`^[A-Za-z0-9_-]{43}$`) before any query; malformed tokens cost zero DB work
 - **Never logged** — the raw token exists only in the emailed URL; `logDbError` strips query params, and the sole exception is the `EMAIL_DRY_RUN=1` non-production log, which is hard-disabled when `APP_ENV=production`
 - `/u/*` responses carry `X-Robots-Tag: noindex, nofollow` (`next.config.ts`) so a leaked link can't end up in a search index

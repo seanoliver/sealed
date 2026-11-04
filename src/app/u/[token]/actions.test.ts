@@ -7,7 +7,7 @@ import { generateToken } from "@/lib/tokens";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { sendNotification } from "@/lib/email/resend";
 import { householdPrefill } from "@/lib/names";
-import { INVALID_LINK_MESSAGE } from "../notice";
+import { INVALID_LINK_MESSAGE, STALE_REPLY_MESSAGE } from "../notice";
 import { saveTokenUpdate, submitTokenUpdate } from "./actions";
 import { redirect } from "next/navigation";
 
@@ -135,7 +135,7 @@ describe("submitTokenUpdate", () => {
     await dbAdmin.execute(sql`delete from public.books where id = ${B}`);
   });
 
-  it("saves the update, splits the names and spends the link", async () => {
+  it("saves the update, splits the names and keeps the link open for another reply", async () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);
     await expect(
@@ -148,10 +148,9 @@ describe("submitTokenUpdate", () => {
       fullName: "Ana Reyes",
     });
     await expect(
-      submitTokenUpdate(token, {}, prefilledForm(contact)),
-    ).resolves.toMatchObject({
-      error: INVALID_LINK_MESSAGE,
-    });
+      submitTokenUpdate(token, {}, prefilledForm(contact, { city: "Bergen" })),
+    ).rejects.toThrow("REDIRECT");
+    expect(await stored()).toMatchObject({ city: "Bergen" });
   });
 
   it("saveTokenUpdate saves the same way but answers saved instead of redirecting", async () => {
@@ -162,6 +161,47 @@ describe("submitTokenUpdate", () => {
     ).resolves.toEqual({ saved: true });
     expect(redirect).not.toHaveBeenCalled();
     expect(await stored()).toMatchObject({ city: "Bergen", firstName: "Ana" });
+    await expect(
+      saveTokenUpdate(token, {}, prefilledForm(contact, { city: "Oslo" })),
+    ).resolves.toEqual({ saved: true });
+    expect(await stored()).toMatchObject({ city: "Oslo" });
+  });
+
+  it("asks a page opened before the person's own later save to reload instead of overwriting it", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const openedAt = (
+      await dbAdmin.execute(sql`select to_jsonb(updated_at) #>> '{}' as t from public.contacts where id = ${C}`)
+    )[0].t as string;
+    const stale = prefilledForm(contact, { city: "Oslo" });
+    stale.set("seen_at", openedAt);
+    const fresh = prefilledForm(contact, { city: "Bergen" });
+    fresh.set("seen_at", openedAt);
+    await expect(saveTokenUpdate(token, {}, fresh)).resolves.toEqual({ saved: true });
+    await expect(saveTokenUpdate(token, {}, stale)).resolves.toMatchObject({ error: STALE_REPLY_MESSAGE });
+    expect(await stored()).toMatchObject({ city: "Bergen" });
+  });
+
+  it("treats a retry of a reply already waiting for review as saved, without emailing again", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const execute = dbAdmin.execute.bind(dbAdmin);
+    vi.spyOn(dbAdmin, "execute").mockImplementation(((query: Parameters<typeof execute>[0]) =>
+      JSON.stringify(query).includes("apply_token_reply")
+        ? Promise.resolve([{ outcome: "queued_again" }])
+        : execute(query)) as typeof execute);
+    await expect(saveTokenUpdate(token, {}, prefilledForm(contact))).resolves.toEqual({ saved: true });
+    await flushAfter();
+    expect(sendNotification).not.toHaveBeenCalled();
+    vi.mocked(dbAdmin.execute).mockRestore();
+  });
+
+  it("refuses a save once the link has expired", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await dbAdmin.execute(
+      sql`update public.update_tokens set expires_at = now() - interval '1 minute' where contact_id = ${C}`,
+    );
     await expect(
       saveTokenUpdate(token, {}, prefilledForm(contact)),
     ).resolves.toMatchObject({ error: INVALID_LINK_MESSAGE });
@@ -434,7 +474,9 @@ describe("submitTokenUpdate", () => {
     const contact = { fullName: "Jen Holloway", kidsNames: TWELVE_KIDS };
     const token = await seed(contact);
     await submitTokenUpdate(token, {}, prefilledForm(contact, { first_name: "Jenny" }));
-    await dbAdmin.execute(sql`update public.update_tokens set used_at = now() where contact_id = ${C}`);
+    await dbAdmin.execute(
+      sql`update public.update_tokens set expires_at = now() - interval '1 minute' where contact_id = ${C}`,
+    );
     await submitTokenUpdate(token, {}, prefilledForm(contact));
     await flushAfter();
     expect(sendNotification).not.toHaveBeenCalled();

@@ -16,24 +16,32 @@ export type TokenOwner = {
   email: string;
   recipient: Recipient;
   household: string | null;
+  repliedBefore: boolean;
 };
 
 export async function ownerForToken(token: string): Promise<TokenOwner | null> {
   try {
     const rows = await dbAdmin.execute(
-      sql`select c.id as contact_id, u.email as email, t.recipient as recipient
+      sql`select c.id as contact_id, u.email as email, t.recipient as recipient,
+                 t.used_at is not null as replied_before
           from public.update_tokens t
           join public.contacts c on c.id = t.contact_id
           join public.books b on b.id = c.book_id
           join auth.users u on u.id = b.owner_id
           where t.token_hash = extensions.digest(${token}, 'sha256')`,
     );
-    const { contact_id: contactId, email, recipient } = rows[0] ?? {};
+    const { contact_id: contactId, email, recipient, replied_before: repliedBefore } = rows[0] ?? {};
     return typeof contactId === "string" &&
       typeof email === "string" &&
       email &&
       (recipient === "primary" || recipient === "partner")
-      ? { contactId, email, recipient, household: await householdBeforeReply(contactId) }
+      ? {
+          contactId,
+          email,
+          recipient,
+          household: await householdBeforeReply(contactId),
+          repliedBefore: repliedBefore === true,
+        }
       : null;
   } catch (err) {
     logDbError("[tu] [ownerForToken] lookup failed", err);
@@ -98,6 +106,7 @@ export async function notifyOwner({
   email,
   recipient,
   household,
+  repliedBefore,
   queued = false,
 }: TokenOwner & { queued?: boolean }): Promise<void> {
   const appUrl = process.env.APP_URL;
@@ -112,12 +121,15 @@ export async function notifyOwner({
     });
     return;
   }
+  const changed = await replyChanged({ contactId, recipient });
+  // A repeat reply that changes nothing is a retap or a re-confirm: one email is enough.
+  if (repliedBefore && changed === false) return;
   await sendNotification({
     to: email,
     ...contactUpdatedEmail({
       contactUrl: `${appUrl}/dashboard/contacts/${contactId}`,
       household,
-      changed: await replyChanged({ contactId, recipient }),
+      changed,
     }),
   });
 }
