@@ -102,7 +102,7 @@ const errorClasses = "font-sans text-xs text-destructive";
 const addClasses =
   "inline-flex h-11 items-center gap-1 rounded-full border-[1.5px] border-dashed border-primary/60 px-3.5 font-sans text-sm font-medium text-primary transition-colors hover:bg-accent";
 
-type Role = { kind: "primary" } | { kind: "partner" } | { kind: "kid"; index: number };
+export type Role = { kind: "primary" } | { kind: "partner" } | { kind: "kid"; index: number };
 
 function roleOf(draft: HouseholdDraft, key: number): Role | null {
   if (draft.primary.key === key) return { kind: "primary" };
@@ -156,7 +156,7 @@ function rolePrefix(role: Role, crowded: boolean, recipient: Recipient): string 
 }
 
 // The server writes only the replier's own email, so removing anyone else's chip would leave their email under another name.
-function isRemovable(role: Role, recipient: Recipient): boolean {
+export function isRemovable(role: Role, recipient: Recipient): boolean {
   if (role.kind === "primary") return false;
   if (role.kind === "partner") return recipient === "primary";
   return true;
@@ -319,10 +319,12 @@ export function NamesEditor({
                               : { last: event.target.value, follows: false },
                           )
                         }
+                        enterKeyHint={part === "first" ? "next" : "done"}
                         onKeyDown={(event) => {
                           if (event.key !== "Enter") return;
                           event.preventDefault();
-                          if (adding === person.key) edit(null);
+                          if (part === "first") document.getElementById(ids[1])?.focus();
+                          else if (adding === person.key) edit(null);
                           else onDone();
                         }}
                         aria-invalid={error ? true : undefined}

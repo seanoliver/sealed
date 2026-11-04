@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(19);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000eb001', 'rlk@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -62,6 +62,13 @@ select is((select count(*)::int from public.submissions
 select ok((select payload ->> 'city' = 'Madrid' from public.submissions
            where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'),
   'the reply left in review is the newer one');
+select private.apply_token_reply('rlk-eli', '{"city": "Rome"}', now() - interval '1 minute');
+select private.apply_token_reply('rlk-dee', '{"city": "Paris"}', now() - interval '1 hour');
+select is(private.apply_token_reply('rlk-dee', '{}'), 'applied',
+  'a plain confirm after Edit again applies');
+select is((select count(*)::int from public.submissions
+           where matched_contact_id = '20000000-0000-4000-8000-0000000eb003' and status = 'pending'), 1,
+  'a plain confirm does not drop the reply still in review');
 select is(private.apply_token_reply('rlk-dee', '{"city": "Lima"}'), 'applied',
   'a reload and save applies directly');
 select is((select count(*)::int from public.submissions

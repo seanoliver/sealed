@@ -244,10 +244,14 @@ begin
     return 'queued';
   end if;
 
-  update public.submissions
-     set status = 'rejected'
-   where matched_contact_id = v_contact_id and source = 'token'
-     and recipient = v_recipient and status = 'pending';
+  -- Only a reply that changes something replaces one still in review; a plain
+  -- confirm after "Edit again" must not silently drop it.
+  if v_after is distinct from v_before then
+    update public.submissions
+       set status = 'rejected'
+     where matched_contact_id = v_contact_id and source = 'token'
+       and recipient = v_recipient and status = 'pending';
+  end if;
 
   insert into public.contact_events (contact_id, source, recipient, diff)
   values (v_contact_id, 'token', v_recipient,

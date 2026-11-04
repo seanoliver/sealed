@@ -607,8 +607,11 @@ test("a recipient adds people on the envelope itself", async ({ page }) => {
 
   await names.getByRole("button", { name: "Add a person" }).click();
   await names.getByLabel("Second person's first name").fill("Jordan");
+  await expect(names.getByLabel("Second person's first name")).toHaveAttribute("enterkeyhint", "next");
+  await names.getByLabel("Second person's first name").press("Enter");
+  await expect(names.getByLabel("Second person's last name")).toBeFocused();
   await names.getByLabel("Second person's last name").fill("Lee");
-  await names.getByRole("button", { name: "Add", exact: true }).click();
+  await names.getByLabel("Second person's last name").press("Enter");
   await expect(names.getByRole("button", { name: "Edit Jordan Lee" })).toBeVisible();
   await expect(names.getByRole("button", { name: "Remove Jordan Lee" })).toBeVisible();
 
