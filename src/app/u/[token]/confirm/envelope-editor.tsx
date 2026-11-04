@@ -415,16 +415,23 @@ export function EnvelopeEditor({
     const form = formRef.current;
     if (!form) return;
     baseline.current = snapshot(new FormData(form));
-    const first = requestAnimationFrame(() => {
-      // The names line fills in a render after mount.
-      const read = (kind?: string) =>
-        [...form.querySelectorAll(`[data-print-line${kind ? `="${kind}"` : ""}]`)].map(
-          (line) => line.textContent ?? "",
-        );
+    const read = (kind?: string) =>
+      [...form.querySelectorAll(`[data-print-line${kind ? `="${kind}"` : ""}]`)].map(
+        (line) => line.textContent ?? "",
+      );
+    // Not a single read after mount: on a slow device the names line renders later
+    // and would count as changed. Track the printed lines until the first interaction.
+    let touched = false;
+    let first = 0;
+    const track = () => {
+      if (touched) return;
       before.current = { lines: read(), address: read("address") };
-    });
+      first = requestAnimationFrame(track);
+    };
+    first = requestAnimationFrame(track);
     let frame = 0;
     const measure = () => {
+      touched = true;
       cancelAnimationFrame(frame);
       // Rows re-render after a click, so read a frame later.
       frame = requestAnimationFrame(() => {
