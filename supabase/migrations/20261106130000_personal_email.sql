@@ -355,8 +355,7 @@ begin
   select id into v_match from public.contacts
   where book_id = v_book_id
     and (email operator(extensions.=) v_email
-         or personal_email operator(extensions.=) v_email
-         or partner_personal_email operator(extensions.=) v_email)
+         or personal_email operator(extensions.=) v_email)
   order by (email operator(extensions.=) v_email) desc nulls last, id
   limit 1;
 

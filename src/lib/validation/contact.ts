@@ -170,6 +170,9 @@ export const tokenDetailSchema = tokenUpdateSchema.omit({
   kids_names: true,
 });
 
+/** Where invites go is the link holder's to say, so the public form can't set it. */
+export const permalinkDetailSchema = tokenDetailSchema.omit({ personal_email: true });
+
 /** Raw token-form values (all strings), echoed back through action state. */
 export type TokenUpdateValues = Record<TokenUpdateField, string>;
 

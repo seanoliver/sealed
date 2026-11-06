@@ -177,6 +177,8 @@ const CLEARS: Record<ClearableField, readonly SnapshotField[]> = {
   birthday: ["birthday"],
   partner_name: ["partner_first_name", "partner_last_name", "partner_name"],
   kids_names: ["kids", "kids_names"],
+  personal_email: ["personal_email"],
+  partner_personal_email: ["partner_personal_email"],
 };
 
 export function mergeUpdate(
@@ -197,7 +199,13 @@ export function mergeUpdate(
     if (!(field in patch)) patch[field] = null;
   }
   // Dropped, not saved: an email equal to the other person's trips contacts_partner_email_differs.
-  if (sameAddress(patch.email, before.partner_email)) delete patch.email;
+  if (
+    [before.partner_email, before.personal_email, before.partner_personal_email].some((address) =>
+      sameAddress(patch.email, address),
+    )
+  ) {
+    delete patch.email;
+  }
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
     patch.partner_email = partnerEmail;
   }

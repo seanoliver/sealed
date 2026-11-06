@@ -288,7 +288,8 @@ function PersonalEmailQuestion({
         </label>
         <input
           id="personal_email"
-          name="personal_email"
+          // Blank posts nothing: a present blank clears an address the owner added since load.
+          name={value.trim() === "" ? undefined : "personal_email"}
           type="email"
           autoComplete="email"
           enterKeyHint="done"
@@ -470,6 +471,9 @@ export function EnvelopeEditor({
     if (person !== null) {
       setOpen({ kind: "names" });
       setEditingPerson(person);
+    }
+    if (state.fieldErrors?.personal_email && defaults.personal_email !== "") {
+      setOpen({ kind: "details" });
     }
   }
 
@@ -916,6 +920,7 @@ export function EnvelopeEditor({
                   value={personalEmail}
                   onChange={(event) => onPersonalEmail(event.target.value)}
                   aria-invalid={personalEmailError ? true : undefined}
+                  aria-describedby={personalEmailError ? "personal_email-error" : undefined}
                   className={cn(
                     envelopeInputClasses,
                     "font-sans text-base",
@@ -923,7 +928,9 @@ export function EnvelopeEditor({
                   )}
                 />
                 {personalEmailError ? (
-                  <p className="text-xs text-destructive">{personalEmailError}</p>
+                  <p id="personal_email-error" className="text-xs text-destructive">
+                    {personalEmailError}
+                  </p>
                 ) : null}
               </div>
             ) : null}
@@ -962,7 +969,7 @@ export function EnvelopeEditor({
               )}
             >
               <span className="min-w-0 truncate">
-                Email:<span className="text-foreground">{email || "none yet"}</span>
+                Email: <span className="text-foreground">{email || "none yet"}</span>
               </span>
               <span className="shrink-0 font-semibold text-primary">Change</span>
             </button>

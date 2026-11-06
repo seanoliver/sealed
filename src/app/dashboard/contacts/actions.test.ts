@@ -128,6 +128,37 @@ describe("owner edits of the partner's email", () => {
       );
     });
 
+    it("refuses the partner's personal email another contact uses", async () => {
+      await dbAdmin.execute(sql`
+        update public.contacts set partner_personal_email = 'cal.partner@home.test' where id = ${OTHER}`);
+      await expect(
+        patchContact(C, { values: { personal_email: "cal.partner@home.test" } }),
+      ).resolves.toEqual({ error: expect.stringContaining(DUPLICATE_EMAIL) });
+    });
+
+    it("refuses a duplicate from the contact form too", async () => {
+      await expect(
+        updateContact({}, await editForm({ personal_email: "cal@ce.test" })),
+      ).resolves.toMatchObject({ error: expect.stringContaining(DUPLICATE_EMAIL) });
+      expect((await stored()).personalEmail).toBeNull();
+    });
+
+    it("holds an agent's partner personal email change for the owner", async () => {
+      const { summary } = await mintAgentToken(U, { name: "ce partner", scopes: ["write"] });
+      const result = await patchContactAs(
+        { sub: U },
+        C,
+        { values: { partner_personal_email: "mark@home.test" } },
+        { source: "agent", tokenId: summary.id },
+        { holdEmails: true },
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        value: { emailRequest: { changes: { partner_personal_email: [null, "mark@home.test"] } } },
+      });
+      expect((await stored()).partnerPersonalEmail).toBeNull();
+    });
+
     it("holds an agent's personal email change for the owner", async () => {
       const { summary } = await mintAgentToken(U, { name: "ce personal", scopes: ["write"] });
       const result = await patchContactAs(

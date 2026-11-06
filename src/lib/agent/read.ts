@@ -33,6 +33,7 @@ import { listPendingSubmissions } from "@/lib/queries/submissions";
 import { type Recipient } from "@/lib/recipients";
 import {
   parseSubmissionForDisplay,
+  withoutInviteAddresses,
   type SubmissionDisplayFields,
 } from "@/lib/validation/submission";
 
@@ -513,7 +514,12 @@ export async function listReviewQueue(
       matchedContact: matchedContact
         ? { id: matchedContact.id, name: householdLine(pickStoredNames(matchedContact)) }
         : null,
-      fields: parseSubmissionForDisplay(submission.payload, book.enabledFields),
+      fields: parseSubmissionForDisplay(
+        submission.source === "token"
+          ? submission.payload
+          : withoutInviteAddresses(submission.payload),
+        book.enabledFields,
+      ),
     })),
     input,
   );

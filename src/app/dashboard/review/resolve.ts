@@ -11,6 +11,7 @@ import {
   parsePartnerEmail,
   parsePartnerPersonalEmail,
   parseSubmissionPayload,
+  withoutInviteAddresses,
   withoutBlanks,
 } from "@/lib/validation/submission";
 import { recordContactEvent } from "../contacts/write";
@@ -105,7 +106,12 @@ export async function approveNewAs(
       if (!loaded) return { kind: "not_found" };
       const { book, submission } = loaded;
 
-      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
+      const parsed = parseSubmissionPayload(
+        submission.source === "token"
+          ? submission.payload
+          : withoutInviteAddresses(submission.payload),
+        book.enabledFields,
+      );
       if (!parsed.success) return { kind: "invalid" };
       const gated = parsed.data;
 
@@ -169,7 +175,9 @@ export async function approveMergeAs(
       if (!submission.matchedContactId) return { kind: "no_match" };
 
       const token = submission.source === "token";
-      const payload = token ? withoutBlanks(submission.payload) : submission.payload;
+      const payload = token
+        ? withoutBlanks(submission.payload)
+        : withoutInviteAddresses(submission.payload);
       const parsed = parseSubmissionPayload(payload, book.enabledFields);
       const partnerEmail = parsePartnerEmail(payload);
       const partnerPersonalEmail = parsePartnerPersonalEmail(payload);

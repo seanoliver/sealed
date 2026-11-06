@@ -160,6 +160,20 @@ describe("toSheetRow", () => {
 });
 
 describe("emailCount", () => {
+  it("counts the invite address, one per inbox", () => {
+    expect(
+      emailCount({ email: "", partner_email: "", personal_email: "a@gmail.test", partner_personal_email: "" }),
+    ).toBe(1);
+    expect(
+      emailCount({
+        email: "a@work.test",
+        partner_email: "b@work.test",
+        personal_email: "home@gmail.test",
+        partner_personal_email: "HOME@gmail.test",
+      }),
+    ).toBe(1);
+  });
+
   it("counts one email per address", () => {
     expect(emailCount({ email: "a@x.test", partner_email: "b@x.test" })).toBe(2);
     expect(emailCount({ email: "a@x.test", partner_email: "" })).toBe(1);

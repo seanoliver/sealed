@@ -13,6 +13,7 @@ import {
   CLEARABLE_FIELDS,
   DISPLAY_VALUE_MAX,
   parseSubmissionForDisplay,
+  withoutInviteAddresses,
   submittedPeople,
   type EnabledFields,
   type SubmissionDisplayFields,
@@ -105,7 +106,10 @@ async function toCardModel(
   };
 
   // Lenient parse + gate; null ⇒ non-object payload ⇒ reject-only card.
-  const display = parseSubmissionForDisplay(submission.payload, enabled);
+  const display = parseSubmissionForDisplay(
+    submission.source === "token" ? submission.payload : withoutInviteAddresses(submission.payload),
+    enabled,
+  );
   if (display === null) return { ...base, kind: "malformed" };
   const parsed = forDisplay(display);
 

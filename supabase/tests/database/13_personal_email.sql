@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(32);
+select plan(38);
 
 insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000007e001', 'pe@test.dev');
 insert into public.books (id, owner_id, slug, enabled_fields)
@@ -113,7 +113,30 @@ select private.submit_to_book('pe-book', '{"email": "eli@home.test", "probe": "b
 select is((select matched_contact_id::text from public.submissions where payload ->> 'probe' = 'a'),
   '20000000-0000-4000-8000-00000007e003', 'submit_to_book matches personal_email');
 select is((select matched_contact_id::text from public.submissions where payload ->> 'probe' = 'b'),
-  '20000000-0000-4000-8000-00000007e003', 'submit_to_book matches partner_personal_email');
+  null, 'submit_to_book leaves a partner_personal_email match to the owner as a new person');
+
+-- A partner's change only touches the partner's links.
+update public.contacts set personal_email = 'ana@case.test', partner_personal_email = null
+where id = '20000000-0000-4000-8000-00000007e001';
+insert into public.update_tokens (contact_id, token_hash, expires_at, recipient) values
+  ('20000000-0000-4000-8000-00000007e001', extensions.digest('pe-mark-2', 'sha256'), now() + interval '1 day', 'partner'),
+  ('20000000-0000-4000-8000-00000007e001', extensions.digest('pe-ana-4', 'sha256'), now() + interval '1 day', 'primary');
+update public.contacts set partner_personal_email = 'mark@case.test'
+where id = '20000000-0000-4000-8000-00000007e001';
+select ok(private.get_contact_for_token('pe-mark-2') is not null, 'a partner''s first personal address keeps their link');
+update public.contacts set personal_email = 'ANA@CASE.test'
+where id = '20000000-0000-4000-8000-00000007e001';
+select ok(private.get_contact_for_token('pe-ana-4') is not null, 'a case-only change keeps the link');
+update public.contacts set partner_personal_email = 'mark@other.test'
+where id = '20000000-0000-4000-8000-00000007e001';
+select ok(private.get_contact_for_token('pe-mark-2') is null, 'changing a partner''s revokes the partner''s links');
+select ok(private.get_contact_for_token('pe-ana-4') is not null, 'and leaves the primary''s');
+insert into public.update_tokens (contact_id, token_hash, expires_at, recipient) values
+  ('20000000-0000-4000-8000-00000007e001', extensions.digest('pe-mark-3', 'sha256'), now() + interval '1 day', 'partner');
+update public.contacts set partner_personal_email = null
+where id = '20000000-0000-4000-8000-00000007e001';
+select ok(private.get_contact_for_token('pe-mark-3') is null, 'clearing a partner''s revokes the partner''s links');
+select ok(private.get_contact_for_token('pe-ana-4') is not null, 'and leaves the primary''s too');
 
 select * from finish();
 rollback;

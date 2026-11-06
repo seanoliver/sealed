@@ -79,4 +79,33 @@ describe("review actions", () => {
       partnerName: null,
     });
   });
+
+  it("clears a personal email a queued reply emptied", async () => {
+    await dbAdmin.update(contacts).set({ personalEmail: "satya@home.test" }).where(eq(contacts.id, C));
+    await queue({ first_name: "Satya", last_name: "Rao", personal_email: "" });
+    await expect(approveMerge({}, form(S))).resolves.toEqual({});
+    const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+    expect(row.personalEmail).toBeNull();
+  });
+
+  it("ignores a personal email in a stored permalink payload", async () => {
+    await queue({ first_name: "Satya", last_name: "Rao" });
+    await dbAdmin
+      .update(submissions)
+      .set({
+        source: "permalink",
+        recipient: null,
+        savedBy: null,
+        payload: {
+          first_name: "Satya",
+          last_name: "Rao",
+          personal_email: "x@attacker.test",
+          partner_personal_email: "y@attacker.test",
+        },
+      })
+      .where(eq(submissions.id, S));
+    await expect(approveMerge({}, form(S))).resolves.toEqual({});
+    const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+    expect(row).toMatchObject({ personalEmail: null, partnerPersonalEmail: null });
+  });
 });

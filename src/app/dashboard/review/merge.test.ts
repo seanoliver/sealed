@@ -6,8 +6,10 @@ import { contacts } from "@/lib/db/schema";
 import {
   clearedFields,
   parsePartnerEmail,
+  parsePartnerPersonalEmail,
   parseSubmissionPayload,
   withoutBlanks,
+  withoutInviteAddresses,
 } from "@/lib/validation/submission";
 import { type SubmissionPayload } from "@/lib/validation/submission";
 import { changedFields, mergeUpdate, rowToSnapshot, toInsertRow } from "./merge";
@@ -270,6 +272,9 @@ describe("approving a household submission", () => {
 
     it("refuses a malformed partner email", () => {
       expect(parsePartnerEmail({ partner_email: "not an email" })).toEqual({ success: false });
+      expect(parsePartnerPersonalEmail({ partner_personal_email: "not an email" })).toEqual({
+        success: false,
+      });
       expect(parsePartnerEmail({ city: "Seattle" })).toEqual({ success: true, data: undefined });
     });
   });
@@ -351,5 +356,29 @@ describe("personal emails on approval", () => {
     expect(mergeUpdate(before, payload("mark@acme.test"))).toBeUndefined();
     expect(mergeUpdate(before, EMPTY, { partnerPersonalEmail: "mark@acme.test" })).toBeUndefined();
     expect(mergeUpdate(before, EMPTY, { partnerPersonalEmail: "ana@acme.test" })).toBeUndefined();
+  });
+
+  it("keeps the work email when a payload's email is a stored personal address", () => {
+    const stored = { ...before, personal_email: "ana@home.test", partner_personal_email: "mark@home.test" };
+    const email = (address: string) => ({ email: address }) as unknown as SubmissionPayload;
+    expect(mergeUpdate(stored, email("ANA@home.test"))).toBeUndefined();
+    expect(mergeUpdate(stored, email("mark@home.test"))).toBeUndefined();
+  });
+
+  it("clears either person's when the reply emptied it", () => {
+    const stored = { ...before, personal_email: "ana@home.test", partner_personal_email: "mark@home.test" };
+    expect(mergeUpdate(stored, EMPTY, { clear: ["personal_email"] })).toEqual({ personalEmail: null });
+    expect(mergeUpdate(stored, EMPTY, { clear: ["partner_personal_email"] })).toEqual({
+      partnerPersonalEmail: null,
+    });
+  });
+});
+
+describe("withoutInviteAddresses", () => {
+  it("drops both personal keys and tolerates hostile shapes", () => {
+    expect(
+      withoutInviteAddresses({ city: "Oslo", personal_email: "a@b.test", partner_personal_email: "c@d.test" }),
+    ).toEqual({ city: "Oslo" });
+    expect(withoutInviteAddresses("x")).toBe("x");
   });
 });

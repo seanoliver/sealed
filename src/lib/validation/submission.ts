@@ -52,6 +52,15 @@ export function withCountryCode(payload: unknown): unknown {
   return code === null ? { ...rest, country } : { ...rest, country_code: code };
 }
 
+/** Payloads are hostile: a stored permalink row must never decide where invites go. */
+export function withoutInviteAddresses(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
+  const rest: Record<string, unknown> = { ...payload };
+  delete rest.personal_email;
+  delete rest.partner_personal_email;
+  return rest;
+}
+
 export function parseSubmissionPayload(
   raw: unknown,
   enabled: EnabledFields,
@@ -268,6 +277,8 @@ export const CLEARABLE_FIELDS = [
   "birthday",
   "partner_name",
   "kids_names",
+  "personal_email",
+  "partner_personal_email",
 ] as const;
 
 export type ClearableField = (typeof CLEARABLE_FIELDS)[number];

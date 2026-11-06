@@ -119,6 +119,31 @@ test("skipping the question is a plain confirm", async ({ page }) => {
   expect((await getEmailColumns(contactId)).personal_email).toBeNull();
 });
 
+test("a blank question keeps a personal email the owner added after the page loaded", async ({ page }) => {
+  const { contactId, token } = await seed("Ines Duarte", { email: "ines@harborworks.co" });
+  await open(page, token);
+  await setContactEmailFields(contactId, { personal_email: "ines@gmail.com" });
+  await page.getByRole("button", { name: /418 Alder Street/ }).click();
+  await page.getByLabel("Street address").fill("420 Alder Street");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: /Send it here/ }).click();
+  await expect(page.getByRole("heading", { name: "Saved. Your card goes here." })).toBeVisible();
+  expect((await getEmailColumns(contactId)).personal_email).toBe("ines@gmail.com");
+});
+
+test("a bad edit to a saved personal email reopens the field with its error", async ({ page }) => {
+  const { contactId, token } = await seed("Noor Haddad", { email: "noor@cedarlabs.co" });
+  await setContactEmailFields(contactId, { personal_email: "noor@gmail.com" });
+  await open(page, token);
+  await page.getByRole("button", { name: /Personal email: noor@gmail\.com/ }).click();
+  await page.locator("#personal_email").fill("noor@gmail");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: /Send it here/ }).click();
+  await expect(page.getByText("It needs to look like name@example.com")).toBeVisible();
+  await expect(page.locator("#personal_email")).toBeVisible();
+  expect((await getEmailColumns(contactId)).personal_email).toBe("noor@gmail.com");
+});
+
 test("a personal address or an owner override means no question", async ({ page }) => {
   const consumer = await seed("Jo Whitfield", { email: "jo.whitfield@outlook.com" });
   await open(page, consumer.token);

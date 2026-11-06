@@ -32,7 +32,7 @@ Duplicates:
 - `contacts_book_email_unique` is never at risk, because nothing writes a personal address into `email`.
 - The personal columns have no unique index. A recipient must get the same outcome whether or not an address is in the book, so `apply_token_reply` stores it.
 - Owner and agent writes refuse an address another contact uses (`personalEmailConflict`). Review approvals follow the reply rule and skip this check.
-- `submit_to_book` matches the personal columns, with an exact `email` match winning.
+- `submit_to_book` matches `email` and `personal_email`, with an exact `email` match winning. It skips `partner_personal_email`, because a match merges into the primary. The public form can't set a personal address: the action drops the key and approval ignores it on permalink rows.
 - CSV import skips a row whose email is someone's personal email.
 - Two contacts can share an invite address. Each gets an email, because each envelope differs and skipping one would leave a contact with no link.
 
