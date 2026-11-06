@@ -9,7 +9,7 @@ import {
   seedContact,
   seedUpdateToken,
 } from "./db";
-import { signupAndLogin, stubTurnstile, uniqueEmail, uniqueSlug } from "./helpers";
+import { openCityLine, signupAndLogin, stubTurnstile, uniqueEmail, uniqueSlug } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -249,10 +249,14 @@ test("a stored value the country has no field for stays, and comes back after sw
 test("unrecognized country text stays when the owner saves without picking a country", async () => {
   await ownerPage.setViewportSize({ width: 1280, height: 900 });
   await ownerPage.goto(`/dashboard/contacts/${blankId}`);
+  const countryLine = ownerPage.getByRole("button", { name: /^Country: Lemuria/ });
+  await countryLine.click();
   await expect(ownerPage.getByText("Saved as “Lemuria”, which isn't on the list.")).toBeVisible();
   const country = ownerPage.getByRole("combobox", { name: "Country", exact: true });
   await expect(country).toHaveValue("");
   await expect(country.locator("option").first()).toHaveText("Choose a country");
+  await ownerPage.getByRole("button", { name: "Done" }).click();
+  await openCityLine(ownerPage);
   await ownerPage.getByLabel("City").fill("Sunken City");
   await ownerPage.getByRole("button", { name: "Save changes" }).click();
   await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
@@ -263,15 +267,16 @@ test("unrecognized country text stays when the owner saves without picking a cou
   });
 });
 
-test("the owner's contact page edits the address with the envelope beside it", async () => {
+test("the owner's contact page edits the address on the envelope", async () => {
   await ownerPage.setViewportSize({ width: 1280, height: 900 });
   await ownerPage.goto(`/dashboard/contacts/${ukId}`);
-  const preview = ownerPage.getByRole("region", { name: "On the envelope" });
-  await expect(ownerPage.getByRole("combobox", { name: "Country", exact: true })).toHaveValue("GB");
-  await expect(preview).toContainText("Priya Raman & Daniel Okafor");
-  await expect(preview).toContainText("Flat 2, 14 Kestrel Lane");
-  await expect(preview).toContainText("UNITED KINGDOM");
+  const envelope = ownerPage.locator("address");
+  await expect(envelope).toContainText("Priya Raman & Daniel Okafor");
+  await expect(envelope).toContainText("Flat 2, 14 Kestrel Lane");
+  await expect(envelope).toContainText("UNITED KINGDOM");
+  await expect(ownerPage.getByRole("button", { name: /^Country: United Kingdom/ })).toBeVisible();
 
+  await ownerPage.getByRole("button", { name: /Edit postcode/i }).click();
   await ownerPage.getByLabel("Postcode").fill("BS6");
   await ownerPage.getByRole("button", { name: "Save changes" }).click();
   await expect(ownerPage.getByText("A UK postcode looks like EC1Y 8SY.")).toBeVisible();
@@ -284,11 +289,12 @@ test("the owner's contact page edits the address with the envelope beside it", a
   });
 
   await ownerPage.goto(`/dashboard/contacts/${unknownId}`);
+  await expect(ownerPage.locator("address")).toContainText("ATLANTIS");
+  await ownerPage.getByRole("button", { name: /^Country: Atlantis/ }).click();
   await expect(ownerPage.getByText("Saved as “Atlantis”, which isn't on the list.")).toBeVisible();
-  await expect(ownerPage.getByRole("region", { name: "On the envelope" })).toContainText(
-    "ATLANTIS",
-  );
-  await pickCountry(ownerPage, "GR");
+  await ownerPage.getByRole("combobox", { name: "Country", exact: true }).selectOption("GR");
+  // Picking a country re-lays the envelope and moves on to the street.
+  await expect(ownerPage.locator("#address_line1")).toBeVisible();
   await ownerPage.getByRole("button", { name: "Save changes" }).click();
   await expect(ownerPage.getByRole("status")).toHaveText("Saved.");
   expect(await getContactAddress(unknownId)).toMatchObject({ country_code: "GR", country: null });
@@ -305,9 +311,8 @@ test("Settings sets the country the owner mails from", async () => {
   expect(await getSenderCountry(bookId)).toBe("GB");
 
   await ownerPage.goto(`/dashboard/contacts/${ukId}`);
-  const preview = ownerPage.getByRole("region", { name: "On the envelope" });
-  await expect(preview).toContainText("No country line: you mail from the UK.");
-  await expect(preview).not.toContainText("UNITED KINGDOM");
+  await expect(ownerPage.getByText("No country line: you mail from the UK.")).toBeVisible();
+  await expect(ownerPage.locator("address")).not.toContainText("UNITED KINGDOM");
 });
 
 test("the table's Country cell is a list of countries saved as codes", async () => {
