@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ContactListRow } from "@/lib/queries/contacts";
 import {
+  bookCounts,
   changedValues,
   combineSends,
   draftFromNames,
@@ -9,6 +10,7 @@ import {
   householdEdited,
   householdPatchInput,
   isNoOpReply,
+  matchesFilter,
   moveCursor,
   namesFromValues,
   parseStoredLayout,
@@ -20,6 +22,7 @@ import {
   toSheetRow,
   twoAnswers,
   validateHousehold,
+  type ContactFilter,
   type HouseholdDraft,
   type StatusKey,
 } from "./contacts-sheet";
@@ -647,5 +650,78 @@ describe("household drafts", () => {
 describe("NEEDS_ATTENTION", () => {
   it("covers every send the owner should look at", () => {
     expect([...NEEDS_ATTENTION].sort()).toEqual(["bounced", "complained", "failed", "unconfirmed"]);
+  });
+});
+
+describe("hasAddress", () => {
+  it("needs a street line, the same test the envelope uses", () => {
+    expect(toSheetRow(listRow, String).hasAddress).toBe(true);
+    expect(toSheetRow({ ...listRow, addressLine1: null }, String).hasAddress).toBe(false);
+    expect(toSheetRow({ ...listRow, addressLine1: "  " }, String).hasAddress).toBe(false);
+  });
+});
+
+describe("book counts and filters", () => {
+  const row = (
+    status: StatusKey,
+    { email = "", partner_email = "", hasAddress = true, needsAttention = false } = {},
+  ) => ({
+    status,
+    hasAddress,
+    needsAttention,
+    values: { ...toSheetRow(listRow, String).values, email, partner_email },
+  });
+  const rows = [
+    row("none", { email: "a@e.test", partner_email: "b@e.test", hasAddress: false }),
+    row("none", { partner_email: "c@e.test" }),
+    row("bounced", { email: "d@e.test", needsAttention: true }),
+    row("none"),
+    row("none", { hasAddress: false }),
+    row("updated"),
+  ];
+
+  it("counts one contact per row, however many emails it has", () => {
+    const counts = bookCounts(rows);
+    expect(counts.contacts).toBe(6);
+    expect(counts.withAddress).toBe(4);
+    expect(counts.toEmail.total).toBe(3);
+    expect(counts.askManually.total).toBe(3);
+    expect(counts.askManually.withAddress).toBe(2);
+  });
+
+  it("lists only statuses that occur, problems first", () => {
+    expect(bookCounts(rows).toEmail.statuses).toEqual([
+      { status: "bounced", count: 1 },
+      { status: "none", count: 2 },
+    ]);
+    expect(bookCounts(rows).askManually.statuses).toEqual([
+      { status: "none", count: 2 },
+      { status: "updated", count: 1 },
+    ]);
+  });
+
+  it("every count matches the rows its filter shows", () => {
+    const shown = (filter: ContactFilter) =>
+      rows.filter((one) => matchesFilter(one, filter)).length;
+    const counts = bookCounts(rows);
+    expect(shown("to_email")).toBe(counts.toEmail.total);
+    expect(shown("no_email")).toBe(counts.askManually.total);
+    expect(shown("no_address")).toBe(counts.contacts - counts.withAddress);
+    expect(shown("attention")).toBe(1);
+    for (const { status, count } of counts.toEmail.statuses) {
+      expect(shown(`email:${status}`)).toBe(count);
+    }
+    for (const { status, count } of counts.askManually.statuses) {
+      expect(shown(`manual:${status}`)).toBe(count);
+    }
+  });
+
+  it("handles an empty book", () => {
+    expect(bookCounts([])).toEqual({
+      contacts: 0,
+      withAddress: 0,
+      toEmail: { total: 0, statuses: [] },
+      askManually: { total: 0, statuses: [], withAddress: 0 },
+    });
   });
 });

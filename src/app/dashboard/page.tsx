@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
 import { listPendingReplies } from "@/lib/queries/submissions";
-import { toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
+import { bookCounts, toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
 import { readingsForContact } from "@/lib/pinyin";
 import {
   parseSubmissionForDisplay,
@@ -31,8 +31,10 @@ export default async function DashboardPage({
   // A crafted URL can repeat ?q=; take the first value rather than crashing.
   const { q } = await searchParams;
   const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
-  const [contacts, replies] = await Promise.all([
+  const [contacts, wholeBook, replies] = await Promise.all([
     listContacts(claims, query || undefined),
+    // Search filters in SQL, and the counts always cover the whole book.
+    query ? listContacts(claims) : null,
     listPendingReplies(claims),
   ]);
 
@@ -50,25 +52,29 @@ export default async function DashboardPage({
     });
   }
 
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   const rows = await Promise.all(
     contacts.map(async (contact) =>
-      toSheetRow(
-        contact,
-        (date) =>
-          date.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-        {
-          answer: answers.get(contact.id),
-          senderCountry: book.senderCountry,
-          readings: await readingsForContact(contact, {
-            extra: answerPeople.get(contact.id) ?? [],
-          }),
-        },
-      ),
+      toSheetRow(contact, formatDate, {
+        answer: answers.get(contact.id),
+        senderCountry: book.senderCountry,
+        readings: await readingsForContact(contact, {
+          extra: answerPeople.get(contact.id) ?? [],
+        }),
+      }),
     ),
+  );
+  const counts = bookCounts(
+    wholeBook
+      ? wholeBook.map((contact) =>
+          toSheetRow(contact, formatDate, { senderCountry: book.senderCountry }),
+        )
+      : rows,
   );
 
   return (
@@ -155,7 +161,7 @@ export default async function DashboardPage({
         )
       ) : (
         // Remount per search, or an open "Send to all shown" keeps the old rows.
-        <ContactsTable key={query} rows={rows} />
+        <ContactsTable key={query} rows={rows} book={counts} searching={query !== ""} />
       )}
     </main>
   );
