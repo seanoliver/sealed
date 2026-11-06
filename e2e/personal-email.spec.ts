@@ -6,6 +6,7 @@ import {
   getUserIdByEmail,
   seedBook,
   seedContact,
+  seedOwnerBook,
   seedUpdateToken,
   setContactEmailFields,
 } from "./db";
@@ -22,6 +23,7 @@ const address = {
   postalCode: "97205",
   countryCode: "US",
 };
+const seededOwnerEmail = uniqueEmail("personal-seeded");
 let ownerPage: Page;
 let bookId: string;
 
@@ -52,20 +54,21 @@ const shot = async (page: Page, name: string) => {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
 };
 
-test.beforeAll(async ({ browser }) => {
+const enabledFields = { partner_name: true, kids_names: false, birthday: false };
+
+test.beforeAll(async () => {
   await clearRateLimits();
-  ownerPage = await browser.newPage();
-  await signupAndLogin(ownerPage, ownerEmail);
-  bookId = await seedBook({
-    ownerId: await getUserIdByEmail(ownerEmail),
-    slug: uniqueSlug("personal-book"),
+  ({ bookId } = await seedOwnerBook({
+    email: seededOwnerEmail,
     displayName: "Sean",
-    enabledFields: { partner_name: true, kids_names: false, birthday: false },
-  });
+    slug: uniqueSlug("personal-seeded"),
+    enabledFields,
+  }));
 });
 
 test.afterAll(async () => {
-  await ownerPage.close();
+  await ownerPage?.close();
+  await cleanupUser(seededOwnerEmail);
   await cleanupUser(ownerEmail);
 });
 
@@ -84,8 +87,12 @@ test("a recipient at a work address adds a personal email and keeps the link", a
   await shot(page, "03-error");
   expect((await getEmailColumns(contactId)).personal_email).toBeNull();
 
-  await waitForTurnstile(page);
   await field.fill("maya.chen@gmail.com");
+  await expect(page.getByText("It needs to look like name@example.com")).toHaveCount(0);
+  // A failed submit resets the bot check.
+  await page.evaluate(() =>
+    (window as unknown as { __ts: { solve: () => void } }).__ts.solve(),
+  );
   await expect(page.getByText("Sean keeps maya@northwindfreight.com too.")).toBeVisible();
   await shot(page, "02-filled");
   await page.getByRole("button", { name: "Send it here · 1 change" }).click();
@@ -143,7 +150,15 @@ test("a partner's answer lands on the partner", async ({ page }) => {
   });
 });
 
-test("the owner overrides the check and adds a personal email", async () => {
+test("the owner overrides the check and adds a personal email", async ({ browser }) => {
+  ownerPage = await browser.newPage();
+  await signupAndLogin(ownerPage, ownerEmail);
+  bookId = await seedBook({
+    ownerId: await getUserIdByEmail(ownerEmail),
+    slug: uniqueSlug("personal-book"),
+    displayName: "Sean",
+    enabledFields,
+  });
   const { contactId } = await seed("Lena Ortiz", { email: "lena@lenaortiz.com" });
   await ownerPage.setViewportSize({ width: 390, height: 844 });
   await ownerPage.goto(`/dashboard/contacts/${contactId}`);
@@ -157,8 +172,8 @@ test("the owner overrides the check and adds a personal email", async () => {
 
   await ownerPage.goto(`/dashboard/contacts/${contactId}`);
   await expect(ownerPage.getByRole("checkbox", { name: /Ask for a personal email/ }).first()).not.toBeChecked();
-  await ownerPage.getByLabel("Personal email", { exact: true }).fill("lena.ortiz@gmail.com");
-  await expect(ownerPage.getByText("Invites go here")).toBeVisible();
+  await ownerPage.locator("#personal_email").fill("lena.ortiz@gmail.com");
+  await expect(ownerPage.getByText("Invites go here", { exact: true })).toBeVisible();
   await ownerPage.getByRole("button", { name: "Save changes" }).click();
   await expect(ownerPage.getByText("Saved.", { exact: true })).toBeVisible();
   await shot(ownerPage, "07-owner-saved");

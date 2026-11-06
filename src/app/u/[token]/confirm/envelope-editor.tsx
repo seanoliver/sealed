@@ -464,6 +464,7 @@ export function EnvelopeEditor({
     {},
   );
 
+  const [personalEditedAfter, setPersonalEditedAfter] = useState<EditorState | null>(null);
   const [seenState, setSeenState] = useState(state);
   if (state !== seenState) {
     setSeenState(state);
@@ -554,6 +555,13 @@ export function EnvelopeEditor({
 
   if (state.done) return <SavedView ownerName={ownerName} saved={sent} expiresAt={expiresAt} />;
 
+  // An error describes what was submitted, so typing clears it until the next submit.
+  const personalEmailError =
+    personalEditedAfter === state ? undefined : state.fieldErrors?.personal_email;
+  const onPersonalEmail = (value: string) => {
+    setPersonalEmail(value);
+    setPersonalEditedAfter(state);
+  };
   const emailChanged =
     changed.has("email") || changed.has("personal_email") || changed.has("birthday");
   // Absent means unchanged, so the field only renders for someone who can answer or edit it.
@@ -909,16 +917,16 @@ export function EnvelopeEditor({
                   autoComplete="email"
                   maxLength={320}
                   value={personalEmail}
-                  onChange={(event) => setPersonalEmail(event.target.value)}
-                  aria-invalid={state.fieldErrors?.personal_email ? true : undefined}
+                  onChange={(event) => onPersonalEmail(event.target.value)}
+                  aria-invalid={personalEmailError ? true : undefined}
                   className={cn(
                     envelopeInputClasses,
                     "font-sans text-base",
-                    state.fieldErrors?.personal_email && "border-destructive",
+                    personalEmailError && "border-destructive",
                   )}
                 />
-                {state.fieldErrors?.personal_email ? (
-                  <p className="text-xs text-destructive">{state.fieldErrors.personal_email}</p>
+                {personalEmailError ? (
+                  <p className="text-xs text-destructive">{personalEmailError}</p>
                 ) : null}
               </div>
             ) : null}
@@ -953,11 +961,11 @@ export function EnvelopeEditor({
               onClick={(event) => show({ kind: "details" }, event.currentTarget)}
               className={cn(
                 "flex min-h-11 items-center justify-between gap-3 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
-                emailChanged && "text-accent-foreground",
+                (changed.has("email") || changed.has("birthday")) && "text-accent-foreground",
               )}
             >
               <span className="min-w-0 truncate">
-                Email: <span className="text-foreground">{email || "none yet"}</span>
+                Email:<span className="text-foreground">{email || "none yet"}</span>
               </span>
               <span className="shrink-0 font-semibold text-primary">Change</span>
             </button>
@@ -983,11 +991,11 @@ export function EnvelopeEditor({
         {asksPersonalEmail ? (
           <PersonalEmailQuestion
             value={personalEmail}
-            onChange={setPersonalEmail}
+            onChange={onPersonalEmail}
             senderNames={senderNames}
             workEmail={email}
             changed={changed.has("personal_email")}
-            error={state.fieldErrors?.personal_email}
+            error={personalEmailError}
           />
         ) : null}
 
