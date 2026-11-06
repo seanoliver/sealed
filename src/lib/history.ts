@@ -15,7 +15,7 @@ export type HistoryRow = { label: string; before: string; after: string };
 export type HistoryEntry =
   | { kind: "created" }
   | { kind: "confirmed" }
-  | { kind: "changed"; rows: HistoryRow[]; undo: boolean }
+  | { kind: "changed"; rows: HistoryRow[]; undo: boolean; mergedFrom?: string }
   | { kind: "unknown" };
 
 type Side = Record<string, unknown>;
@@ -57,7 +57,7 @@ function country(side: Side): string | null | undefined {
 
 const BIRTHDAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function birthday(value: unknown, { year }: { year: boolean }): string | null {
+export function birthday(value: unknown, { year }: { year: boolean }): string | null {
   const text = plain(value);
   const match = text === null ? null : BIRTHDAY.exec(text);
   if (!match) return text;
@@ -155,6 +155,11 @@ export function describeEvent(
   if (!after) return { kind: "unknown" };
 
   const rows = changedRows(before, after, countryCode);
+  // Review's Keep this one. The deleted contact is otherwise gone, so say so even if nothing moved.
+  if (isRecord(diff.merged_from)) {
+    const mergedFrom = cap(plain(diff.merged_from.full_name) ?? "another contact");
+    return { kind: "changed", rows, undo: false, mergedFrom };
+  }
   if (rows.length === 0) {
     // A reply whose visible fields all match is a confirm, even when a
     // hidden field (the name split) moved.

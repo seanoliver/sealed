@@ -253,6 +253,20 @@ export function sendPlan(
   };
 }
 
+/** Detected pairs where this send would reach both contacts, so one household gets two requests. */
+export function doubledHouseholds(
+  pairs: readonly (readonly [string, string])[],
+  input: SendPlan["input"],
+  rows: readonly Pick<SheetRow, "id" | "values">[],
+): number {
+  const targets = new Set(
+    "recipients" in input ? input.recipients.map((target) => target.contactId) : input.contactIds,
+  );
+  const emailable = new Set(rows.filter((row) => emailCount(row.values) > 0).map((row) => row.id));
+  const reached = (id: string) => targets.has(id) && emailable.has(id);
+  return pairs.filter(([first, second]) => reached(first) && reached(second)).length;
+}
+
 export function emailCount(values: Pick<SheetValues, "email" | "partner_email">): number {
   return (values.email === "" ? 0 : 1) + (values.partner_email === "" ? 0 : 1);
 }

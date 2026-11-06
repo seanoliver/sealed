@@ -67,6 +67,8 @@ const eslintConfig = defineConfig([
       "src/lib/queries/submissions.test.ts",
       "src/lib/queries/export.test.ts",
       "src/app/dashboard/review/actions.test.ts",
+      "src/app/dashboard/review/duplicates.test.ts",
+      "src/lib/queries/duplicates.test.ts",
       "src/lib/agent/tokens.ts",
       "src/lib/agent/*.test.ts",
       "src/app/api/mcp/route.test.ts",

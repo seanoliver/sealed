@@ -148,6 +148,7 @@ export async function approveNewAs(
 export async function approveMergeAs(
   claims: SessionClaims,
   id: string,
+  { contactId }: { contactId?: string } = {},
 ): Promise<ResolveResult> {
   type Outcome =
     | { kind: "not_found" }
@@ -165,7 +166,11 @@ export async function approveMergeAs(
       const loaded = await loadPendingSubmission(tx, claims.sub, id);
       if (!loaded) return { kind: "not_found" };
       const { book, submission } = loaded;
-      if (!submission.matchedContactId) return { kind: "no_match" };
+      // A name match is the owner's call on Compare, and only an invite reply can take one.
+      const compared = submission.source === "permalink" ? contactId : undefined;
+      const targetId = submission.matchedContactId ?? compared;
+      if (!targetId) return { kind: "no_match" };
+      const byName = submission.matchedContactId === null;
 
       const token = submission.source === "token";
       const payload = token ? withoutBlanks(submission.payload) : submission.payload;
@@ -182,7 +187,7 @@ export async function approveMergeAs(
         .from(contacts)
         .where(
           and(
-            eq(contacts.id, submission.matchedContactId),
+            eq(contacts.id, targetId),
             eq(contacts.bookId, book.id),
           ),
         )
@@ -193,8 +198,10 @@ export async function approveMergeAs(
       // Absent keys stay untouched and "" counts as absent: a permalink payload
       // can never clear a column (token replies can; see clearedFields).
       const before = rowToSnapshot(existing);
-      const set = mergeUpdate(before, gated, {
-        partnerEmail: partnerEmail.data,
+      // A name alone never earns an email, or anyone could type a contact's name
+      // and collect their next address request.
+      const set = mergeUpdate(before, byName ? { ...gated, email: undefined } : gated, {
+        partnerEmail: byName ? undefined : partnerEmail.data,
         clear: token ? clearedFields(submission.payload, book.enabledFields) : [],
       });
 

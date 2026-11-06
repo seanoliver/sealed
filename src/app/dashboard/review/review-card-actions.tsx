@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { approveMerge, approveNew, reject } from "./actions";
 
@@ -16,9 +17,17 @@ const rejectButtonClasses =
 export function ReviewCardActions({
   submissionId,
   approve,
+  compareHref,
+  backHref,
+  contactId,
 }: {
   submissionId: string;
   approve?: "new" | "merge";
+  /** Opens the side-by-side view for a name match. */
+  compareHref?: string;
+  backHref?: string;
+  /** The compared contact. Apply update needs it because the submission has no link yet. */
+  contactId?: string;
 }) {
   const [approveState, approveAction, approvePending] = useActionState(
     approve === "merge" ? approveMerge : approveNew,
@@ -40,13 +49,19 @@ export function ReviewCardActions({
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
+        {compareHref ? (
+          <Link href={compareHref} className={approveButtonClasses}>
+            Compare
+          </Link>
+        ) : null}
         {approve ? (
           <form action={approveAction}>
             <input type="hidden" name="id" value={submissionId} />
+            {contactId ? <input type="hidden" name="contact_id" value={contactId} /> : null}
             <button
               type="submit"
               disabled={pending}
-              className={approveButtonClasses}
+              className={compareHref ? rejectButtonClasses : approveButtonClasses}
             >
               {approve === "merge" ? "Apply update" : "Add contact"}
             </button>
@@ -62,6 +77,11 @@ export function ReviewCardActions({
             Reject
           </button>
         </form>
+        {backHref ? (
+          <Link href={backHref} className={rejectButtonClasses}>
+            Back
+          </Link>
+        ) : null}
       </div>
     </div>
   );

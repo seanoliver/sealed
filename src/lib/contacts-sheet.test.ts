@@ -3,6 +3,7 @@ import type { ContactListRow } from "@/lib/queries/contacts";
 import {
   changedValues,
   combineSends,
+  doubledHouseholds,
   draftFromNames,
   draftToValues,
   emailCount,
@@ -56,6 +57,27 @@ const listRow: ContactListRow = {
   changedAfterSend: false,
   updatedAt: new Date("2026-10-01T12:00:00Z"),
 };
+
+describe("doubledHouseholds", () => {
+  const row = (id: string, email: string) => ({ id, values: { email, partner_email: "" } as Parameters<typeof emailCount>[0] as never });
+  const rows = [row("a", "a@x.test"), row("b", "b@x.test"), row("c", "")];
+
+  it("counts a pair only when the send reaches both contacts by email", () => {
+    expect(doubledHouseholds([["a", "b"]], { contactIds: ["a", "b"] }, rows)).toBe(1);
+    expect(doubledHouseholds([["a", "b"]], { contactIds: ["a"] }, rows)).toBe(0);
+    expect(doubledHouseholds([["a", "c"]], { contactIds: ["a", "c"] }, rows)).toBe(0);
+  });
+
+  it("reads the people list from a needs-attention send", () => {
+    const input = {
+      recipients: [
+        { contactId: "a", recipient: "primary" as const },
+        { contactId: "b", recipient: "partner" as const },
+      ],
+    };
+    expect(doubledHouseholds([["a", "b"]], input, rows)).toBe(1);
+  });
+});
 
 describe("combineSends", () => {
   const none = { status: "none", failureReason: null } as const;

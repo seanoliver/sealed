@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
+import { loadDuplicateReview } from "@/lib/queries/duplicates";
 import { ImportForm } from "./import-form";
 
 export default async function ImportPage() {
@@ -10,6 +11,17 @@ export default async function ImportPage() {
 
   // Onboarding: no book yet → set one up first (imports need a book).
   if (!book) redirect("/onboarding");
+
+  const { contacts } = await loadDuplicateReview(claims);
+  const bookNames = contacts.map((contact) => ({
+    id: contact.id,
+    fullName: contact.fullName,
+    partnerName: contact.partnerName,
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    partnerFirstName: contact.partnerFirstName,
+    partnerLastName: contact.partnerLastName,
+  }));
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
@@ -35,7 +47,7 @@ export default async function ImportPage() {
         </a>
         .
       </p>
-      <ImportForm />
+      <ImportForm bookNames={bookNames} />
     </main>
   );
 }

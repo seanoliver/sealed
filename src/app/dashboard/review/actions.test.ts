@@ -79,4 +79,48 @@ describe("review actions", () => {
       partnerName: null,
     });
   });
+
+  describe("a name match opened with Compare", () => {
+    const permalink = async (payload: Record<string, unknown>) => {
+      await dbAdmin.execute(sql`
+        insert into public.submissions (id, book_id, payload) values (${S}, ${B}, ${JSON.stringify(payload)}::jsonb)`);
+    };
+    const compare = () => {
+      const data = form(S);
+      data.set("contact_id", C);
+      return data;
+    };
+    const storedEmail = async () =>
+      (await dbAdmin.select().from(contacts).where(eq(contacts.id, C)))[0].email;
+
+    it("updates the compared contact but never its stored email", async () => {
+      const before = await storedEmail();
+      expect(before).not.toBeNull();
+      await permalink({ full_name: "Someone", email: "attacker@ab.test", city: "Bend" });
+      await expect(approveMerge({}, compare())).resolves.toEqual({});
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row.email).toBe(before);
+      expect(row.city).toBe("Bend");
+    });
+
+    it("never sets an email on a contact that has none", async () => {
+      await dbAdmin.execute(sql`update public.contacts set email = null, partner_email = null where id = ${C}`);
+      await permalink({ full_name: "Someone", email: "attacker@ab.test", partner_email: "too@ab.test", city: "Bend" });
+      await expect(approveMerge({}, compare())).resolves.toEqual({});
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row).toMatchObject({ email: null, partnerEmail: null, city: "Bend" });
+    });
+
+    it("needs the Compare step: an unlinked submission alone cannot merge", async () => {
+      await permalink({ full_name: "Someone", city: "Bend" });
+      await expect(approveMerge({}, form(S))).resolves.toMatchObject({ error: expect.any(String) });
+    });
+
+    it("ignores a compared contact on a token reply", async () => {
+      await dbAdmin.execute(sql`
+        insert into public.submissions (id, book_id, payload, source, recipient, saved_by)
+        values (${S}, ${B}, '{"city":"Bend"}'::jsonb, 'token', 'primary', 'partner')`);
+      await expect(approveMerge({}, compare())).resolves.toMatchObject({ error: expect.any(String) });
+    });
+  });
 });

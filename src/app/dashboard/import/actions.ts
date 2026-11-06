@@ -57,7 +57,8 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
         // Rows whose email already exists in the book are skipped, not
         // errors. Rows WITHOUT an email never conflict (the partial index
         // excludes NULLs), so re-importing a file duplicates its email-less
-        // rows — accepted v1 behavior; dedupe by hand or via edit/delete.
+        // rows. The preview flags those by name and the owner decides;
+        // whatever lands here shows up as detected duplicates on Review.
         .onConflictDoNothing({
           target: [contacts.bookId, contacts.email],
           where: sql`email is not null`,

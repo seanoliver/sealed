@@ -108,6 +108,13 @@ export const contactEvents = pgTable("contact_events", {
   contactUpdatedAt: timestamp("contact_updated_at", { withTimezone: true }),
 });
 
+export const contactDuplicateDismissals = pgTable("contact_duplicate_dismissals", {
+  bookId: uuid("book_id").notNull(),
+  contactA: uuid("contact_a").notNull(),
+  contactB: uuid("contact_b").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const agentTokens = pgTable("agent_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(),

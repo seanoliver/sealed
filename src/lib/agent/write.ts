@@ -1,5 +1,7 @@
 import "server-only";
 import { z } from "zod";
+import { householdLine, pickStoredNames } from "@/lib/names";
+import { listDetectedDuplicates } from "@/lib/queries/duplicates";
 import {
   createContactAs,
   DETAIL_FIELDS,
@@ -163,7 +165,13 @@ export async function createContact(
     agentActor(ctx),
   );
   if (!result.ok) throw new ToolError(result.error);
-  return { id: result.value.id, event_id: result.value.eventId ?? null };
+  // The contact is saved: a failed check must not read as a failed create and invite a retry.
+  const pairs = await listDetectedDuplicates(ctx.claims).catch(() => []);
+  const detected_duplicates = pairs.flatMap(({ first, second, match }) => {
+    const other = first.id === result.value.id ? second : second.id === result.value.id ? first : null;
+    return other ? [{ id: other.id, name: householdLine(pickStoredNames(other)), match }] : [];
+  });
+  return { id: result.value.id, event_id: result.value.eventId ?? null, detected_duplicates };
 }
 
 export const requestDeleteInput = z.object({

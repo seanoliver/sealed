@@ -76,7 +76,7 @@ export type StoredNames = {
 
 type Person = { first: string; last: string };
 
-export const isSplit = (names: StoredNames) => names.firstName !== null;
+export const isSplit = (names: Pick<StoredNames, "firstName">) => names.firstName !== null;
 
 export const pickStoredNames = (row: StoredNames): StoredNames => ({
   fullName: row.fullName,

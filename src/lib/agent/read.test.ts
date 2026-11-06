@@ -200,7 +200,7 @@ describe("agent read tools", () => {
       const { items, total } = await findDuplicates(claims, findDuplicatesInput.parse({}));
       expect(total).toBe(2);
       const byIds = Object.fromEntries(items.map((group) => [ids(group.contacts).join(), group.reasons]));
-      expect(byIds[[ANA, ANA_AGAIN].join()]).toEqual(["same household name and street"]);
+      expect(byIds[[ANA, ANA_AGAIN].join()]).toEqual(["same household name and street", "one person in common by name"]);
       expect(byIds[[CARA, DEV].join()]).toEqual(["same email shared@rt.test"]);
     });
 

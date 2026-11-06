@@ -70,6 +70,11 @@ function EventBody({ entry }: { entry: HistoryEntry }) {
       return (
         <>
           {entry.undo && <p className="text-sm text-muted-foreground">Undid an earlier change</p>}
+          {entry.mergedFrom && (
+            <p className="text-sm text-muted-foreground">
+              Kept as a duplicate of {entry.mergedFrom}, which was deleted
+            </p>
+          )}
           <dl className={listClasses}>
             {entry.rows.map((row, i) => (
               <div key={`${i}:${row.label}`} className="contents">
