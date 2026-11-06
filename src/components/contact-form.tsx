@@ -40,7 +40,7 @@ type FieldProps = {
   error?: string;
 };
 
-function Field({
+export function Field({
   name,
   label,
   value,
@@ -74,6 +74,35 @@ function Field({
   );
 }
 
+export function FormError({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+    >
+      {message}
+    </div>
+  );
+}
+
+export function NotesField({ value, className }: { value: string; className?: string }) {
+  return (
+    <div className={`flex flex-col gap-1.5 ${className ?? ""}`}>
+      <label htmlFor="notes" className={labelClasses}>
+        Notes
+      </label>
+      <textarea
+        id="notes"
+        name="notes"
+        rows={4}
+        maxLength={2000}
+        defaultValue={value}
+        className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 "
+      />
+    </div>
+  );
+}
+
 export function ContactForm({
   action,
   defaults,
@@ -99,14 +128,7 @@ export function ContactForm({
       }}
       className="mt-6 flex flex-col gap-5"
     >
-      {state.error ? (
-        <div
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-        >
-          {state.error}
-        </div>
-      ) : null}
+      {state.error ? <FormError message={state.error} /> : null}
       {state.saved ? (
         <div
           role="status"
@@ -169,19 +191,7 @@ export function ContactForm({
         prefillCountry={contactId === undefined}
       />
 
-      <div className={`${column} flex flex-col gap-1.5`}>
-        <label htmlFor="notes" className={labelClasses}>
-          Notes
-        </label>
-        <textarea
-          id="notes"
-          name="notes"
-          rows={4}
-          maxLength={2000}
-          defaultValue={v.notes}
-          className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 "
-        />
-      </div>
+      <NotesField value={v.notes} className={column} />
 
       <button
         type="submit"

@@ -10,7 +10,7 @@ import {
   seedBook,
   seedContact,
 } from "./db";
-import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
+import { openCityLine, signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -146,6 +146,7 @@ test("shows agent edits in the feed and undoes one", async () => {
 
 test("refuses a contact form saved after an agent changed the contact", async () => {
   await page.goto(`/dashboard/contacts/${hollowayId}`);
+  await openCityLine(page);
   await page.getByLabel("City").fill("Salem");
   await toolResult("update_contact", { id: hollowayId, fields: { city: "Eugene" } });
   await page.getByRole("button", { name: "Save changes" }).click();

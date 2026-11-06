@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { cleanupUser, seedOwnerBook } from "./db";
-import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
+import { openCityLine, signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
 /**
  * The owner's whole happy path in one serial journey: signup → onboarding →
@@ -228,12 +228,17 @@ test("adds a contact via the form", async () => {
 test("edits the contact and the audit trail records the change", async () => {
   await page.getByRole("link", { name: "Ada Lovelace" }).click();
   await expect(page).toHaveURL(/\/dashboard\/contacts\/[0-9a-f-]+$/);
+  await page.getByRole("button", { name: "Ada Lovelace. Edit names on the envelope" }).click();
   await expect(page.locator("#first_name")).toHaveValue("Ada");
-  await page.getByRole("button", { name: "Add partner" }).click();
+  await page.getByRole("button", { name: "Add a person" }).click();
   await page.locator("#partner_first").fill("William");
   await page.locator("#partner_last").fill("King");
-  await page.getByRole("button", { name: "Add a child" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add kids" }).click();
   await page.locator("#kid_0_first").fill("Byron");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await openCityLine(page);
   await page.locator("#city").fill("Boston");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved.");
@@ -248,6 +253,8 @@ test("edits the contact and the audit trail records the change", async () => {
   await expect(latest.locator("dd", { hasText: "William King" })).toBeVisible();
   await expect(latest).not.toContainText("partner_first_name");
   await expect(history.locator("li").last()).toContainText("Added this contact");
+  await page.getByRole("button", { name: /Edit names on the envelope$/ }).click();
+  await page.getByRole("button", { name: /^Edit Byron/ }).click();
   await expect(page.locator("#kid_0_first")).toHaveValue("Byron");
   await expect(page.locator("#kid_0_last")).toHaveValue("Lovelace");
 
