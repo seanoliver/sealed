@@ -36,12 +36,22 @@ const countryCode = z
 
 const optEmail = z.string().trim().max(320).pipe(z.email().or(z.literal(""))).transform((s) => s === "" ? undefined : s).optional();
 
+const emailKind = z
+  .enum(["personal", "work"])
+  .or(z.literal(""))
+  .transform((s) => (s === "" ? undefined : s))
+  .optional();
+
 export const contactSchema = z.object({
   full_name: z.string().trim().min(1, "Name is required").max(200),
   partner_name: opt(200),
   kids_names: opt(2000),
   email: optEmail,
   partner_email: optEmail,
+  personal_email: optEmail,
+  partner_personal_email: optEmail,
+  email_kind: emailKind,
+  partner_email_kind: emailKind,
   // refine: shape-valid but calendar-invalid dates ("2025-99-99") must never
   // reach the Postgres date cast — class-22 errors embed the value in logs
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealDate, "Invalid date").or(z.literal("")).transform((s) => s === "" ? undefined : s).optional(),
@@ -99,6 +109,10 @@ export const CONTACT_FIELDS = [
   "kids_names",
   "email",
   "partner_email",
+  "personal_email",
+  "partner_personal_email",
+  "email_kind",
+  "partner_email_kind",
   "birthday",
   "address_line1",
   "address_line2",
@@ -124,6 +138,7 @@ export const TOKEN_UPDATE_FIELDS = [
   "partner_name",
   "kids_names",
   "email",
+  "personal_email",
   "birthday",
   "address_line1",
   "address_line2",
@@ -136,9 +151,16 @@ export const TOKEN_UPDATE_FIELDS = [
 
 export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];
 
-/** Unknown keys (incl. a smuggled `notes`) are stripped. No `partner_email`:
- *  each recipient edits only their own address, through `email`. */
-export const tokenUpdateSchema = contactSchema.omit({ notes: true, partner_email: true });
+/** Unknown keys (incl. a smuggled `notes`) are stripped. No partner keys: each
+ *  recipient edits only their own addresses, through `email` and `personal_email`.
+ *  The kinds are the owner's override. */
+export const tokenUpdateSchema = contactSchema.omit({
+  notes: true,
+  partner_email: true,
+  partner_personal_email: true,
+  email_kind: true,
+  partner_email_kind: true,
+});
 
 export const TOKEN_DETAIL_FIELDS = TOKEN_UPDATE_FIELDS.filter(
   (field) => field !== "full_name" && field !== "partner_name" && field !== "kids_names",

@@ -41,6 +41,7 @@ import {
   rowToSnapshot,
   storedNames,
   updatedAtText,
+  personalEmailConflict,
 } from "./write";
 
 export type ContactFormState = {
@@ -88,6 +89,10 @@ function detailsErrorState(
 
 const KEPT_WHEN_ABSENT = {
   partner_email: "partnerEmail",
+  personal_email: "personalEmail",
+  partner_personal_email: "partnerPersonalEmail",
+  email_kind: "emailKind",
+  partner_email_kind: "partnerEmailKind",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
   district: "district",
@@ -224,7 +229,17 @@ export async function updateContact(
         row = inputToRow(parsed.details, parsed.household);
       }
       row = { ...row, legacyCountry: legacyCountryAfter(existing, row.countryCode ?? null) };
-      if (changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }))) {
+      const diff = changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }));
+      if (diff) {
+        const conflict = await personalEmailConflict(tx, {
+          bookId: book.id,
+          contactId: id,
+          after: diff.after,
+        });
+        if (conflict) {
+          invalid = { error: conflict, ...echo };
+          return existing;
+        }
         await tx
           .update(contacts)
           .set(row)

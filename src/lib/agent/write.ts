@@ -46,6 +46,16 @@ const kidsField = z
 const detailShape = {
   email: clearable("Primary email."),
   partner_email: clearable("Partner's email; must differ from email."),
+  personal_email: clearable("The contact's personal email. Invites go here instead of email."),
+  partner_personal_email: clearable(
+    "The partner's personal email. Invites go here instead of partner_email.",
+  ),
+  email_kind: clearable(
+    'Override whether email counts as "personal" or "work". Blank detects it from the domain.',
+  ),
+  partner_email_kind: clearable(
+    'Override whether partner_email counts as "personal" or "work". Blank detects it from the domain.',
+  ),
   birthday: clearable("YYYY-MM-DD."),
   address_line1: clearable("Street address."),
   address_line2: clearable("Apartment, suite, etc."),

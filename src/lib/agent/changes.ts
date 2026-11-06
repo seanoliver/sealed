@@ -5,6 +5,7 @@ import {
   recordContactEvent,
   snapshotToRow,
   DUPLICATE_EMAIL,
+  EMAIL_FIELDS,
   GENERIC_ERROR,
   type Actor,
   type SnapshotField,
@@ -24,6 +25,10 @@ const FIELD_LABELS: Record<SnapshotField | "country", string> = {
   kids_names: "Kids",
   email: "Email",
   partner_email: "Partner email",
+  personal_email: "Personal email",
+  partner_personal_email: "Partner personal email",
+  email_kind: "Email type",
+  partner_email_kind: "Partner email type",
   birthday: "Birthday",
   address_line1: "Street",
   address_line2: "Address line 2",
@@ -200,7 +205,7 @@ export async function listAgentChanges(
 }
 
 const touchesEmail = (diff: Diff) =>
-  ["email", "partner_email"].some((field) => field in (diff.before ?? {}));
+  EMAIL_FIELDS.some((field) => field in (diff.before ?? {}));
 
 export async function undoAgentChange(
   claims: SessionClaims,

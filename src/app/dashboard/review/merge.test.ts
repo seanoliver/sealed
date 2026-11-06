@@ -9,6 +9,7 @@ import {
   parseSubmissionPayload,
   withoutBlanks,
 } from "@/lib/validation/submission";
+import { type SubmissionPayload } from "@/lib/validation/submission";
 import { changedFields, mergeUpdate, rowToSnapshot, toInsertRow } from "./merge";
 
 const U = "00000000-0000-0000-0000-00000000d001";
@@ -324,5 +325,31 @@ describe("approving a household submission", () => {
         clearedFields(emptied, { partner_name: false, kids_names: false, birthday: false }),
       ).toEqual(["address_line2"]);
     });
+  });
+});
+
+describe("personal emails on approval", () => {
+  const before = rowToSnapshot({
+    email: "ana@acme.test", partnerEmail: "mark@acme.test", personalEmail: null, partnerPersonalEmail: null,
+  } as typeof contacts.$inferSelect);
+
+  const EMPTY = {} as unknown as SubmissionPayload;
+  const payload = (address: string) =>
+    ({ personal_email: address }) as unknown as SubmissionPayload;
+
+  it("sets the primary's from the payload and the partner's from its own key", () => {
+    expect(mergeUpdate(before, payload("ana@home.test"))).toEqual({
+      personalEmail: "ana@home.test",
+    });
+    expect(mergeUpdate(before, EMPTY, { partnerPersonalEmail: "mark@home.test" })).toEqual({
+      partnerPersonalEmail: "mark@home.test",
+    });
+  });
+
+  it("drops an address that repeats either person's", () => {
+    expect(mergeUpdate(before, payload("ANA@acme.test"))).toBeUndefined();
+    expect(mergeUpdate(before, payload("mark@acme.test"))).toBeUndefined();
+    expect(mergeUpdate(before, EMPTY, { partnerPersonalEmail: "mark@acme.test" })).toBeUndefined();
+    expect(mergeUpdate(before, EMPTY, { partnerPersonalEmail: "ana@acme.test" })).toBeUndefined();
   });
 });

@@ -12,7 +12,7 @@ import { addressSummary, countryName, DEFAULT_SENDER_COUNTRY, envelopeLines, row
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
 import type { Readings } from "@/lib/readings";
-import type { Recipient } from "@/lib/recipients";
+import { inviteAddresses, type Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
 import {
   CLEARABLE_FIELDS,
@@ -31,6 +31,10 @@ export type SheetField = Extract<
   keyof ContactFormValues,
   | "email"
   | "partner_email"
+  | "personal_email"
+  | "partner_personal_email"
+  | "email_kind"
+  | "partner_email_kind"
   | "address_line1"
   | "city"
   | "state_region"
@@ -78,6 +82,10 @@ export function toSheetRow(
   const values: SheetValues = {
     email: row.email ?? "",
     partner_email: row.partnerEmail ?? "",
+    personal_email: row.personalEmail ?? "",
+    partner_personal_email: row.partnerPersonalEmail ?? "",
+    email_kind: row.emailKind ?? "",
+    partner_email_kind: row.partnerEmailKind ?? "",
     address_line1: row.addressLine1 ?? "",
     city: row.city ?? "",
     state_region: row.stateRegion ?? "",
@@ -129,12 +137,14 @@ export function effectiveSends(
   row: Pick<
     ContactListRow,
     "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend" | "changedAfterSend"
-  >,
+  > &
+    Partial<Pick<ContactListRow, "personalEmail" | "partnerPersonalEmail">>,
 ): EffectiveSends {
   // A person whose email was removed no longer counts: their old bounce
   // can't be resent, so it must not hold the row in Needs attention.
+  const invited = inviteAddresses(row);
   const emailed = (["primary", "partner"] as const).filter(
-    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
+    (recipient) => invited[recipient] !== undefined,
   );
   const sendOf = (recipient: Recipient): RecipientSend =>
     emailed.includes(recipient)
@@ -253,8 +263,19 @@ export function sendPlan(
   };
 }
 
-export function emailCount(values: Pick<SheetValues, "email" | "partner_email">): number {
-  return (values.email === "" ? 0 : 1) + (values.partner_email === "" ? 0 : 1);
+export function emailCount(
+  values: Pick<SheetValues, "email" | "partner_email"> &
+    Partial<Pick<SheetValues, "personal_email" | "partner_personal_email">>,
+): number {
+  const address = (value: string | undefined) => (value ? value : null);
+  return Object.keys(
+    inviteAddresses({
+      email: address(values.email),
+      partnerEmail: address(values.partner_email),
+      personalEmail: address(values.personal_email),
+      partnerPersonalEmail: address(values.partner_personal_email),
+    }),
+  ).length;
 }
 
 function personName(names: StoredNames, recipient: Recipient): string | null {
@@ -300,6 +321,8 @@ const OTHER_FIELDS = [
   ["birthday", "Birthday"],
   ["email", "Email"],
   ["partner_email", "Partner email"],
+  ["personal_email", "Personal email"],
+  ["partner_personal_email", "Partner personal email"],
 ] as const;
 
 type AnswerField =
@@ -318,6 +341,8 @@ export function twoAnswers(
     birthday: row.birthday ?? "",
     email: row.email ?? "",
     partner_email: row.partnerEmail ?? "",
+    personal_email: row.personalEmail ?? "",
+    partner_personal_email: row.partnerPersonalEmail ?? "",
     address_line1: row.addressLine1 ?? "",
     address_line2: row.addressLine2 ?? "",
     district: row.district ?? "",

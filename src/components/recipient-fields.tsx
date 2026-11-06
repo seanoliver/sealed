@@ -22,6 +22,7 @@ export const BLANK_RECIPIENT_VALUES: TokenUpdateValues = {
   partner_name: "",
   kids_names: "",
   email: "",
+  personal_email: "",
   birthday: "",
   address_line1: "",
   address_line2: "",

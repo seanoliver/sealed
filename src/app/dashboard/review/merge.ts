@@ -24,6 +24,7 @@ const NAME_FIELDS = [
 export const SNAPSHOT_FIELDS = [
   ...TOKEN_UPDATE_FIELDS,
   "partner_email",
+  "partner_personal_email",
   ...NAME_FIELDS,
   "country",
 ] as const;
@@ -32,6 +33,7 @@ type SnapshotField = (typeof SNAPSHOT_FIELDS)[number];
 /** Field snapshot keyed by schema names. No `notes`: it can never arrive via a submission. */
 export type Snapshot = Record<TokenUpdateField, string | null> & {
   partner_email: string | null;
+  partner_personal_email: string | null;
   first_name: string | null;
   last_name: string | null;
   partner_first_name: string | null;
@@ -47,6 +49,8 @@ export function rowToSnapshot(row: typeof contacts.$inferSelect): Snapshot {
     kids_names: row.kidsNames,
     email: row.email,
     partner_email: row.partnerEmail,
+    personal_email: row.personalEmail,
+    partner_personal_email: row.partnerPersonalEmail,
     birthday: row.birthday,
     address_line1: row.addressLine1,
     address_line2: row.addressLine2,
@@ -100,6 +104,8 @@ const FIELD_TO_COLUMN = {
   kids_names: "kidsNames",
   email: "email",
   partner_email: "partnerEmail",
+  personal_email: "personalEmail",
+  partner_personal_email: "partnerPersonalEmail",
   birthday: "birthday",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
@@ -176,7 +182,15 @@ const CLEARS: Record<ClearableField, readonly SnapshotField[]> = {
 export function mergeUpdate(
   before: Snapshot,
   payload: SubmissionPayload,
-  { partnerEmail, clear = [] }: { partnerEmail?: string; clear?: readonly ClearableField[] } = {},
+  {
+    partnerEmail,
+    partnerPersonalEmail,
+    clear = [],
+  }: {
+    partnerEmail?: string;
+    partnerPersonalEmail?: string;
+    clear?: readonly ClearableField[];
+  } = {},
 ): Partial<typeof contacts.$inferInsert> | undefined {
   const patch = mergePatch(payload);
   for (const field of clear.flatMap((cleared) => CLEARS[cleared])) {
@@ -186,6 +200,25 @@ export function mergeUpdate(
   if (sameAddress(patch.email, before.partner_email)) delete patch.email;
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
     patch.partner_email = partnerEmail;
+  }
+  // Same rule as apply_token_reply: a personal email equal to either person's
+  // other address adds nothing to send to.
+  const email = patch.email ?? before.email;
+  const partnerAddress = patch.partner_email ?? before.partner_email;
+  if (
+    [email, partnerAddress, before.partner_personal_email].some((address) =>
+      sameAddress(patch.personal_email, address),
+    )
+  ) {
+    delete patch.personal_email;
+  }
+  if (
+    partnerPersonalEmail !== undefined &&
+    ![email, partnerAddress, patch.personal_email ?? before.personal_email].some((address) =>
+      sameAddress(partnerPersonalEmail, address),
+    )
+  ) {
+    patch.partner_personal_email = partnerPersonalEmail;
   }
   // Unmatched text from an old reply stands in for a missing code, never a stored one.
   if ("country" in patch) {

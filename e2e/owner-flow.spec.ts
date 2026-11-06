@@ -272,7 +272,8 @@ test("exports contacts as CSV with the canonical header", async () => {
   const lines = csv.replace(/^﻿/, "").split("\r\n");
   expect(lines[0]).toBe(
     "full_name,partner_name,kids_names,first_name,last_name," +
-      "partner_first_name,partner_last_name,email,partner_email,birthday,address_line1," +
+      "partner_first_name,partner_last_name,email,partner_email,personal_email," +
+      "partner_personal_email,birthday,address_line1," +
       "address_line2,district,city,state_region,postal_code,country_code,country,notes,envelope",
   );
   expect(lines[1]).toContain(

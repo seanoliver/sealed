@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type PostalAddress } from "@/lib/address";
+import { isWorkEmail } from "@/lib/email-kind";
 import { householdPrefill, type StoredNames } from "@/lib/names";
 import { type TokenUpdateValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
@@ -18,6 +19,8 @@ export const tokenDataSchema = z.object({
       .array(z.object({ first: z.string(), last: z.string().optional() }))
       .nullable(),
     email: z.string().nullable(),
+    personal_email: z.string().nullable(),
+    email_kind: z.enum(["personal", "work"]).nullable(),
     birthday: z.string().nullable(),
     address_line1: z.string().nullable(),
     address_line2: z.string().nullable(),
@@ -75,6 +78,12 @@ export const storedNames = (contact: TokenContact): StoredNames => ({
   kids: contact.kids,
 });
 
+/** The work address the page asks about, or null when there is nothing to ask. */
+export function personalEmailPrompt({ contact }: Pick<TokenData, "contact">): string | null {
+  if (contact.personal_email !== null) return null;
+  return isWorkEmail(contact.email, { kind: contact.email_kind }) ? contact.email : null;
+}
+
 // PII: blank a disabled field's stored value here, don't just hide it. Form
 // props are embedded in the RSC payload, so it would show in the page source.
 export function recipientPrefill(data: TokenData): {
@@ -92,6 +101,7 @@ export function recipientPrefill(data: TokenData): {
       partner_name: "",
       kids_names: "",
       email: contact.email ?? "",
+      personal_email: contact.personal_email ?? "",
       birthday: enabled_fields.birthday ? (contact.birthday ?? "") : "",
       address_line1: contact.address_line1 ?? "",
       address_line2: contact.address_line2 ?? "",

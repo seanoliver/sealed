@@ -76,6 +76,19 @@ export function parsePartnerEmail(
     : { success: false };
 }
 
+const partnerPersonalEmailSchema = z.object({
+  partner_personal_email: contactSchema.shape.partner_personal_email,
+});
+
+export function parsePartnerPersonalEmail(
+  payload: unknown,
+): { success: true; data: string | undefined } | { success: false } {
+  const parsed = partnerPersonalEmailSchema.safeParse(payload);
+  return parsed.success
+    ? { success: true, data: parsed.data.partner_personal_email }
+    : { success: false };
+}
+
 export function isHouseholdPayload(
   payload: SubmissionPayload,
 ): payload is HouseholdPayload {
@@ -116,6 +129,8 @@ export const submissionDisplaySchema = z.object({
   kids_names: displayValue,
   email: displayValue,
   partner_email: displayValue,
+  personal_email: displayValue,
+  partner_personal_email: displayValue,
   birthday: displayValue,
   address_line1: displayValue,
   address_line2: displayValue,
@@ -133,7 +148,7 @@ export const submissionDisplaySchema = z.object({
 });
 
 export type SubmissionDisplayFields = Partial<
-  Record<TokenUpdateField | "partner_email", string>
+  Record<TokenUpdateField | "partner_email" | "partner_personal_email", string>
 > & {
   country?: string;
 };

@@ -73,6 +73,21 @@ describe("importContacts", () => {
     ]);
   });
 
+  it("skips a row whose email is already someone's personal email", async () => {
+    await dbAdmin.insert(contacts).values({
+      bookId: B,
+      fullName: "Ana Reyes",
+      email: "ana@acme.test",
+      personalEmail: "ana@home.test",
+    });
+    await expect(
+      importContacts([
+        { full_name: "Ana R", email: "ANA@home.test" },
+        { full_name: "Cal Ortiz", email: "cal@home.test" },
+      ]),
+    ).resolves.toEqual({ imported: 1, skipped: 1 });
+  });
+
   it("imports the partner's email, dropping one that repeats the email", async () => {
     await expect(
       importContacts([
