@@ -11,6 +11,7 @@ const before: ReplySnapshot = {
   }),
   address: ["2217 Alder Street", "Portland, OR 97214"],
   email: "maya@example.test",
+  personalEmail: "",
   birthday: "",
 };
 
@@ -19,6 +20,13 @@ const withHousehold = (snap: ReplySnapshot, household: HouseholdDraft): ReplySna
 describe("whatChanged", () => {
   it("is empty for a plain confirm", () => {
     expect(whatChanged(before, structuredClone(before))).toEqual([]);
+  });
+
+  it("lists a new personal email", () => {
+    const after = { ...structuredClone(before), personalEmail: " maya.chen@gmail.com " };
+    expect(whatChanged(before, after)).toEqual([
+      { kind: "personal_email", from: "", to: "maya.chen@gmail.com" },
+    ]);
   });
 
   it("lists added, removed and renamed people", () => {

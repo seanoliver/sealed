@@ -71,6 +71,7 @@ import {
   type SheetValues,
   type StatusKey,
   type TwoAnswers,
+  sheetInviteAddresses,
 } from "@/lib/contacts-sheet";
 import type { FailureReason } from "@/lib/email/resend";
 import { type Readings } from "@/lib/readings";
@@ -1107,7 +1108,12 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
             const { values, names } = row.original;
             const name = sheetName(names);
             const place = row.original.place;
-            const emails = [values.email, values.partner_email]
+            const invites = sheetInviteAddresses(values);
+            const emails = [
+              invites.primary,
+              invites.partner,
+              values.personal_email && values.email ? `was ${values.email}` : "",
+            ]
               .filter(Boolean)
               .join(" · ");
             const answers = row.original.answers;
@@ -1419,14 +1425,21 @@ function ViewRow({
           );
         }
         if (field?.field === "email") {
+          const invites = sheetInviteAddresses(values);
           return (
             <td key={cell.id} className={`${cellClasses} py-1 text-foreground/80`}>
-              <span className="block truncate">
-                {values.email || <span className="text-muted-foreground/50">—</span>}
+              <span
+                className="block truncate"
+                title={values.personal_email ? `Was ${values.email}` : undefined}
+              >
+                {invites.primary ?? <span className="text-muted-foreground/50">—</span>}
               </span>
-              {values.partner_email ? (
-                <span className="block truncate text-muted-foreground">
-                  {values.partner_email}
+              {invites.partner ? (
+                <span
+                  className="block truncate text-muted-foreground"
+                  title={values.partner_personal_email ? `Was ${values.partner_email}` : undefined}
+                >
+                  {invites.partner}
                 </span>
               ) : null}
             </td>
@@ -1599,9 +1612,14 @@ function EditingRow({
                 {(
                   [
                     ["email", "Email"],
+                    ["personal_email", "Personal email"],
                     ["partner_email", "Partner email"],
+                    ["partner_personal_email", "Partner's personal email"],
                   ] as const
-                ).map(([name, label]) => (
+                )
+                  // Only saved personal addresses: adding one belongs to the contact form.
+                  .filter(([name]) => name === "email" || name === "partner_email" || values[name] !== "")
+                  .map(([name, label]) => (
                   <input
                     key={name}
                     data-cell-input={name === "email" ? true : undefined}
@@ -1617,7 +1635,7 @@ function EditingRow({
                     onKeyDown={onInputKeyDown}
                     className={`${cellInputClasses} placeholder:text-muted-foreground`}
                   />
-                ))}
+                  ))}
               </span>
             </td>
           );

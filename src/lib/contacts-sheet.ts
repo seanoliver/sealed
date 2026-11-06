@@ -263,19 +263,22 @@ export function sendPlan(
   };
 }
 
-export function emailCount(
-  values: Pick<SheetValues, "email" | "partner_email"> &
-    Partial<Pick<SheetValues, "personal_email" | "partner_personal_email">>,
-): number {
+type SheetEmails = Pick<SheetValues, "email" | "partner_email"> &
+  Partial<Pick<SheetValues, "personal_email" | "partner_personal_email">>;
+
+/** Where the next invites go, for showing a row. */
+export function sheetInviteAddresses(values: SheetEmails) {
   const address = (value: string | undefined) => (value ? value : null);
-  return Object.keys(
-    inviteAddresses({
-      email: address(values.email),
-      partnerEmail: address(values.partner_email),
-      personalEmail: address(values.personal_email),
-      partnerPersonalEmail: address(values.partner_personal_email),
-    }),
-  ).length;
+  return inviteAddresses({
+    email: address(values.email),
+    partnerEmail: address(values.partner_email),
+    personalEmail: address(values.personal_email),
+    partnerPersonalEmail: address(values.partner_personal_email),
+  });
+}
+
+export function emailCount(values: SheetEmails): number {
+  return Object.keys(sheetInviteAddresses(values)).length;
 }
 
 function personName(names: StoredNames, recipient: Recipient): string | null {
