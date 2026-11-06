@@ -1,0 +1,379 @@
+set lock_timeout = '5s';
+
+-- A person's personal email is a second address, never a replacement for `email`:
+-- nothing here writes to `email`, so contacts_book_email_unique and
+-- contacts_partner_email_differs can't be tripped, and the link sent to the work
+-- address stays live. No unique index on these columns on purpose: a recipient's
+-- reply must not fail, or behave differently, because an address is already in the book.
+
+alter table public.contacts
+  add column personal_email extensions.citext
+    constraint contacts_personal_email_check check (char_length(personal_email::text) <= 320),
+  add column partner_personal_email extensions.citext
+    constraint contacts_partner_personal_email_check
+    check (char_length(partner_personal_email::text) <= 320),
+  -- The owner's override of the domain check; null means detect from the domain.
+  add column email_kind text
+    constraint contacts_email_kind_check check (email_kind in ('personal', 'work')),
+  add column partner_email_kind text
+    constraint contacts_partner_email_kind_check check (partner_email_kind in ('personal', 'work'));
+
+-- An override describes one address, so a new address starts undecided.
+create function private.reset_email_kind_on_change()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if lower(old.email::text) is distinct from lower(new.email::text)
+     and new.email_kind is not distinct from old.email_kind then
+    new.email_kind := null;
+  end if;
+  if lower(old.partner_email::text) is distinct from lower(new.partner_email::text)
+     and new.partner_email_kind is not distinct from old.partner_email_kind then
+    new.partner_email_kind := null;
+  end if;
+  return new;
+end $$;
+
+revoke all on function private.reset_email_kind_on_change() from public, anon, authenticated;
+
+create trigger contacts_reset_email_kind_on_change
+  before update of email, partner_email on public.contacts
+  for each row execute function private.reset_email_kind_on_change();
+
+-- First personal address: no address lost access, so every link stays. Changing or
+-- removing one: the dropped address must not keep a live link, except the link
+-- this reply came through (private.revoke_links_on_email_change skips it).
+create trigger contacts_revoke_links_on_personal_email_change
+  after update of personal_email on public.contacts
+  for each row
+  when (old.personal_email is not null
+        and lower(old.personal_email::text) is distinct from lower(new.personal_email::text))
+  execute function private.revoke_links_on_email_change('primary');
+
+create trigger contacts_revoke_partner_links_on_personal_email_change
+  after update of partner_personal_email on public.contacts
+  for each row
+  when (old.partner_personal_email is not null
+        and lower(old.partner_personal_email::text)
+            is distinct from lower(new.partner_personal_email::text))
+  execute function private.revoke_links_on_email_change('partner');
+
+create or replace function private.get_contact_for_token(p_token text)
+returns jsonb language sql security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'contact', jsonb_build_object(
+      'full_name', c.full_name, 'partner_name', c.partner_name,
+      'kids_names', c.kids_names,
+      'first_name', c.first_name, 'last_name', c.last_name,
+      'partner_first_name', c.partner_first_name,
+      'partner_last_name', c.partner_last_name, 'kids', c.kids,
+      'email', case t.recipient when 'partner' then c.partner_email else c.email end,
+      -- Only this person's: the other person's personal address never reaches this link.
+      'personal_email', case t.recipient when 'partner' then c.partner_personal_email
+                                         else c.personal_email end,
+      'email_kind', case t.recipient when 'partner' then c.partner_email_kind else c.email_kind end,
+      'birthday', c.birthday,
+      'address_line1', c.address_line1, 'address_line2', c.address_line2,
+      'district', c.district, 'city', c.city, 'state_region', c.state_region,
+      'postal_code', c.postal_code, 'country', c.country, 'country_code', c.country_code),
+    'enabled_fields', b.enabled_fields,
+    'owner_name', p.display_name,
+    'sender_full_names', b.sender_full_names,
+    'expires_at', t.expires_at,
+    'sender_country', b.sender_country,
+    'recipient', t.recipient,
+    'updated_at', c.updated_at)
+  from public.update_tokens t
+  join public.contacts c on c.id = t.contact_id
+  join public.books b on b.id = c.book_id
+  join public.profiles p on p.id = b.owner_id
+  where t.token_hash = extensions.digest(p_token, 'sha256')
+    and t.expires_at > now()
+$$;
+
+create or replace function private.apply_token_reply(
+  p_token text, p_payload jsonb, p_seen_at timestamptz default null)
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v_contact_id uuid;
+  v_book_id uuid;
+  v_recipient text;
+  v_enabled jsonb;
+  v_before jsonb;
+  v_after jsonb;
+  v_updated_at timestamptz;
+  v_conflict boolean;
+  v_stale boolean;
+  v_queued jsonb;
+  v_audited jsonb;
+  v_email extensions.citext;
+  v_personal_given boolean;
+  v_personal extensions.citext;
+  v_first text;
+  v_last text;
+  v_partner boolean;
+  v_partner_first text;
+  v_partner_last text;
+  v_kids_given boolean;
+  v_kids jsonb;
+  v_country_given boolean;
+  v_country_code text;
+begin
+  if p_payload is null
+     or jsonb_typeof(p_payload) <> 'object'
+     or pg_column_size(p_payload) > 65536 then
+    return null;
+  end if;
+
+  select t.contact_id, t.recipient, c.book_id, b.enabled_fields
+    into v_contact_id, v_recipient, v_book_id, v_enabled
+  from public.update_tokens t
+  join public.contacts c on c.id = t.contact_id
+  join public.books b on b.id = c.book_id
+  where t.token_hash = extensions.digest(p_token, 'sha256')
+    and t.expires_at > now()
+  for update of t;
+
+  if v_contact_id is null then return null; end if;
+
+  -- The email-change trigger skips this token: a recipient fixing their own
+  -- email keeps the link they are using.
+  perform set_config('sealed.reply_token_hash',
+    encode(extensions.digest(p_token, 'sha256'), 'hex'), true);
+
+  v_first := nullif(trim(p_payload ->> 'first_name'), '');
+  v_last := nullif(trim(p_payload ->> 'last_name'), '');
+  if v_first is null or v_last is null then
+    v_first := null;
+    v_last := null;
+  end if;
+
+  v_partner := coalesce((v_enabled ->> 'partner_name')::boolean, false)
+    and (p_payload ? 'partner_first_name' or p_payload ? 'partner_last_name');
+  v_partner_first := nullif(trim(p_payload ->> 'partner_first_name'), '');
+  v_partner_last := case when v_partner_first is not null
+                         then nullif(trim(p_payload ->> 'partner_last_name'), '') end;
+
+  v_kids_given := coalesce((v_enabled ->> 'kids_names')::boolean, false)
+    and p_payload ? 'kids';
+  if v_kids_given and jsonb_typeof(p_payload -> 'kids') = 'array' then
+    select jsonb_agg(
+             case when nullif(trim(k ->> 'last'), '') is null
+                  then jsonb_build_object('first', trim(k ->> 'first'))
+                  else jsonb_build_object('first', trim(k ->> 'first'),
+                                          'last', trim(k ->> 'last')) end
+             order by n)
+      into v_kids
+    from jsonb_array_elements(p_payload -> 'kids') with ordinality e(k, n);
+  elsif v_kids_given and jsonb_typeof(p_payload -> 'kids') <> 'null' then
+    return null;
+  end if;
+  if v_kids is not null and not private.valid_kids(v_kids) then
+    return null;
+  end if;
+
+  v_country_given := p_payload ? 'country_code';
+  v_country_code := nullif(trim(p_payload ->> 'country_code'), '');
+  if v_country_given and v_country_code is not null
+     and private.country_code_for(v_country_code) is distinct from v_country_code then
+    return null;
+  end if;
+
+  -- The row lock makes a concurrent reply from the other person wait here,
+  -- then see their change.
+  select to_jsonb(c) - 'created_at' - 'updated_at', c.updated_at
+    into v_before, v_updated_at
+  from public.contacts c where c.id = v_contact_id
+  for update;
+
+  -- A page opened before this recipient's own later save would undo it. Measured
+  -- like a conflict; a lost-response retry changes nothing and still applies.
+  v_stale := p_seen_at is not null and v_updated_at > p_seen_at and exists (
+    select 1 from public.contact_events e
+    where e.contact_id = v_contact_id and e.created_at > p_seen_at
+      and e.source = 'token' and e.recipient = v_recipient
+      and e.diff -> 'before' is distinct from e.diff -> 'after');
+
+  -- Any change by the other person since the page loaded, even one the owner
+  -- edited over since. Their no-op confirm (before = after) is not a change.
+  v_conflict := p_seen_at is not null and v_updated_at > p_seen_at and exists (
+    select 1 from public.contact_events e
+    where e.contact_id = v_contact_id and e.created_at > p_seen_at
+      and e.source = 'token' and e.recipient is distinct from v_recipient
+      and e.diff -> 'before' is distinct from e.diff -> 'after');
+
+  -- Dropped, not saved: an email equal to the other person's trips
+  -- contacts_partner_email_differs and fails the whole reply.
+  v_email := nullif(trim(p_payload ->> 'email'), '')::extensions.citext;
+  if lower(v_email::text) = lower(case v_recipient when 'partner' then v_before ->> 'email'
+                                                   else v_before ->> 'partner_email' end) then
+    v_email := null;
+  end if;
+
+  -- Dropped, not saved, like the email above: the person's own address or the
+  -- other person's adds nothing to send to.
+  v_personal_given := p_payload ? 'personal_email';
+  v_personal := nullif(trim(p_payload ->> 'personal_email'), '')::extensions.citext;
+  if v_personal is not null and lower(v_personal::text) in (
+       lower(coalesce(v_email::text,
+                      case v_recipient when 'partner' then v_before ->> 'partner_email'
+                                       else v_before ->> 'email' end)),
+       lower(case v_recipient when 'partner' then v_before ->> 'email'
+                              else v_before ->> 'partner_email' end),
+       lower(case v_recipient when 'partner' then v_before ->> 'personal_email'
+                              else v_before ->> 'partner_personal_email' end)) then
+    v_personal_given := false;
+  end if;
+
+  -- On a conflict the update only measures what would change: SL001 rolls it
+  -- back, triggers included.
+  begin
+    -- Write the display strings too: the trigger never clears one when its
+    -- partner or kids group is removed.
+    update public.contacts c set
+      first_name   = coalesce(v_first, c.first_name),
+      last_name    = coalesce(v_last, c.last_name),
+      full_name    = case when v_first is not null then private.format_person(v_first, v_last)
+                          else coalesce(nullif(trim(p_payload ->> 'full_name'), ''), c.full_name) end,
+      email         = case when v_recipient = 'primary' then coalesce(v_email, c.email) else c.email end,
+      partner_email = case when v_recipient = 'partner' then coalesce(v_email, c.partner_email)
+                           else c.partner_email end,
+      personal_email = case when v_recipient = 'primary' and v_personal_given then v_personal
+                            else c.personal_email end,
+      partner_personal_email = case when v_recipient = 'partner' and v_personal_given then v_personal
+                                    else c.partner_personal_email end,
+      partner_first_name = case when v_partner then v_partner_first else c.partner_first_name end,
+      partner_last_name  = case when v_partner then v_partner_last else c.partner_last_name end,
+      partner_name = case when v_partner
+                          then private.format_person(v_partner_first, v_partner_last)
+                          when (v_enabled ->> 'partner_name')::boolean and p_payload ? 'partner_name'
+                          then nullif(trim(p_payload ->> 'partner_name'), '') else c.partner_name end,
+      kids         = case when v_kids_given then v_kids else c.kids end,
+      kids_names   = case when v_kids_given
+                          then private.format_kids(v_kids, coalesce(v_last, c.last_name))
+                          when (v_enabled ->> 'kids_names')::boolean and p_payload ? 'kids_names'
+                          then nullif(trim(p_payload ->> 'kids_names'), '') else c.kids_names end,
+      birthday     = case when (v_enabled ->> 'birthday')::boolean and p_payload ? 'birthday'
+                          then nullif(trim(p_payload ->> 'birthday'), '')::date else c.birthday end,
+      address_line1 = case when p_payload ? 'address_line1' then nullif(trim(p_payload ->> 'address_line1'), '') else c.address_line1 end,
+      address_line2 = case when p_payload ? 'address_line2' then nullif(trim(p_payload ->> 'address_line2'), '') else c.address_line2 end,
+      district      = case when p_payload ? 'district' then nullif(trim(p_payload ->> 'district'), '') else c.district end,
+      city          = case when p_payload ? 'city' then nullif(trim(p_payload ->> 'city'), '') else c.city end,
+      state_region  = case when p_payload ? 'state_region' then nullif(trim(p_payload ->> 'state_region'), '') else c.state_region end,
+      postal_code   = case when p_payload ? 'postal_code' then nullif(trim(p_payload ->> 'postal_code'), '') else c.postal_code end,
+      country_code  = case when v_country_given then v_country_code else c.country_code end,
+      -- Unrecognized text survives only a reply that leaves the country blank and unchanged.
+      country       = case when v_country_given
+                                and (v_country_code is not null or c.country_code is not null) then null
+                           when p_payload ? 'country' then nullif(trim(p_payload ->> 'country'), '')
+                           else c.country end
+    where c.id = v_contact_id;
+
+    select to_jsonb(c) - 'created_at' - 'updated_at' into v_after
+    from public.contacts c where c.id = v_contact_id;
+    if v_conflict or v_stale then
+      raise exception using errcode = 'SL001';
+    end if;
+  exception when sqlstate 'SL001' then
+    null;
+  end;
+
+  if v_stale and v_after is distinct from v_before then
+    return 'stale';
+  end if;
+
+  update public.update_tokens
+    set used_at = now()
+  where token_hash = extensions.digest(p_token, 'sha256');
+
+  v_audited := p_payload - array(
+    select k from jsonb_object_keys(p_payload) k
+    where k not in ('full_name', 'email', 'personal_email', 'partner_name', 'kids_names', 'birthday',
+                    'address_line1', 'address_line2', 'district', 'city', 'state_region',
+                    'postal_code', 'country', 'country_code', 'first_name', 'last_name',
+                    'partner_first_name', 'partner_last_name', 'kids'));
+
+  -- Empty values stay: approving the reply must be able to clear a field.
+  if v_conflict and v_after is distinct from v_before then
+    select coalesce(jsonb_object_agg(
+             case when k = 'email' and v_recipient = 'partner' then 'partner_email'
+                  when k = 'personal_email' and v_recipient = 'partner' then 'partner_personal_email'
+                  else k end, v),
+             '{}'::jsonb)
+      into v_queued
+    from jsonb_each(v_audited) e(k, v);
+    -- A retry of a reply already waiting for review must not queue (or email) twice.
+    if exists (select 1 from public.submissions s
+               where s.matched_contact_id = v_contact_id and s.source = 'token'
+                 and s.recipient = v_recipient and s.status = 'pending'
+                 and s.payload = v_queued) then
+      return 'queued_again';
+    end if;
+    -- This person's newer reply replaces their own older one still in review;
+    -- approving the older one later would undo it.
+    update public.submissions
+       set status = 'rejected'
+     where matched_contact_id = v_contact_id and source = 'token'
+       and recipient = v_recipient and status = 'pending';
+    insert into public.submissions
+      (book_id, payload, matched_contact_id, source, recipient, saved_by)
+    values (v_book_id, v_queued, v_contact_id, 'token', v_recipient,
+            case v_recipient when 'primary' then 'partner' else 'primary' end);
+    return 'queued';
+  end if;
+
+  -- Only a reply that changes something replaces one still in review; a plain
+  -- confirm after "Edit again" must not silently drop it.
+  if v_after is distinct from v_before then
+    update public.submissions
+       set status = 'rejected'
+     where matched_contact_id = v_contact_id and source = 'token'
+       and recipient = v_recipient and status = 'pending';
+  end if;
+
+  insert into public.contact_events (contact_id, source, recipient, diff)
+  values (v_contact_id, 'token', v_recipient,
+          jsonb_build_object('before', v_before, 'after', v_after, 'payload', v_audited));
+
+  return 'applied';
+end $$;
+
+-- A self-add from someone's personal address matches the contact that holds it.
+create or replace function private.submit_to_book(p_slug text, p_payload jsonb)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare
+  v_book_id uuid;
+  v_match uuid;
+  v_email extensions.citext;
+begin
+  -- untrusted input: refuse non-object or oversized payloads outright
+  if p_payload is null
+     or jsonb_typeof(p_payload) <> 'object'
+     or pg_column_size(p_payload) > 65536 then
+    return false;
+  end if;
+
+  select id into v_book_id from public.books where slug = p_slug;
+  if v_book_id is null then return false; end if;
+
+  v_email := nullif(trim(p_payload ->> 'email'), '')::extensions.citext;
+
+  -- operator(extensions.=): with search_path='', bare = degrades to
+  -- case-sensitive text equality via implicit cast; citext ops live in extensions.
+  -- Several contacts can hold the address: `email` is unique, so it decides.
+  select id into v_match from public.contacts
+  where book_id = v_book_id
+    and (email operator(extensions.=) v_email
+         or personal_email operator(extensions.=) v_email
+         or partner_personal_email operator(extensions.=) v_email)
+  order by (email operator(extensions.=) v_email) desc nulls last, id
+  limit 1;
+
+  insert into public.submissions (book_id, payload, matched_contact_id)
+  values (v_book_id, p_payload, v_match);
+
+  return true;
+end $$;
+
+revoke all on function private.get_contact_for_token(text) from public, anon, authenticated;
+revoke all on function private.apply_token_reply(text, jsonb, timestamptz) from public, anon, authenticated;
+revoke all on function private.submit_to_book(text, jsonb) from public, anon, authenticated;
