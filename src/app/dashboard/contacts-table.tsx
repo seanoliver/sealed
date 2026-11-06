@@ -1617,7 +1617,6 @@ function EditingRow({
                     ["partner_personal_email", "Partner's personal email"],
                   ] as const
                 )
-                  // Only saved personal addresses: adding one belongs to the contact form.
                   .filter(([name]) => name === "email" || name === "partner_email" || values[name] !== "")
                   .map(([name, label]) => (
                   <input

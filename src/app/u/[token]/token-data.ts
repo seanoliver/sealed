@@ -78,7 +78,6 @@ export const storedNames = (contact: TokenContact): StoredNames => ({
   kids: contact.kids,
 });
 
-/** The work address the page asks about, or null when there is nothing to ask. */
 export function personalEmailPrompt({ contact }: Pick<TokenData, "contact">): string | null {
   if (contact.personal_email !== null) return null;
   return isWorkEmail(contact.email, { kind: contact.email_kind }) ? contact.email : null;

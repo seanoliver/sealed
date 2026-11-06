@@ -2,7 +2,6 @@ export type Recipient = "primary" | "partner";
 
 export type AddressRecipient = {
   recipient: Recipient;
-  /** The invite address: where this person's request goes. */
   email: string;
   firstName: string | null;
 };
@@ -14,7 +13,6 @@ type ContactEmails = {
   partnerPersonalEmail?: string | null;
 };
 
-/** Personal over work, per person. A couple resolving to one inbox gets one email, to the primary. */
 export function inviteAddresses(contact: ContactEmails): Partial<Record<Recipient, string>> {
   const primary = contact.personalEmail ?? contact.email;
   const partner = contact.partnerPersonalEmail ?? contact.partnerEmail;

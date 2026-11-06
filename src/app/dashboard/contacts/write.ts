@@ -306,10 +306,7 @@ export type EmailField = (typeof EMAIL_FIELDS)[number];
 export type EmailChange = Partial<Record<EmailField, [string | null, string | null]>>;
 export const EMAIL_REQUEST_TTL_DAYS = 7;
 
-/**
- * True when another contact in the book already uses this address. Owner and
- * agent writes only: a recipient's reply must never learn this.
- */
+/** Owner and agent writes only: a recipient's reply must never learn this. */
 export async function emailTaken(
   tx: RlsTx,
   { bookId, address, contactId }: { bookId: string; address: string; contactId?: string },
@@ -334,7 +331,6 @@ export async function emailTaken(
 
 const PERSONAL_FIELDS = ["personal_email", "partner_personal_email"] as const;
 
-/** The personal addresses this diff sets that another contact already uses, or null. */
 export async function personalEmailConflict(
   tx: RlsTx,
   { bookId, contactId, after }: { bookId: string; contactId?: string; after: Partial<Snapshot> },

@@ -152,8 +152,7 @@ export const TOKEN_UPDATE_FIELDS = [
 export type TokenUpdateField = (typeof TOKEN_UPDATE_FIELDS)[number];
 
 /** Unknown keys (incl. a smuggled `notes`) are stripped. No partner keys: each
- *  recipient edits only their own addresses, through `email` and `personal_email`.
- *  The kinds are the owner's override. */
+ *  recipient edits only their own addresses. */
 export const tokenUpdateSchema = contactSchema.omit({
   notes: true,
   partner_email: true,

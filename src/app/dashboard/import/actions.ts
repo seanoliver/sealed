@@ -42,8 +42,6 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
         .limit(1);
       if (!book) return undefined;
 
-      // A row whose email is already someone's personal email is that contact,
-      // the same as one matching `email`, which the conflict target skips below.
       const personal = await tx
         .select({ personalEmail: contacts.personalEmail, partner: contacts.partnerPersonalEmail })
         .from(contacts)

@@ -266,7 +266,6 @@ export function sendPlan(
 type SheetEmails = Pick<SheetValues, "email" | "partner_email"> &
   Partial<Pick<SheetValues, "personal_email" | "partner_personal_email">>;
 
-/** Where the next invites go, for showing a row. */
 export function sheetInviteAddresses(values: SheetEmails) {
   const address = (value: string | undefined) => (value ? value : null);
   return inviteAddresses({

@@ -97,7 +97,6 @@ type PersonEmailProps = {
   emailError?: string;
 };
 
-/** One person's address, their personal address, and the override of the work-email check. */
 function PersonEmailFields({ fields, labels, values, emailHint, emailError }: PersonEmailProps) {
   const [email, setEmail] = useState(values[fields.email]);
   const [personal, setPersonal] = useState(values[fields.personal]);
@@ -117,7 +116,6 @@ function PersonEmailFields({ fields, labels, values, emailHint, emailError }: Pe
         error={emailError}
         onInput={(next) => {
           setEmail(next);
-          // An override describes one address, so a new address starts undecided.
           setKind("");
         }}
       />

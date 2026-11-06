@@ -201,8 +201,6 @@ export function mergeUpdate(
   if (partnerEmail !== undefined && !sameAddress(partnerEmail, patch.email ?? before.email)) {
     patch.partner_email = partnerEmail;
   }
-  // Same rule as apply_token_reply: a personal email equal to either person's
-  // other address adds nothing to send to.
   const email = patch.email ?? before.email;
   const partnerAddress = patch.partner_email ?? before.partner_email;
   if (

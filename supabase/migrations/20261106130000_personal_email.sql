@@ -1,10 +1,7 @@
 set lock_timeout = '5s';
 
--- A person's personal email is a second address, never a replacement for `email`:
--- nothing here writes to `email`, so contacts_book_email_unique and
--- contacts_partner_email_differs can't be tripped, and the link sent to the work
--- address stays live. No unique index on these columns on purpose: a recipient's
--- reply must not fail, or behave differently, because an address is already in the book.
+-- No unique index on the personal columns: a recipient's reply must not fail, or
+-- behave differently, because an address is already in the book.
 
 alter table public.contacts
   add column personal_email extensions.citext
@@ -12,13 +9,11 @@ alter table public.contacts
   add column partner_personal_email extensions.citext
     constraint contacts_partner_personal_email_check
     check (char_length(partner_personal_email::text) <= 320),
-  -- The owner's override of the domain check; null means detect from the domain.
   add column email_kind text
     constraint contacts_email_kind_check check (email_kind in ('personal', 'work')),
   add column partner_email_kind text
     constraint contacts_partner_email_kind_check check (partner_email_kind in ('personal', 'work'));
 
--- An override describes one address, so a new address starts undecided.
 create function private.reset_email_kind_on_change()
 returns trigger language plpgsql set search_path = '' as $$
 begin
@@ -39,9 +34,7 @@ create trigger contacts_reset_email_kind_on_change
   before update of email, partner_email on public.contacts
   for each row execute function private.reset_email_kind_on_change();
 
--- First personal address: no address lost access, so every link stays. Changing or
--- removing one: the dropped address must not keep a live link, except the link
--- this reply came through (private.revoke_links_on_email_change skips it).
+-- `old is not null`: adding a first personal address must keep the work inbox's link.
 create trigger contacts_revoke_links_on_personal_email_change
   after update of personal_email on public.contacts
   for each row
@@ -337,7 +330,6 @@ begin
   return 'applied';
 end $$;
 
--- A self-add from someone's personal address matches the contact that holds it.
 create or replace function private.submit_to_book(p_slug text, p_payload jsonb)
 returns boolean language plpgsql security definer set search_path = '' as $$
 declare

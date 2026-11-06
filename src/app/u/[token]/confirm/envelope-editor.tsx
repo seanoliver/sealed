@@ -70,7 +70,6 @@ type Props = {
   household: HouseholdValues;
   recipient: Recipient;
   enabled: EnabledFields;
-  /** Show the optional personal-email question: this person's address looks like work. */
   asksPersonalEmail: boolean;
   senderCountry: string;
   legacyCountry: string | null;
@@ -263,7 +262,6 @@ function ChangeItem({ change }: { change: Change }) {
   }
 }
 
-/** Optional: a blank answer changes nothing, and the button sends the reply either way. */
 function PersonalEmailQuestion({
   value,
   onChange,
@@ -564,7 +562,6 @@ export function EnvelopeEditor({
   };
   const emailChanged =
     changed.has("email") || changed.has("personal_email") || changed.has("birthday");
-  // Absent means unchanged, so the field only renders for someone who can answer or edit it.
   const hasPersonalEmail = defaults.personal_email !== "";
 
   function show(next: Open, opener: HTMLElement | null) {
