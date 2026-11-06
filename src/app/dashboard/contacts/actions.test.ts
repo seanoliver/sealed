@@ -136,6 +136,17 @@ describe("owner edits of the partner's email", () => {
       ).resolves.toEqual({ error: expect.stringContaining(DUPLICATE_EMAIL) });
     });
 
+    it("refuses a duplicate on a new contact", async () => {
+      const form = await editForm({ email: "new@ce.test", personal_email: "CAL@home.test" });
+      form.delete("id");
+      form.delete("version");
+      await expect(createContact({}, form)).resolves.toMatchObject({
+        error: expect.stringContaining(DUPLICATE_EMAIL),
+      });
+      const rows = await dbAdmin.select().from(contacts).where(eq(contacts.email, "new@ce.test"));
+      expect(rows).toEqual([]);
+    });
+
     it("refuses a duplicate from the contact form too", async () => {
       await expect(
         updateContact({}, await editForm({ personal_email: "cal@ce.test" })),

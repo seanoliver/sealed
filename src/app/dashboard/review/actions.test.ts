@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts, submissions } from "@/lib/db/schema";
-import { approveMerge, reject } from "./actions";
+import { approveMerge, approveNew, reject } from "./actions";
 
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -86,6 +86,20 @@ describe("review actions", () => {
     await expect(approveMerge({}, form(S))).resolves.toEqual({});
     const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
     expect(row.personalEmail).toBeNull();
+  });
+
+  it("ignores a personal email when adding a permalink submission as a new contact", async () => {
+    await dbAdmin.execute(sql`
+      insert into public.submissions (id, book_id, payload) values (${S}, ${B}, ${JSON.stringify({
+        first_name: "Jo",
+        last_name: "Fox",
+        email: "jo@rv.test",
+        personal_email: "x@attacker.test",
+        partner_personal_email: "y@attacker.test",
+      })}::jsonb)`);
+    await expect(approveNew({}, form(S))).resolves.toEqual({});
+    const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.email, "jo@rv.test"));
+    expect(row).toMatchObject({ personalEmail: null, partnerPersonalEmail: null });
   });
 
   it("ignores a personal email in a stored permalink payload", async () => {
