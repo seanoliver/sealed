@@ -217,7 +217,7 @@ test("adds a contact via the form", async () => {
   await page.locator("#email").fill("ada@e2e.test");
   await page.locator("#city").fill("London");
   await page.getByRole("button", { name: "Add contact" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(/\/dashboard\?added=/);
   await expect(
     page
       .getByRole("table", { name: "Contacts" })
