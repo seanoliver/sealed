@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recipientPrefill, type TokenData } from "./token-data";
+import { personalEmailPrompt, recipientPrefill, type TokenData } from "./token-data";
 
 const data = (enabled: TokenData["enabled_fields"]): TokenData => ({
   contact: {
@@ -12,6 +12,8 @@ const data = (enabled: TokenData["enabled_fields"]): TokenData => ({
     partner_last_name: "Partner",
     kids: [{ first: "Hidden", last: "Kid" }],
     email: "ana@example.test",
+    personal_email: null,
+    email_kind: null,
     birthday: "1990-04-02",
     address_line1: "1 Main St",
     address_line2: null,
@@ -52,5 +54,28 @@ describe("recipientPrefill", () => {
       postal_code: "97214",
       country_code: "US",
     });
+  });
+});
+
+describe("personalEmailPrompt", () => {
+  const base = data({ partner_name: true, kids_names: true, birthday: true }).contact;
+  const prompt = (contact: Partial<typeof base>) =>
+    personalEmailPrompt({ contact: { ...base, ...contact } });
+
+  it("asks about a work address", () => {
+    expect(prompt({ email: "ana@acme.co" })).toBe("ana@acme.co");
+  });
+
+  it("stays quiet for a consumer address", () => {
+    expect(prompt({ email: "ana@gmail.com" })).toBeNull();
+  });
+
+  it("stays quiet once a personal email is on file", () => {
+    expect(prompt({ email: "ana@acme.co", personal_email: "ana@gmail.com" })).toBeNull();
+  });
+
+  it("follows the owner's override", () => {
+    expect(prompt({ email: "ana@acme.co", email_kind: "personal" })).toBeNull();
+    expect(prompt({ email: "ana@gmail.com", email_kind: "work" })).toBe("ana@gmail.com");
   });
 });

@@ -1,6 +1,7 @@
 import {
   pgTable, uuid, text, jsonb, timestamp, date, customType,
 } from "drizzle-orm/pg-core";
+import type { EmailKind } from "../email-kind";
 import type { Kid } from "../names";
 import type { Recipient } from "../recipients";
 import type { AgentScope } from "../agent/scopes";
@@ -48,6 +49,10 @@ export const contacts = pgTable("contacts", {
   kids: jsonb("kids").$type<Kid[]>(),
   email: citext("email"),
   partnerEmail: citext("partner_email"),
+  personalEmail: citext("personal_email"),
+  partnerPersonalEmail: citext("partner_personal_email"),
+  emailKind: text("email_kind").$type<EmailKind>(),
+  partnerEmailKind: text("partner_email_kind").$type<EmailKind>(),
   birthday: date("birthday"),
   addressLine1: text("address_line1"),
   addressLine2: text("address_line2"),
