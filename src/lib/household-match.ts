@@ -112,6 +112,10 @@ export function orderedPair(first: string, second: string): ContactPair {
 
 const pairKey = ({ a, b }: ContactPair) => `${a}:${b}`;
 
+/** Pairs grow with the square of contacts sharing a first word, so both are bounded. */
+export const MAX_PAIRS = 500;
+export const MAX_SHARED_FIRST = 300;
+
 export function detectDuplicates(
   contacts: readonly (MatchableNames & { id: string })[],
   { dismissed = [] }: { dismissed?: readonly ContactPair[] } = {},
@@ -121,14 +125,18 @@ export function detectDuplicates(
   const sharingFirst = new Map<string, string[]>();
   for (const [id, people] of households) {
     for (const first of new Set(people.map((person) => person.first))) {
-      sharingFirst.set(first, [...(sharingFirst.get(first) ?? []), id]);
+      const ids = sharingFirst.get(first);
+      if (ids) ids.push(id);
+      else sharingFirst.set(first, [id]);
     }
   }
 
   const pairs = new Map<string, DuplicatePair>();
-  for (const ids of sharingFirst.values()) {
+  search: for (const ids of sharingFirst.values()) {
+    if (ids.length > MAX_SHARED_FIRST) continue;
     for (let i = 0; i < ids.length; i += 1) {
       for (let j = i + 1; j < ids.length; j += 1) {
+        if (pairs.size >= MAX_PAIRS) break search;
         const pair = orderedPair(ids[i], ids[j]);
         const key = pairKey(pair);
         if (pairs.has(key) || skipped.has(key)) continue;

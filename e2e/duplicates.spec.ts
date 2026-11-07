@@ -166,6 +166,7 @@ test("an invite reply matched by name reaches only the owner, and keeps the stor
   await shot("invite-match");
   await page.getByRole("link", { name: "Compare" }).click();
   await expect(page.getByText("Any email in this reply is ignored.")).toBeVisible();
+  await expect(page.getByText("someone-else@dup.test")).toHaveCount(0);
   await shot("invite-compare");
   await page.getByRole("button", { name: "Apply update" }).click();
   await expect(page.getByText("Matched by name only")).toHaveCount(0);

@@ -23,7 +23,7 @@ import {
 } from "@/lib/validation/submission";
 import { countryName } from "@/lib/address";
 import { birthday } from "@/lib/history";
-import { matchInBook, parseBook, sameSlots, type ParsedBook } from "@/lib/household-match";
+import { MAX_PAIRS, matchInBook, parseBook, sameSlots, type ParsedBook } from "@/lib/household-match";
 import { householdLine, pickStoredNames } from "@/lib/names";
 import { NameWithReading } from "@/components/name-with-reading";
 import { contactReadings, readingsForContact } from "@/lib/pinyin";
@@ -308,7 +308,7 @@ export default async function ReviewPage({
       {duplicates.length > 0 ? (
         <section aria-labelledby="duplicates-heading" className="mt-6">
           <h2 id="duplicates-heading" className={sectionHeadingClasses}>
-            Detected duplicates · {pairs.length}
+            Detected duplicates · {pairs.length >= MAX_PAIRS ? `${MAX_PAIRS}+` : pairs.length}
           </h2>
           <ol className="mt-3 flex flex-col gap-4">
             {duplicates.map(({ key, ...pair }) => (

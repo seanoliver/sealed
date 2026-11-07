@@ -218,6 +218,20 @@ describe("agent read tools", () => {
       }
     });
 
+    it("names a swapped couple as the same people", async () => {
+      const swapped = "20000000-0000-4000-8000-0000000a90f1";
+      await dbAdmin.execute(sql`
+        insert into public.contacts (id, book_id, full_name, partner_name) values
+          (${swapped}, ${B}, 'Ben Reyes', 'Ana Reyes')`);
+      try {
+        const { items } = await findDuplicates(claims, findDuplicatesInput.parse({}));
+        const group = items.find((item) => ids(item.contacts).includes(swapped));
+        expect(group?.reasons).toContain("same people by name");
+      } finally {
+        await dbAdmin.execute(sql`delete from public.contacts where id = ${swapped}`);
+      }
+    });
+
     it("normalizes street spelling", () => {
       expect(normalizeStreet("12 Main Street.")).toBe(normalizeStreet("12  main st"));
       expect(normalizeStreet("4 Rue Élysée")).toBe("4 rue elysee");

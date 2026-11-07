@@ -64,10 +64,16 @@ export async function listBookNames(claims: SessionClaims) {
   return (await bookNames(claims)).names;
 }
 
-export async function listDetectedDuplicates(claims: SessionClaims) {
+/** One detection run per request, shared by the layout's count and the page. */
+const detectedPairs = cache(async (claims: SessionClaims) => {
   const { names, dismissed } = await bookNames(claims);
+  return { names, pairs: detectDuplicates(names, { dismissed }) };
+});
+
+export async function listDetectedDuplicates(claims: SessionClaims) {
+  const { names, pairs } = await detectedPairs(claims);
   const byId = new Map(names.map((row) => [row.id, row]));
-  return detectDuplicates(names, { dismissed }).flatMap(({ a, b, match }) => {
+  return pairs.flatMap(({ a, b, match }) => {
     const first = byId.get(a);
     const second = byId.get(b);
     return first && second ? [{ first, second, match }] : [];
@@ -75,8 +81,7 @@ export async function listDetectedDuplicates(claims: SessionClaims) {
 }
 
 export async function countDetectedDuplicates(claims: SessionClaims): Promise<number> {
-  const { names, dismissed } = await bookNames(claims);
-  return detectDuplicates(names, { dismissed }).length;
+  return (await detectedPairs(claims)).pairs.length;
 }
 
 export async function loadDuplicateReview(

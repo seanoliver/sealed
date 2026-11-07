@@ -3,6 +3,8 @@ import {
   compareHouseholds,
   duplicateRows,
   detectDuplicates,
+  MAX_PAIRS,
+  MAX_SHARED_FIRST,
   matchInBook,
   parseBook,
   sameSlots,
@@ -146,6 +148,24 @@ describe("detectDuplicates", () => {
     expect(detectDuplicates([book[1], book[0]])).toEqual([{ a: "a", b: "b", match: "same_people" }]);
   });
 });
+
+describe("detectDuplicates at scale", () => {
+  it("stops at the pair cap when many contacts hold the same people", () => {
+    const book = Array.from({ length: 200 }, (_, i) => ({ id: `id${String(i).padStart(4, "0")}`, ...legacy("Ana Ruiz") }));
+    expect(findCount(book)).toBe(MAX_PAIRS);
+  });
+
+  it("skips a first word shared by too many contacts to compare", () => {
+    const book = Array.from({ length: MAX_SHARED_FIRST + 1 }, (_, i) => ({
+      id: `id${String(i).padStart(4, "0")}`,
+      ...legacy(`Mr Person${i}`),
+    }));
+    book.push({ id: "zz", ...legacy("Mr Person0") });
+    expect(findCount(book)).toBe(0);
+  });
+});
+
+const findCount = (book: Parameters<typeof detectDuplicates>[0]) => detectDuplicates(book).length;
 
 describe("matchInBook", () => {
   it("finds the contacts a new household matches, strongest first", () => {

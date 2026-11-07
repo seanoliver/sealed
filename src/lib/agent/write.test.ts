@@ -698,6 +698,18 @@ describe("agent write tools", () => {
       });
     });
 
+    it("names the existing contact whichever side of the pair it sorts on", async () => {
+      const low = "00000000-0000-4000-8000-0000000d70a1";
+      const high = "ffffffff-0000-4000-8000-0000000d70a1";
+      await dbAdmin.execute(sql`
+        insert into public.contacts (id, book_id, full_name) values
+          (${low}, ${B}, 'Sortlow Person'), (${high}, ${B}, 'Sorthigh Person')`);
+      const first = await createAsReader({ first_name: "Sortlow", last_name: "Person" });
+      const second = await createAsReader({ first_name: "Sorthigh", last_name: "Person" });
+      expect(first).toMatchObject({ detected_duplicates: [{ id: low, name: "Sortlow Person" }] });
+      expect(second).toMatchObject({ detected_duplicates: [{ id: high, name: "Sorthigh Person" }] });
+    });
+
     it("still reports a saved contact when the check fails", async () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       vi.mocked(listDetectedDuplicates).mockRejectedValueOnce(new Error("down"));

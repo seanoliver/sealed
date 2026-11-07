@@ -8,6 +8,7 @@ import {
   submissionDisplaySchema,
   submittedPeople,
   type EnabledFields,
+  payloadNames,
 } from "./submission";
 
 const allEnabled: EnabledFields = {
@@ -336,5 +337,32 @@ describe("country text from before codes", () => {
     expect(parseSubmissionPayload({ full_name: "Ada", country_code: "XX" }, allEnabled)).toEqual({
       success: false,
     });
+  });
+});
+
+describe("payloadNames", () => {
+  const enabled = { partner_name: true, kids_names: true, birthday: true };
+
+  it("reads no names from a payload without one", () => {
+    expect(payloadNames({ city: "Bend" }, enabled)).toBeNull();
+  });
+
+  it("reads the person, and the partner when there is one", () => {
+    expect(payloadNames({ first_name: "Theo", last_name: "Marsh" }, enabled)).toMatchObject({
+      fullName: "Theo Marsh",
+      partnerName: null,
+    });
+    expect(
+      payloadNames(
+        { first_name: "Theo", last_name: "Marsh", partner_first_name: "Nina", partner_last_name: "Marsh" },
+        enabled,
+      ),
+    ).toMatchObject({ fullName: "Theo Marsh", partnerName: "Nina Marsh", partnerFirstName: "Nina" });
+  });
+
+  it("drops a partner the book does not collect", () => {
+    expect(
+      payloadNames({ full_name: "Theo Marsh", partner_name: "Nina Marsh" }, { ...enabled, partner_name: false }),
+    ).toMatchObject({ partnerName: null });
   });
 });
