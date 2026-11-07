@@ -214,6 +214,32 @@ export function mergeNames(existing: ContactRow | null, names: NamePatch): House
   return draftToValues(draft);
 }
 
+const PERSON_EMAILS = [
+  ["email", "personal_email"],
+  ["partner_email", "partner_personal_email"],
+] as const;
+
+export type PersonalEmailField = (typeof PERSON_EMAILS)[number][1];
+
+/**
+ * Clearing an email is how an owner retires someone, and it does nothing to
+ * invites while a personal address stays saved, so that needs saying out loud.
+ */
+export function invitesStillGoTo(
+  before: Snapshot,
+  after: Snapshot,
+  { confirmed = [] }: { confirmed?: readonly PersonalEmailField[] } = {},
+): string | undefined {
+  for (const [email, personal] of PERSON_EMAILS) {
+    const address = after[personal];
+    if (before[email] !== null && after[email] === null && typeof address === "string") {
+      if (confirmed.includes(personal)) continue;
+      return `Invites would still go to ${address}. Clear that personal email too, or confirm on the contact form.`;
+    }
+  }
+  return undefined;
+}
+
 export type PatchPlan =
   | { kind: "invalid"; error: string }
   | { kind: "ok"; row: Partial<Row>; before: Snapshot; after: Snapshot; diff?: ContactDiff };
@@ -240,6 +266,8 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
   };
   const before = rowToSnapshot(existing);
   const after = rowToSnapshot({ ...existing, ...row });
+  const stillGoes = invitesStillGoTo(before, after);
+  if (stillGoes) return { kind: "invalid", error: stillGoes };
   return { kind: "ok", row, before, after, diff: changedFields(before, after) };
 }
 

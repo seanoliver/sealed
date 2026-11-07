@@ -136,6 +136,40 @@ describe("owner edits of the partner's email", () => {
       ).resolves.toEqual({ error: expect.stringContaining(DUPLICATE_EMAIL) });
     });
 
+    describe("clearing an email while a personal address stays", () => {
+      beforeEach(async () => {
+        await dbAdmin.update(contacts).set({ personalEmail: "ana@home.test" }).where(eq(contacts.id, C));
+      });
+
+      it("refuses, naming the address", async () => {
+        await expect(patchContact(C, { values: { email: "" } })).resolves.toEqual({
+          error: expect.stringContaining("Invites would still go to ana@home.test"),
+        });
+        await expect(updateContact({}, await editForm({ email: "" }))).resolves.toMatchObject({
+          error: expect.stringContaining("Invites would still go to ana@home.test"),
+        });
+        expect((await stored()).email).toBe("ana@ce.test");
+      });
+
+      it("saves once the owner confirms on the form", async () => {
+        await expect(
+          updateContact({}, await editForm({ email: "", keep_personal_email: "on" })),
+        ).resolves.toMatchObject({ saved: true });
+        expect(await stored()).toMatchObject({ email: null, personalEmail: "ana@home.test" });
+      });
+
+      it("saves when both are cleared", async () => {
+        await expect(
+          patchContact(C, { values: { email: "", personal_email: "" } }),
+        ).resolves.toEqual({});
+        expect(await stored()).toMatchObject({ email: null, personalEmail: null });
+      });
+
+      it("says nothing when the email is only changed", async () => {
+        await expect(patchContact(C, { values: { email: "ana.new@ce.test" } })).resolves.toEqual({});
+      });
+    });
+
     it("refuses a duplicate on a new contact", async () => {
       const form = await editForm({ email: "new@ce.test", personal_email: "CAL@home.test" });
       form.delete("id");

@@ -210,4 +210,17 @@ test("the owner overrides the check and adds a personal email", async ({ browser
   await ownerPage.goto("/dashboard");
   await expect(ownerPage.getByText("lena.ortiz@gmail.com · was lena@lenaortiz.com")).toBeVisible();
   await shot(ownerPage, "08-owner-list");
+
+  await ownerPage.goto(`/dashboard/contacts/${contactId}`);
+  await ownerPage.locator("#email").fill("");
+  await ownerPage.getByRole("button", { name: "Save changes" }).click();
+  await expect(ownerPage.getByText("Invites would still go to lena.ortiz@gmail.com")).toBeVisible();
+  await shot(ownerPage, "09-owner-still-goes");
+  await ownerPage.getByRole("checkbox", { name: /Keep sending invites to lena\.ortiz@gmail\.com/ }).check();
+  await ownerPage.getByRole("button", { name: "Save changes" }).click();
+  await expect(ownerPage.getByText("Saved.", { exact: true })).toBeVisible();
+  expect(await getEmailColumns(contactId)).toMatchObject({
+    email: null,
+    personal_email: "lena.ortiz@gmail.com",
+  });
 });

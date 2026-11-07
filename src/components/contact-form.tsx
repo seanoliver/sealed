@@ -93,17 +93,26 @@ type PersonEmailProps = {
   };
   labels: { email: string; personal: string };
   values: ContactFormValues;
+  stored: ContactFormValues;
   emailHint?: string;
   emailError?: string;
 };
 
-function PersonEmailFields({ fields, labels, values, emailHint, emailError }: PersonEmailProps) {
+function PersonEmailFields({
+  fields,
+  labels,
+  values,
+  stored,
+  emailHint,
+  emailError,
+}: PersonEmailProps) {
   const [email, setEmail] = useState(values[fields.email]);
   const [personal, setPersonal] = useState(values[fields.personal]);
   const [kind, setKind] = useState(values[fields.kind] as EmailKind | "");
   const looksWork = isWorkEmail(email);
   const asks = isWorkEmail(email, { kind: kind === "" ? null : kind });
   const showAsk = email.trim() !== "" && personal.trim() === "";
+  const emptied = stored[fields.email] !== "" && email.trim() === "" && personal.trim() !== "";
   return (
     <>
       <Field
@@ -138,6 +147,21 @@ function PersonEmailFields({ fields, labels, values, emailHint, emailError }: Pe
               {looksWork
                 ? "This looks like a work address. Untick it if it's the person's own domain."
                 : "This looks like a personal address, so the invite page won't ask."}
+            </span>
+          </span>
+        </label>
+      ) : null}
+      {emptied ? (
+        <label className="flex items-start gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            name={`keep_${fields.personal}`}
+            className="mt-0.5 size-4 accent-primary"
+          />
+          <span className="flex flex-col gap-0.5">
+            Keep sending invites to {personal.trim()}
+            <span className="text-xs text-muted-foreground">
+              Clearing this email doesn&apos;t stop invites. To stop them, clear the personal email too.
             </span>
           </span>
         </label>
@@ -216,6 +240,7 @@ export function ContactForm({
           fields={{ email: "email", personal: "personal_email", kind: "email_kind" }}
           labels={{ email: "Email", personal: "Personal email" }}
           values={v}
+          stored={defaults}
         />
         <PersonEmailFields
           fields={{
@@ -225,6 +250,7 @@ export function ContactForm({
           }}
           labels={{ email: "Partner email", personal: "Partner's personal email" }}
           values={v}
+          stored={defaults}
           emailHint="Optional. The partner gets their own update link."
           emailError={state.fieldErrors?.partner_email}
         />
