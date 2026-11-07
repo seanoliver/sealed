@@ -116,27 +116,40 @@ const pairKey = ({ a, b }: ContactPair) => `${a}:${b}`;
 export const MAX_PAIRS = 500;
 export const MAX_SHARED_FIRST = 300;
 
+/** Strongest pairs first, at most MAX_PAIRS of them. */
 export function detectDuplicates(
   contacts: readonly (MatchableNames & { id: string })[],
   { dismissed = [] }: { dismissed?: readonly ContactPair[] } = {},
 ): DuplicatePair[] {
   const skipped = new Set(dismissed.map(pairKey));
   const households = new Map(contacts.map((contact) => [contact.id, peopleIn(contact)]));
-  const sharingFirst = new Map<string, string[]>();
-  for (const [id, people] of households) {
-    for (const first of new Set(people.map((person) => person.first))) {
-      const ids = sharingFirst.get(first);
-      if (ids) ids.push(id);
-      else sharingFirst.set(first, [id]);
+  const group = (key: (person: Person) => string, ids: Iterable<string>) => {
+    const groups = new Map<string, string[]>();
+    for (const id of ids) {
+      for (const k of new Set((households.get(id) ?? []).map(key))) {
+        const members = groups.get(k);
+        if (members) members.push(id);
+        else groups.set(k, [id]);
+      }
     }
-  }
+    return [...groups.values()];
+  };
+  // A crowded first word ("mr") is compared by whole name instead, which keeps exact repeats.
+  const buckets = group((person) => person.first, households.keys()).flatMap((ids) =>
+    ids.length > MAX_SHARED_FIRST
+      ? group((person) => `${person.first}|${person.rest}`, ids).map((exact) =>
+          exact.slice(0, MAX_SHARED_FIRST),
+        )
+      : [ids],
+  );
+  // Small groups first, so a crowded name can't use up the budget before them.
+  buckets.sort((x, y) => x.length - y.length);
 
   const pairs = new Map<string, DuplicatePair>();
-  search: for (const ids of sharingFirst.values()) {
-    if (ids.length > MAX_SHARED_FIRST) continue;
+  search: for (const ids of buckets) {
     for (let i = 0; i < ids.length; i += 1) {
       for (let j = i + 1; j < ids.length; j += 1) {
-        if (pairs.size >= MAX_PAIRS) break search;
+        if (pairs.size >= MAX_PAIRS * 4) break search;
         const pair = orderedPair(ids[i], ids[j]);
         const key = pairKey(pair);
         if (pairs.has(key) || skipped.has(key)) continue;
@@ -147,7 +160,8 @@ export function detectDuplicates(
   }
   return [...pairs.values()]
     .sort((x, y) => pairKey(x).localeCompare(pairKey(y)))
-    .sort(strongestFirst);
+    .sort(strongestFirst)
+    .slice(0, MAX_PAIRS);
 }
 
 export function duplicateRows(

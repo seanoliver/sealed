@@ -6,7 +6,9 @@ import { withRls, type RlsTx } from "@/lib/db";
 import { books, contactDuplicateDismissals, contacts } from "@/lib/db/schema";
 import {
   detectDuplicates,
+  matchInBook,
   orderedPair,
+  parseBook,
   type ContactPair,
   type HouseholdMatch,
 } from "@/lib/household-match";
@@ -64,7 +66,7 @@ export async function listBookNames(claims: SessionClaims) {
   return (await bookNames(claims)).names;
 }
 
-/** One detection run per request, shared by the layout's count and the page. */
+/** One detection run per request, shared by the layout's count and each page. */
 const detectedPairs = cache(async (claims: SessionClaims) => {
   const { names, dismissed } = await bookNames(claims);
   return { names, pairs: detectDuplicates(names, { dismissed }) };
@@ -80,6 +82,17 @@ export async function listDetectedDuplicates(claims: SessionClaims) {
   });
 }
 
+/** The strongest undismissed match for one contact, checked against the whole book. */
+export async function findDuplicateOf(claims: SessionClaims, id: string) {
+  const { names, dismissed } = await bookNames(claims);
+  const self = names.find((row) => row.id === id);
+  if (!self) return undefined;
+  const skip = new Set(dismissed.flatMap(({ a, b }) => (a === id ? [b] : b === id ? [a] : [])));
+  const others = names.filter((row) => row.id !== id && !skip.has(row.id));
+  const [best] = matchInBook(self, parseBook(others));
+  return best && others.find((row) => row.id === best.id);
+}
+
 export async function countDetectedDuplicates(claims: SessionClaims): Promise<number> {
   return (await detectedPairs(claims)).pairs.length;
 }
@@ -87,21 +100,22 @@ export async function countDetectedDuplicates(claims: SessionClaims): Promise<nu
 export async function loadDuplicateReview(
   claims: SessionClaims,
 ): Promise<{ pairs: DetectedDuplicate[]; contacts: Contact[] }> {
-  return withRls(claims, async (tx) => {
-    const book = await ownBook(tx, claims.sub);
-    if (!book) return { pairs: [], contacts: [] };
-    const [rows, dismissed] = await Promise.all([
-      tx.select().from(contacts).where(eq(contacts.bookId, book.id)),
-      dismissedPairs(tx, book.id),
-    ]);
-    const byId = new Map(rows.map((row) => [row.id, row]));
-    const pairs = detectDuplicates(rows, { dismissed }).flatMap(({ a, b, match }) => {
+  const [{ pairs }, rows] = await Promise.all([
+    detectedPairs(claims),
+    withRls(claims, async (tx) => {
+      const book = await ownBook(tx, claims.sub);
+      return book ? tx.select().from(contacts).where(eq(contacts.bookId, book.id)) : [];
+    }),
+  ]);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return {
+    pairs: pairs.flatMap(({ a, b, match }) => {
       const first = byId.get(a);
       const second = byId.get(b);
       return first && second ? [{ first, second, match }] : [];
-    });
-    return { pairs, contacts: rows };
-  });
+    }),
+    contacts: rows,
+  };
 }
 
 export type DismissResult = { ok: true } | { ok: false; error: string };

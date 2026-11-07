@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { logDbError } from "@/lib/log";
 import { householdLine, pickStoredNames } from "@/lib/names";
-import { listDetectedDuplicates } from "@/lib/queries/duplicates";
+import { matchInBook, parseBook } from "@/lib/household-match";
+import { listBookNames } from "@/lib/queries/duplicates";
 import {
   createContactAs,
   DETAIL_FIELDS,
@@ -180,15 +181,20 @@ export async function createContact(
   // Names and ids here are a read: a write-only token must not get them.
   if (!ctx.canRead) return created;
   // The contact is saved: a failed check must not read as a failed create and invite a retry.
-  const pairs = await listDetectedDuplicates(ctx.claims).catch((err: unknown) => {
+  const names = await listBookNames(ctx.claims).catch((err: unknown) => {
     logDbError("[dd] [createContact] duplicate check failed", err);
     return null;
   });
+  const self = names?.find((row) => row.id === created.id);
+  const others = names?.filter((row) => row.id !== created.id) ?? [];
+  const byId = new Map(others.map((row) => [row.id, row]));
   const detected_duplicates =
-    pairs?.flatMap(({ first, second, match }) => {
-      const other = first.id === created.id ? second : second.id === created.id ? first : null;
-      return other ? [{ id: other.id, name: householdLine(pickStoredNames(other)), match }] : [];
-    }) ?? null;
+    names && self
+      ? matchInBook(self, parseBook(others)).flatMap(({ id, match }) => {
+          const other = byId.get(id);
+          return other ? [{ id, name: householdLine(pickStoredNames(other)), match }] : [];
+        })
+      : null;
   return { ...created, detected_duplicates };
 }
 

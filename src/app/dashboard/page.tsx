@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
-import { listDetectedDuplicates } from "@/lib/queries/duplicates";
+import { findDuplicateOf, listDetectedDuplicates } from "@/lib/queries/duplicates";
 import { listPendingReplies } from "@/lib/queries/submissions";
 import { toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
 import { householdLine, pickStoredNames } from "@/lib/names";
@@ -38,11 +38,8 @@ export default async function DashboardPage({
     listPendingReplies(claims),
     listDetectedDuplicates(claims),
   ]);
-  const addedDuplicate = duplicates.find(
-    ({ first, second }) => first.id === added || second.id === added,
-  );
-  const duplicateOfAdded =
-    addedDuplicate && (addedDuplicate.first.id === added ? addedDuplicate.second : addedDuplicate.first);
+  // Checked directly, not from the capped list, so a full book still warns.
+  const duplicateOfAdded = typeof added === "string" ? await findDuplicateOf(claims, added) : undefined;
 
   const answers = new Map<string, PendingAnswer>();
   const answerPeople = new Map<string, SubmittedPerson[]>();

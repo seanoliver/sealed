@@ -19,7 +19,7 @@ import {
 } from "./requests";
 import { AgentScopeError } from "./scopes";
 import { mintAgentToken, revokeAgentToken } from "./tokens";
-import { listDetectedDuplicates } from "@/lib/queries/duplicates";
+import { listBookNames } from "@/lib/queries/duplicates";
 import {
   agentActor,
   createContact,
@@ -32,7 +32,7 @@ import {
 
 vi.mock("@/lib/queries/duplicates", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/queries/duplicates")>();
-  return { ...actual, listDetectedDuplicates: vi.fn(actual.listDetectedDuplicates) };
+  return { ...actual, listBookNames: vi.fn(actual.listBookNames) };
 });
 
 const U = "00000000-0000-4000-8000-0000000d7001";
@@ -710,9 +710,22 @@ describe("agent write tools", () => {
       expect(second).toMatchObject({ detected_duplicates: [{ id: high, name: "Sorthigh Person" }] });
     });
 
+    it("finds a new contact's match even when the book has more pairs than the cap", async () => {
+      await dbAdmin.execute(sql`
+        insert into public.contacts (book_id, full_name)
+        select ${B}, 'Capfill Person' from generate_series(1, 40)`);
+      try {
+        const made = await createAsReader({ first_name: "Capcheck", last_name: "Person" });
+        const again = await createAsReader({ first_name: "Capcheck", last_name: "Person" });
+        expect(again).toMatchObject({ detected_duplicates: [{ id: made.id, match: "same_people" }] });
+      } finally {
+        await dbAdmin.execute(sql`delete from public.contacts where book_id = ${B} and full_name = 'Capfill Person'`);
+      }
+    });
+
     it("still reports a saved contact when the check fails", async () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
-      vi.mocked(listDetectedDuplicates).mockRejectedValueOnce(new Error("down"));
+      vi.mocked(listBookNames).mockRejectedValueOnce(new Error("down"));
       const made = await createAsReader({ first_name: "Duplicate", last_name: "Checkthree" });
       expect(made).toMatchObject({ id: expect.any(String), detected_duplicates: null });
     });

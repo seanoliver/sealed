@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { dbAdmin } from "@/lib/db/admin";
-import { countDetectedDuplicates, dismissDuplicateAs, listDetectedDuplicates } from "./duplicates";
+import { countDetectedDuplicates, dismissDuplicateAs, findDuplicateOf, listDetectedDuplicates } from "./duplicates";
 
 const U = "00000000-0000-4000-8000-0000000dd101";
 const OTHER = "00000000-0000-4000-8000-0000000dd102";
@@ -46,6 +46,12 @@ describe("detected duplicates", () => {
     await expect(countDetectedDuplicates({ sub: U })).resolves.toBe(1);
     await dismissDuplicateAs({ sub: U }, THEO, NINA);
     await expect(countDetectedDuplicates({ sub: U })).resolves.toBe(0);
+  });
+
+  it("finds one contact's match directly, and not after a dismissal", async () => {
+    await expect(findDuplicateOf({ sub: U }, THEO)).resolves.toMatchObject({ id: NINA });
+    await dismissDuplicateAs({ sub: U }, THEO, NINA);
+    await expect(findDuplicateOf({ sub: U }, THEO)).resolves.toBeUndefined();
   });
 
   it("treats dismissing twice as done", async () => {

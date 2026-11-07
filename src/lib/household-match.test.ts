@@ -155,13 +155,28 @@ describe("detectDuplicates at scale", () => {
     expect(findCount(book)).toBe(MAX_PAIRS);
   });
 
-  it("skips a first word shared by too many contacts to compare", () => {
+  it("still finds an exact repeat inside a crowded first word", () => {
     const book = Array.from({ length: MAX_SHARED_FIRST + 1 }, (_, i) => ({
       id: `id${String(i).padStart(4, "0")}`,
       ...legacy(`Mr Person${i}`),
     }));
     book.push({ id: "zz", ...legacy("Mr Person0") });
-    expect(findCount(book)).toBe(0);
+    expect(detectDuplicates(book)).toEqual([{ a: "id0000", b: "zz", match: "same_people" }]);
+  });
+
+  it("keeps the strongest pairs when it has to cap", () => {
+    const shared = Array.from({ length: 20 }, (_, i) => ({ id: `s${String(i).padStart(3, "0")}`, ...legacy("Ana", "Ben") }));
+    const strong = [
+      { id: "zz1", ...legacy("Theo Marsh", "Nina Marsh") },
+      { id: "zz2", ...legacy("Nina Marsh", "Theo Marsh") },
+    ];
+    const solo = Array.from({ length: 40 }, (_, i) => ({ id: `a${String(i).padStart(3, "0")}`, ...legacy(`Ana Solo${i}`) }));
+    const pairs = detectDuplicates([...solo, ...shared, ...strong]);
+    expect(pairs.length).toBe(MAX_PAIRS);
+    expect(pairs).toContainEqual({ a: "zz1", b: "zz2", match: "same_people" });
+    // 190 pairs among the 20 couples, plus the Marsh pair: all ahead of the weaker ones.
+    expect(pairs.slice(0, 191).every((pair) => pair.match === "same_people")).toBe(true);
+    expect(pairs.slice(191).every((pair) => pair.match === "shares_person")).toBe(true);
   });
 });
 
