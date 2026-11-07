@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   insertAgentEvent,
+  personalEmailConflict,
   planPatch,
   updatedAtText,
   DUPLICATE_EMAIL,
@@ -240,7 +241,12 @@ export async function approveRequest(
           .from(contacts)
           .where(eq(contacts.id, item.id))
           .for("update");
-        const current = existing && { email: existing.email, partner_email: existing.partnerEmail };
+        const current = existing && {
+          email: existing.email,
+          partner_email: existing.partnerEmail,
+          personal_email: existing.personalEmail,
+          partner_personal_email: existing.partnerPersonalEmail,
+        };
         const moved = Object.entries(item.changes).some(
           ([field, [before]]) => current?.[field as keyof typeof current] !== before,
         );
@@ -251,6 +257,12 @@ export async function approveRequest(
         const plan = planPatch(existing, { values });
         if (plan.kind === "invalid") throw new Refusal(plan.error);
         if (plan.diff) {
+          const conflict = await personalEmailConflict(tx, {
+            bookId: existing.bookId,
+            contactId: item.id,
+            after: plan.diff.after,
+          });
+          if (conflict) throw new Refusal(conflict);
           await tx.update(contacts).set(plan.row).where(eq(contacts.id, item.id));
           await insertAgentEvent(tx, {
             contactId: item.id,

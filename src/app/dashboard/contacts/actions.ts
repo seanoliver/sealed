@@ -41,6 +41,8 @@ import {
   rowToSnapshot,
   storedNames,
   updatedAtText,
+  invitesStillGoTo,
+  personalEmailConflict,
 } from "./write";
 
 export type ContactFormState = {
@@ -86,8 +88,14 @@ function detailsErrorState(
     : { error: details.error };
 }
 
+const PERSONAL_EMAIL_FIELDS = ["personal_email", "partner_personal_email"] as const;
+
 const KEPT_WHEN_ABSENT = {
   partner_email: "partnerEmail",
+  personal_email: "personalEmail",
+  partner_personal_email: "partnerPersonalEmail",
+  email_kind: "emailKind",
+  partner_email_kind: "partnerEmailKind",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
   district: "district",
@@ -224,7 +232,25 @@ export async function updateContact(
         row = inputToRow(parsed.details, parsed.household);
       }
       row = { ...row, legacyCountry: legacyCountryAfter(existing, row.countryCode ?? null) };
-      if (changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }))) {
+      const after = rowToSnapshot({ ...existing, ...row });
+      const stillGoes = invitesStillGoTo(rowToSnapshot(existing), after, {
+        confirmed: PERSONAL_EMAIL_FIELDS.filter((field) => formData.has(`keep_${field}`)),
+      });
+      if (stillGoes) {
+        invalid = { error: stillGoes, ...echo };
+        return existing;
+      }
+      const diff = changedFields(rowToSnapshot(existing), after);
+      if (diff) {
+        const conflict = await personalEmailConflict(tx, {
+          bookId: book.id,
+          contactId: id,
+          after: diff.after,
+        });
+        if (conflict) {
+          invalid = { error: conflict, ...echo };
+          return existing;
+        }
         await tx
           .update(contacts)
           .set(row)

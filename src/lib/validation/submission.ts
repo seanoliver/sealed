@@ -52,6 +52,15 @@ export function withCountryCode(payload: unknown): unknown {
   return code === null ? { ...rest, country } : { ...rest, country_code: code };
 }
 
+/** Payloads are hostile: a stored permalink row must never decide where invites go. */
+export function withoutInviteAddresses(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
+  const rest: Record<string, unknown> = { ...payload };
+  delete rest.personal_email;
+  delete rest.partner_personal_email;
+  return rest;
+}
+
 export function parseSubmissionPayload(
   raw: unknown,
   enabled: EnabledFields,
@@ -73,6 +82,19 @@ export function parsePartnerEmail(
   const parsed = partnerEmailSchema.safeParse(payload);
   return parsed.success
     ? { success: true, data: parsed.data.partner_email }
+    : { success: false };
+}
+
+const partnerPersonalEmailSchema = z.object({
+  partner_personal_email: contactSchema.shape.partner_personal_email,
+});
+
+export function parsePartnerPersonalEmail(
+  payload: unknown,
+): { success: true; data: string | undefined } | { success: false } {
+  const parsed = partnerPersonalEmailSchema.safeParse(payload);
+  return parsed.success
+    ? { success: true, data: parsed.data.partner_personal_email }
     : { success: false };
 }
 
@@ -116,6 +138,8 @@ export const submissionDisplaySchema = z.object({
   kids_names: displayValue,
   email: displayValue,
   partner_email: displayValue,
+  personal_email: displayValue,
+  partner_personal_email: displayValue,
   birthday: displayValue,
   address_line1: displayValue,
   address_line2: displayValue,
@@ -133,7 +157,7 @@ export const submissionDisplaySchema = z.object({
 });
 
 export type SubmissionDisplayFields = Partial<
-  Record<TokenUpdateField | "partner_email", string>
+  Record<TokenUpdateField | "partner_email" | "partner_personal_email", string>
 > & {
   country?: string;
 };
@@ -253,6 +277,8 @@ export const CLEARABLE_FIELDS = [
   "birthday",
   "partner_name",
   "kids_names",
+  "personal_email",
+  "partner_personal_email",
 ] as const;
 
 export type ClearableField = (typeof CLEARABLE_FIELDS)[number];

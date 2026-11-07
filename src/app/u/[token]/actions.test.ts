@@ -167,6 +167,43 @@ describe("submitTokenUpdate", () => {
     expect(await stored()).toMatchObject({ city: "Oslo" });
   });
 
+  it("stores a personal email without touching the email or the link", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    await expect(
+      saveTokenUpdate(token, {}, prefilledForm(contact, { personal_email: "ana@gmail.com" })),
+    ).resolves.toEqual({ saved: true });
+    expect(await stored()).toMatchObject({ email: "old@tu.test", personalEmail: "ana@gmail.com" });
+    await expect(
+      saveTokenUpdate(token, {}, prefilledForm(contact, { city: "Bergen" })),
+    ).resolves.toEqual({ saved: true });
+  });
+
+  it("points a badly formed personal email at its own field and saves nothing", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const result = await saveTokenUpdate(
+      token,
+      {},
+      prefilledForm(contact, { city: "Bergen", personal_email: "ana@gmail" }),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.fieldErrors?.personal_email).toMatch(/name@example\.com/);
+    expect(await stored()).toMatchObject({ city: "Paris", personalEmail: null });
+  });
+
+  it("refuses the address the invite came to as the personal email, ignoring case", async () => {
+    const contact = { fullName: "Ana Reyes" };
+    const token = await seed(contact);
+    const result = await saveTokenUpdate(
+      token,
+      {},
+      prefilledForm(contact, { personal_email: "OLD@tu.test" }),
+    );
+    expect(result.fieldErrors?.personal_email).toMatch(/address this came to/);
+    expect(await stored()).toMatchObject({ personalEmail: null });
+  });
+
   it("asks a page opened before the person's own later save to reload instead of overwriting it", async () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);

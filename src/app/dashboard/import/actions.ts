@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { sql } from "drizzle-orm";
+import { and, eq, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { withRls } from "@/lib/db";
@@ -42,10 +42,27 @@ export async function importContacts(rows: unknown): Promise<ImportResult> {
         .limit(1);
       if (!book) return undefined;
 
+      const personal = await tx
+        .select({ personalEmail: contacts.personalEmail, partner: contacts.partnerPersonalEmail })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.bookId, book.id),
+            or(isNotNull(contacts.personalEmail), isNotNull(contacts.partnerPersonalEmail)),
+          ),
+        );
+      const known = new Set(
+        personal
+          .flatMap((row) => [row.personalEmail, row.partner])
+          .flatMap((address) => (address ? [address.toLowerCase()] : [])),
+      );
+      const fresh = valid.filter((d) => !d.email || !known.has(d.email.toLowerCase()));
+      if (fresh.length === 0) return { imported: 0, skipped: parsed.data.length };
+
       const inserted = await tx
         .insert(contacts)
         .values(
-          valid.map((d) => ({
+          fresh.map((d) => ({
             bookId: book.id,
             ...contactInputToRow(withoutSamePartnerEmail(d)),
             legacyCountry: d.country_code ? null : (d.country ?? null),

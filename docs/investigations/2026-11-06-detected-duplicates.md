@@ -84,5 +84,5 @@ whether it matched anything?
 - `src/lib/household-match.ts`, `src/lib/duplicate-merge.ts`
 - `src/app/dashboard/review/duplicates.ts`, `src/app/dashboard/review/page.tsx`
 - `src/lib/queries/duplicates.ts`, `src/lib/agent/read.ts` (`findDuplicates`)
-- `supabase/migrations/20261106120000_duplicate_dismissals.sql`
+- `supabase/migrations/20261107120000_duplicate_dismissals.sql`
 - `supabase/tests/database/12_duplicate_dismissals.sql`

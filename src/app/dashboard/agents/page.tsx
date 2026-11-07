@@ -34,7 +34,12 @@ function toFeedItem(entry: FeedEntry, now: number): FeedItem {
   return { kind: "deleted", key: entry.previewId, tokenName, when, names: entry.names };
 }
 
-const EMAIL_LABELS = { email: "Email", partner_email: "Partner email" } as const;
+const EMAIL_LABELS = {
+  email: "Email",
+  partner_email: "Partner email",
+  personal_email: "Personal email",
+  partner_personal_email: "Partner personal email",
+} as const;
 
 async function loadView(claims: SessionClaims) {
   await pruneFinishedRequests(claims.sub);

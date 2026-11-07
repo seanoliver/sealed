@@ -4,6 +4,8 @@ import { type StoredNames } from "@/lib/names";
 export type MergeContact = StoredNames & {
   email: string | null;
   partnerEmail: string | null;
+  personalEmail: string | null;
+  partnerPersonalEmail: string | null;
   birthday: string | null;
   addressLine1: string | null;
   addressLine2: string | null;
@@ -55,7 +57,16 @@ const addressOf = (contact: MergeContact) =>
     .filter((part) => part !== null)
     .join(", ");
 
-const EMAIL_COLUMN = { primary: "email", partner: "partnerEmail" } as const;
+const EMAIL_COLUMNS = {
+  primary: { work: "email", personal: "personalEmail" },
+  partner: { work: "partnerEmail", personal: "partnerPersonalEmail" },
+} as const;
+const EMAIL_LABELS = {
+  email: "Email",
+  partnerEmail: "Partner email",
+  personalEmail: "Personal email",
+  partnerPersonalEmail: "Partner personal email",
+} as const;
 const SLOTS = ["primary", "partner"] as const;
 
 /** Fills what the kept contact lacks. It never replaces a value or changes a name. */
@@ -90,18 +101,26 @@ export function planDuplicateMerge(keep: MergeContact, remove: MergeContact): Me
   // A value moves only with the person who owns it, so it can never land on someone else.
   const owner = (slot: Slot): Slot | null => target[slot] ?? (slot === gained ? "partner" : null);
 
-  for (const slot of SLOTS) {
-    const value = slot === "primary" ? remove.email : remove.partnerEmail;
-    if (value === null) continue;
-    const held = [keep.email, keep.partnerEmail, set.email ?? null, set.partnerEmail ?? null];
-    if (held.some((email) => sameEmail(email, value))) continue;
-    const to = owner(slot);
-    const column = to && EMAIL_COLUMN[to];
-    if (column && keep[column] === null && set[column] === undefined) {
-      set[column] = value;
-      carried.push({ label: column === "email" ? "Email" : "Partner email", value });
-    } else {
-      notKept.push({ label: "Email", value });
+  for (const kind of ["work", "personal"] as const) {
+    for (const slot of SLOTS) {
+      const value = remove[EMAIL_COLUMNS[slot][kind]];
+      if (value === null) continue;
+      const held = [
+        keep.email,
+        keep.partnerEmail,
+        keep.personalEmail,
+        keep.partnerPersonalEmail,
+        ...Object.keys(EMAIL_LABELS).map((key) => set[key as keyof typeof EMAIL_LABELS] ?? null),
+      ];
+      if (held.some((email) => sameEmail(email, value))) continue;
+      const to = owner(slot);
+      const column = to && EMAIL_COLUMNS[to][kind];
+      if (column && keep[column] === null && set[column] === undefined) {
+        set[column] = value;
+        carried.push({ label: EMAIL_LABELS[column], value });
+      } else {
+        notKept.push({ label: EMAIL_LABELS[EMAIL_COLUMNS.primary[kind]], value });
+      }
     }
   }
 

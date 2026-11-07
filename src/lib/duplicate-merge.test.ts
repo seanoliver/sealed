@@ -12,6 +12,8 @@ const blank: MergeContact = {
   kids: null,
   email: null,
   partnerEmail: null,
+  personalEmail: null,
+  partnerPersonalEmail: null,
   birthday: null,
   addressLine1: null,
   addressLine2: null,
@@ -177,5 +179,31 @@ describe("planDuplicateMerge", () => {
       contact({ fullName: "Theo Marsh", partnerName: "Priya Nair" }),
     );
     expect(plan.notKept).toEqual([{ label: "Person", value: "Priya Nair" }]);
+  });
+
+  it("moves a personal email with its owner, like any other email", () => {
+    const plan = planDuplicateMerge(
+      contact(theo),
+      contact({ ...nina, personalEmail: "nina@home.test", partnerPersonalEmail: "theo@home.test" }),
+    );
+    expect(plan.set).toEqual({ personalEmail: "theo@home.test", partnerPersonalEmail: "nina@home.test" });
+  });
+
+  it("lists a personal email it cannot place", () => {
+    const plan = planDuplicateMerge(
+      contact({ ...theo, personalEmail: "theo-1@home.test" }),
+      contact({ ...theo, personalEmail: "theo-2@home.test" }),
+    );
+    expect(plan.set).toEqual({});
+    expect(plan.notKept).toEqual([{ label: "Personal email", value: "theo-2@home.test" }]);
+  });
+
+  it("skips a personal email the kept contact holds in any slot", () => {
+    const plan = planDuplicateMerge(
+      contact({ ...theo, email: "same@home.test" }),
+      contact({ ...theo, personalEmail: "same@home.test" }),
+    );
+    expect(plan.set).toEqual({});
+    expect(plan.notKept).toEqual([]);
   });
 });

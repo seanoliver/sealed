@@ -9,7 +9,9 @@ import { logDbError } from "@/lib/log";
 import {
   clearedFields,
   parsePartnerEmail,
+  parsePartnerPersonalEmail,
   parseSubmissionPayload,
+  withoutInviteAddresses,
   withoutBlanks,
 } from "@/lib/validation/submission";
 import { recordContactEvent } from "../contacts/write";
@@ -104,7 +106,12 @@ export async function approveNewAs(
       if (!loaded) return { kind: "not_found" };
       const { book, submission } = loaded;
 
-      const parsed = parseSubmissionPayload(submission.payload, book.enabledFields);
+      const parsed = parseSubmissionPayload(
+        submission.source === "token"
+          ? submission.payload
+          : withoutInviteAddresses(submission.payload),
+        book.enabledFields,
+      );
       if (!parsed.success) return { kind: "invalid" };
       const gated = parsed.data;
 
@@ -173,10 +180,15 @@ export async function approveMergeAs(
       const byName = submission.matchedContactId === null;
 
       const token = submission.source === "token";
-      const payload = token ? withoutBlanks(submission.payload) : submission.payload;
+      const payload = token
+        ? withoutBlanks(submission.payload)
+        : withoutInviteAddresses(submission.payload);
       const parsed = parseSubmissionPayload(payload, book.enabledFields);
       const partnerEmail = parsePartnerEmail(payload);
-      if (!parsed.success || !partnerEmail.success) return { kind: "invalid" };
+      const partnerPersonalEmail = parsePartnerPersonalEmail(payload);
+      if (!parsed.success || !partnerEmail.success || !partnerPersonalEmail.success) {
+        return { kind: "invalid" };
+      }
       const gated = parsed.data;
 
       // Scoped by id AND bookId (RLS backstops the same predicate). The FK
@@ -202,6 +214,7 @@ export async function approveMergeAs(
       // and collect their next address request.
       const set = mergeUpdate(before, byName ? { ...gated, email: undefined } : gated, {
         partnerEmail: byName ? undefined : partnerEmail.data,
+        partnerPersonalEmail: byName ? undefined : partnerPersonalEmail.data,
         clear: token ? clearedFields(submission.payload, book.enabledFields) : [],
       });
 

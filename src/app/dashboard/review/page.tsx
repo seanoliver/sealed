@@ -15,6 +15,7 @@ import {
   CLEARABLE_FIELDS,
   DISPLAY_VALUE_MAX,
   parseSubmissionForDisplay,
+  withoutInviteAddresses,
   submittedPeople,
   type EnabledFields,
   type SubmissionDisplayFields,
@@ -42,12 +43,16 @@ import { ReviewCardActions } from "./review-card-actions";
  * never take down the page.
  */
 
-type ReviewField = TokenUpdateField | "partner_email";
+type ReviewField = TokenUpdateField | "partner_email" | "partner_personal_email";
 
 
 const REMOVED = "(removed)";
 
-const MERGE_FIELDS: readonly ReviewField[] = [...TOKEN_UPDATE_FIELDS, "partner_email"];
+const MERGE_FIELDS: readonly ReviewField[] = [
+  ...TOKEN_UPDATE_FIELDS,
+  "partner_email",
+  "partner_personal_email",
+];
 
 const FIELD_LABELS: Record<ReviewField, string> = {
   full_name: "Full name",
@@ -55,6 +60,8 @@ const FIELD_LABELS: Record<ReviewField, string> = {
   kids_names: "Kids",
   email: "Email",
   partner_email: "Partner email",
+  personal_email: "Personal email",
+  partner_personal_email: "Partner personal email",
   birthday: "Birthday",
   address_line1: "Address line 1",
   address_line2: "Address line 2",
@@ -182,7 +189,10 @@ async function toCardModel(
   };
 
   // Lenient parse + gate; null ⇒ non-object payload ⇒ reject-only card.
-  const display = parseSubmissionForDisplay(submission.payload, enabled);
+  const display = parseSubmissionForDisplay(
+    submission.source === "token" ? submission.payload : withoutInviteAddresses(submission.payload),
+    enabled,
+  );
   if (display === null) return { ...base, kind: "malformed" };
   const parsed = forDisplay(display);
 
@@ -225,6 +235,8 @@ async function toCardModel(
     kids_names: matchedContact.kidsNames,
     email: matchedContact.email,
     partner_email: matchedContact.partnerEmail,
+    personal_email: matchedContact.personalEmail,
+    partner_personal_email: matchedContact.partnerPersonalEmail,
     birthday: matchedContact.birthday,
     address_line1: matchedContact.addressLine1,
     address_line2: matchedContact.addressLine2,

@@ -5,6 +5,7 @@ import { withRls } from "@/lib/db";
 import { agentTokens, books, contactEvents, contacts, emailSends } from "@/lib/db/schema";
 import type { FailureReason } from "@/lib/email/resend";
 import { combineSends, type RecipientSend } from "@/lib/contacts-sheet";
+import { type EmailKind } from "@/lib/email-kind";
 import { type StoredNames } from "@/lib/names";
 import { readingsForContact } from "@/lib/pinyin";
 import { isPinyinQuery, matchesReading } from "@/lib/readings";
@@ -28,6 +29,10 @@ export interface ContactListRow extends StoredNames {
   id: string;
   email: string | null;
   partnerEmail: string | null;
+  personalEmail: string | null;
+  partnerPersonalEmail: string | null;
+  emailKind: EmailKind | null;
+  partnerEmailKind: EmailKind | null;
   birthday: string | null;
   addressLine1: string | null;
   addressLine2: string | null;
@@ -131,6 +136,10 @@ export async function listContacts(
         kids: contacts.kids,
         email: contacts.email,
         partnerEmail: contacts.partnerEmail,
+        personalEmail: contacts.personalEmail,
+        partnerPersonalEmail: contacts.partnerPersonalEmail,
+        emailKind: contacts.emailKind,
+        partnerEmailKind: contacts.partnerEmailKind,
         birthday: contacts.birthday,
         addressLine1: contacts.addressLine1,
         addressLine2: contacts.addressLine2,

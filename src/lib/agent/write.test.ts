@@ -222,6 +222,26 @@ describe("agent write tools", () => {
       expect(await approveRequest(ctx.claims, requestId)).toEqual({ ok: false, error: REQUEST_FINISHED });
     });
 
+    it("applies an approved personal email", async () => {
+      const result = await update({ id: ANA, fields: { personal_email: "ana@home.test" } });
+      const requestId = result.pending_email_change!.request_id;
+      expect((await stored(ANA)).personalEmail).toBeNull();
+      expect(await approveRequest(ctx.claims, requestId)).toMatchObject({ ok: true });
+      expect(await stored(ANA)).toMatchObject({ email: "ana@wt.test", personalEmail: "ana@home.test" });
+    });
+
+    it("refuses a personal email another contact took while it waited", async () => {
+      const result = await update({ id: ANA, fields: { personal_email: "shared@home.test" } });
+      await dbAdmin
+        .update(contacts)
+        .set({ personalEmail: "shared@home.test" })
+        .where(eq(contacts.id, CARA));
+      expect(await approveRequest(ctx.claims, result.pending_email_change!.request_id)).toMatchObject({
+        ok: false,
+      });
+      expect((await stored(ANA)).personalEmail).toBeNull();
+    });
+
     it("keeps the email when the owner discards the change", async () => {
       const requestId = await requestEmail(ANA, "ana.new@wt.test");
       expect(await discardRequest(ctx.claims, requestId)).toEqual({ ok: true, value: {} });
