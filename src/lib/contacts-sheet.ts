@@ -52,6 +52,7 @@ export interface SheetRow {
   values: SheetValues;
   legacyCountry: string | null;
   place: string;
+  hasAddress: boolean;
   status: StatusKey;
   failureReason: FailureReason | null;
   people: PersonSend[];
@@ -108,6 +109,7 @@ export function toSheetRow(
     values,
     legacyCountry: row.countryCode ? null : (row.legacyCountry?.trim() || null),
     place: addressSummary(rowAddress(row), { senderCountry }),
+    hasAddress: envelopeLines(rowAddress(row), { senderCountry }) !== null,
     status,
     failureReason,
     people:
@@ -291,6 +293,63 @@ export function sheetInviteAddresses(values: SheetEmails) {
 
 export function emailCount(values: SheetEmails): number {
   return Object.keys(sheetInviteAddresses(values)).length;
+}
+
+export type SendRoute = "email" | "manual";
+
+export type ContactFilter =
+  | "attention"
+  | "to_email"
+  | "no_email"
+  | "no_address"
+  | `${SendRoute}:${StatusKey}`;
+
+type FilterableRow = Pick<SheetRow, "needsAttention" | "status" | "hasAddress" | "values">;
+
+function sendRoute(row: Pick<SheetRow, "values">): SendRoute {
+  return emailCount(row.values) > 0 ? "email" : "manual";
+}
+
+export function matchesFilter(row: FilterableRow, filter: ContactFilter): boolean {
+  if (filter === "attention") return row.needsAttention;
+  if (filter === "to_email") return sendRoute(row) === "email";
+  if (filter === "no_email") return sendRoute(row) === "manual";
+  if (filter === "no_address") return !row.hasAddress;
+  return filter === `${sendRoute(row)}:${row.status}`;
+}
+
+export type StatusCount = { status: StatusKey; count: number };
+export type RouteCounts = { total: number; statuses: StatusCount[] };
+
+export type BookCounts = {
+  contacts: number;
+  withAddress: number;
+  toEmail: RouteCounts;
+  askManually: RouteCounts & { withAddress: number };
+};
+
+function routeCounts(rows: Pick<SheetRow, "status">[]): RouteCounts {
+  const counts = new Map<StatusKey, number>();
+  for (const { status } of rows) counts.set(status, (counts.get(status) ?? 0) + 1);
+  return {
+    total: rows.length,
+    statuses: [...counts]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]),
+  };
+}
+
+export function bookCounts(rows: Pick<SheetRow, "status" | "hasAddress" | "values">[]): BookCounts {
+  const manual = rows.filter((row) => sendRoute(row) === "manual");
+  return {
+    contacts: rows.length,
+    withAddress: rows.filter((row) => row.hasAddress).length,
+    toEmail: routeCounts(rows.filter((row) => sendRoute(row) === "email")),
+    askManually: {
+      ...routeCounts(manual),
+      withAddress: manual.filter((row) => row.hasAddress).length,
+    },
+  };
 }
 
 function personName(names: StoredNames, recipient: Recipient): string | null {
