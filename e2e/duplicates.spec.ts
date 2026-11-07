@@ -109,6 +109,11 @@ test("deleting one contact from its page clears the pair", async () => {
 });
 
 test("adding a contact saves it and points at the match", async () => {
+  // Enough identical rows to fill the pair cap, so the banner can't lean on the capped list.
+  // Low ids sort first, so these fill the capped list ahead of the new contact's pair.
+  await db`insert into public.contacts (id, book_id, full_name)
+    select ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, ${bookId}, 'Capfill Person'
+    from generate_series(1, 40) g`;
   await page.goto("/dashboard/contacts/new");
   await page.getByLabel("First name").first().fill("Ana");
   await page.getByLabel("Last name").first().fill("Ruiz");
@@ -121,6 +126,7 @@ test("adding a contact saves it and points at the match", async () => {
   await page.getByRole("button", { name: /save|add contact/i }).click();
   await expect(page.getByRole("status").getByText("This may be the same people as Ana Ruiz.")).toBeVisible();
   await shot("manual-add");
+  await db`delete from public.contacts where book_id = ${bookId} and full_name = 'Capfill Person'`;
 });
 
 test("import asks what to do with rows already in the book", async () => {

@@ -178,6 +178,28 @@ describe("detectDuplicates at scale", () => {
     expect(pairs.slice(0, 191).every((pair) => pair.match === "same_people")).toBe(true);
     expect(pairs.slice(191).every((pair) => pair.match === "shares_person")).toBe(true);
   });
+
+  it("searches small groups before a crowded one can use up the budget", () => {
+    const crowded = Array.from({ length: 70 }, (_, i) => ({ id: `c${String(i).padStart(3, "0")}`, ...legacy("Ana", `Partner${i} Lee`) }));
+    const strong = [
+      { id: "zz1", ...legacy("Theo Marsh") },
+      { id: "zz2", ...legacy("Theo Marsh") },
+    ];
+    expect(detectDuplicates([...crowded, ...strong])).toContainEqual({ a: "zz1", b: "zz2", match: "same_people" });
+  });
+
+  it("looks past the first few hundred weak pairs for a strong one", () => {
+    const weak = Array.from({ length: 600 }, (_, i) => [
+      { id: `w${String(i).padStart(4, "0")}a`, ...legacy(`Name${i}`, `Left${i}`) },
+      { id: `w${String(i).padStart(4, "0")}b`, ...legacy(`Name${i}`, `Right${i}`) },
+    ]).flat();
+    const strong = [
+      { id: "zz1", ...legacy("Theo Marsh") },
+      { id: "zz2", ...legacy("Theo Marsh") },
+      { id: "zz3", ...legacy("Theo", "Nina") },
+    ];
+    expect(detectDuplicates([...weak, ...strong])).toContainEqual({ a: "zz1", b: "zz2", match: "same_people" });
+  });
 });
 
 const findCount = (book: Parameters<typeof detectDuplicates>[0]) => detectDuplicates(book).length;
