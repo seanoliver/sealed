@@ -169,8 +169,10 @@ describe("review actions", () => {
     it("ignores a compared contact on a token reply", async () => {
       await dbAdmin.execute(sql`
         insert into public.submissions (id, book_id, payload, source, recipient, saved_by)
-        values (${S}, ${B}, '{"city":"Bend"}'::jsonb, 'token', 'primary', 'partner')`);
+        values (${S}, ${B}, '{"full_name":"Satya Rao","city":"Bend"}'::jsonb, 'token', 'primary', 'partner')`);
       await expect(approveMerge({}, compare())).resolves.toMatchObject({ error: expect.any(String) });
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row.city).toBe("Seattle");
     });
   });
 });

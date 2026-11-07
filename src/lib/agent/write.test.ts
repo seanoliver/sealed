@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { type ServerContext } from "@modelcontextprotocol/server";
 import { dbAdmin } from "@/lib/db/admin";
@@ -19,6 +19,7 @@ import {
 } from "./requests";
 import { AgentScopeError } from "./scopes";
 import { mintAgentToken, revokeAgentToken } from "./tokens";
+import { listDetectedDuplicates } from "@/lib/queries/duplicates";
 import {
   agentActor,
   createContact,
@@ -28,6 +29,11 @@ import {
   updateContactInput,
   type AgentContext,
 } from "./write";
+
+vi.mock("@/lib/queries/duplicates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/queries/duplicates")>();
+  return { ...actual, listDetectedDuplicates: vi.fn(actual.listDetectedDuplicates) };
+});
 
 const U = "00000000-0000-4000-8000-0000000d7001";
 const OTHER = "00000000-0000-4000-8000-0000000d7002";
@@ -690,6 +696,13 @@ describe("agent write tools", () => {
       expect(again).toMatchObject({
         detected_duplicates: [{ id: made.id, name: "Duplicate Checkone", match: "same_people" }],
       });
+    });
+
+    it("still reports a saved contact when the check fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(listDetectedDuplicates).mockRejectedValueOnce(new Error("down"));
+      const made = await createAsReader({ first_name: "Duplicate", last_name: "Checkthree" });
+      expect(made).toMatchObject({ id: expect.any(String), detected_duplicates: null });
     });
 
     it("tells a write-only token nothing about other contacts", async () => {

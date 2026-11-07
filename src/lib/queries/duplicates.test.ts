@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { dbAdmin } from "@/lib/db/admin";
-import { dismissDuplicateAs, listDetectedDuplicates } from "./duplicates";
+import { countDetectedDuplicates, dismissDuplicateAs, listDetectedDuplicates } from "./duplicates";
 
 const U = "00000000-0000-4000-8000-0000000dd101";
 const OTHER = "00000000-0000-4000-8000-0000000dd102";
@@ -40,6 +40,12 @@ describe("detected duplicates", () => {
   it("stops listing a dismissed pair, whichever way round it was sent", async () => {
     await expect(dismissDuplicateAs({ sub: U }, NINA, THEO)).resolves.toEqual({ ok: true });
     await expect(listDetectedDuplicates({ sub: U })).resolves.toEqual([]);
+  });
+
+  it("leaves a dismissed pair out of the nav count", async () => {
+    await expect(countDetectedDuplicates({ sub: U })).resolves.toBe(1);
+    await dismissDuplicateAs({ sub: U }, THEO, NINA);
+    await expect(countDetectedDuplicates({ sub: U })).resolves.toBe(0);
   });
 
   it("treats dismissing twice as done", async () => {
