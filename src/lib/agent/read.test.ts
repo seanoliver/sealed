@@ -204,6 +204,20 @@ describe("agent read tools", () => {
       expect(byIds[[CARA, DEV].join()]).toEqual(["same email shared@rt.test"]);
     });
 
+    it("drops a name match the owner marked as not duplicates", async () => {
+      const [a, b] = [ANA, ANA_AGAIN].sort();
+      await dbAdmin.execute(sql`
+        insert into public.contact_duplicate_dismissals (book_id, contact_a, contact_b)
+        values (${B}, ${a}, ${b})`);
+      try {
+        const { items } = await findDuplicates(claims, findDuplicatesInput.parse({}));
+        const reasons = items.flatMap((group) => group.reasons);
+        expect(reasons).not.toContain("one person in common by name");
+      } finally {
+        await dbAdmin.execute(sql`delete from public.contact_duplicate_dismissals where book_id = ${B}`);
+      }
+    });
+
     it("normalizes street spelling", () => {
       expect(normalizeStreet("12 Main Street.")).toBe(normalizeStreet("12  main st"));
       expect(normalizeStreet("4 Rue Élysée")).toBe("4 rue elysee");

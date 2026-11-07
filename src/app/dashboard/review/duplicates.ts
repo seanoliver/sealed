@@ -82,7 +82,6 @@ export async function mergeDuplicateAs(claims: SessionClaims, input: MergeInput)
       if (waiting) return { kind: "refused", error: PENDING_REPLY };
 
       const { set } = planDuplicateMerge(keep, remove);
-      // Delete first: the kept contact may take this contact's email.
       await tx.delete(contacts).where(and(eq(contacts.id, removeId), eq(contacts.bookId, book.id)));
       const before = rowToSnapshot(keep);
       let after = before;

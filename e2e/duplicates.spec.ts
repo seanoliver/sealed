@@ -98,7 +98,8 @@ test("keeps one contact after showing what happens to the other", async () => {
     .getByRole("button", { name: "Keep this one" })
     .click();
   await expect(card.getByText("Nina & Theo Marsh will be deleted. You can't undo this.")).toBeVisible();
-  await expect(card.getByText("Partner email: nina@dup.test")).toBeVisible();
+  await expect(card.getByText("Lost with the deleted contact")).toBeVisible();
+  await expect(card.getByText("Email: nina@dup.test")).toBeVisible();
   await expect(card.getByText("Birthday: Jun 15, 1980")).toBeVisible();
   await shot("keep-confirm");
   await card.getByRole("button", { name: "Keep and delete the other" }).click();
@@ -106,7 +107,7 @@ test("keeps one contact after showing what happens to the other", async () => {
   const [kept] = await db`
     select partner_email, birthday::text from public.contacts
     where book_id = ${bookId} and email = 'theo@dup.test'`;
-  expect(kept).toEqual({ partner_email: "nina@dup.test", birthday: null });
+  expect(kept).toEqual({ partner_email: null, birthday: null });
 });
 
 test("Not duplicates removes the pair and keeps both contacts", async () => {

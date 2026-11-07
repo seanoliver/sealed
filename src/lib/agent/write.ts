@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { logDbError } from "@/lib/log";
 import { householdLine, pickStoredNames } from "@/lib/names";
 import { listDetectedDuplicates } from "@/lib/queries/duplicates";
 import {
@@ -20,7 +21,7 @@ import { countryCodeFor } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { validateHousehold } from "@/lib/contacts-sheet";
 
-export type AgentContext = { claims: SessionClaims; tokenId: string };
+export type AgentContext = { claims: SessionClaims; tokenId: string; canRead?: boolean };
 
 export const agentActor = (ctx: AgentContext): AgentActor => ({
   source: "agent",
@@ -175,13 +176,20 @@ export async function createContact(
     agentActor(ctx),
   );
   if (!result.ok) throw new ToolError(result.error);
+  const created = { id: result.value.id, event_id: result.value.eventId ?? null };
+  // Names and ids here are a read: a write-only token must not get them.
+  if (!ctx.canRead) return created;
   // The contact is saved: a failed check must not read as a failed create and invite a retry.
-  const pairs = await listDetectedDuplicates(ctx.claims).catch(() => []);
-  const detected_duplicates = pairs.flatMap(({ first, second, match }) => {
-    const other = first.id === result.value.id ? second : second.id === result.value.id ? first : null;
-    return other ? [{ id: other.id, name: householdLine(pickStoredNames(other)), match }] : [];
+  const pairs = await listDetectedDuplicates(ctx.claims).catch((err: unknown) => {
+    logDbError("[dd] [createContact] duplicate check failed", err);
+    return null;
   });
-  return { id: result.value.id, event_id: result.value.eventId ?? null, detected_duplicates };
+  const detected_duplicates =
+    pairs?.flatMap(({ first, second, match }) => {
+      const other = first.id === created.id ? second : second.id === created.id ? first : null;
+      return other ? [{ id: other.id, name: householdLine(pickStoredNames(other)), match }] : [];
+    }) ?? null;
+  return { ...created, detected_duplicates };
 }
 
 export const requestDeleteInput = z.object({

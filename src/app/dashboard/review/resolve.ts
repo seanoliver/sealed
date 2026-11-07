@@ -5,12 +5,14 @@ import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { books, contacts, submissions } from "@/lib/db/schema";
+import { sameSlots } from "@/lib/household-match";
 import { logDbError } from "@/lib/log";
 import {
   clearedFields,
   parsePartnerEmail,
   parsePartnerPersonalEmail,
   parseSubmissionPayload,
+  payloadNames,
   withoutInviteAddresses,
   withoutBlanks,
 } from "@/lib/validation/submission";
@@ -205,6 +207,10 @@ export async function approveMergeAs(
         .limit(1)
         .for("update");
       if (!existing) return { kind: "no_match" };
+      if (byName) {
+        const names = payloadNames(submission.payload, book.enabledFields);
+        if (!names || !sameSlots(existing, names)) return { kind: "no_match" };
+      }
 
       // Absent keys stay untouched and "" counts as absent: a permalink payload
       // can never clear a column (token replies can; see clearedFields).

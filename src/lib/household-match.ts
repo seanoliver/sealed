@@ -106,6 +106,8 @@ export function pairSlots(keep: MatchableNames, other: MatchableNames): SlotPair
     absent: { primary: false, partner: false },
     single: { primary: false, partner: false },
   };
+  const inSlot = (people: NamedPerson[], slot: Slot) =>
+    people.filter((person) => person.slot === slot);
   for (const slot of SLOTS) {
     const person = onlyIn(others, slot);
     pairing.single[slot] = person !== null;
@@ -114,12 +116,21 @@ export function pairSlots(keep: MatchableNames, other: MatchableNames): SlotPair
           const match = onlyIn(kept, keptSlot);
           return match !== null && samePerson(match, person);
         }) ?? null)
-      : null;
+      : inSlot(others, slot).length > 0 && compareSets(inSlot(kept, slot), inSlot(others, slot)) === "same_people"
+        ? slot
+        : null;
     pairing.absent[slot] = others
       .filter((candidate) => candidate.slot === slot)
       .some((candidate) => !kept.some((match) => samePerson(match, candidate)));
   }
   return pairing;
+}
+
+/** An update names the same contact only when its people sit in the same slots. */
+export function sameSlots(contact: MatchableNames, update: MatchableNames): boolean {
+  const { target, absent } = pairSlots(contact, update);
+  const hasPartner = update.partnerName !== null || update.partnerFirstName !== null;
+  return target.primary === "primary" && !absent.primary && (!hasPartner || target.partner === "partner");
 }
 
 export const householdSize = (names: MatchableNames) => peopleIn(names).length;

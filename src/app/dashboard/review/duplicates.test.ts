@@ -1,8 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { contactEvents, contacts } from "@/lib/db/schema";
+import { listDetectedDuplicates } from "@/lib/queries/duplicates";
 import { dismissDuplicate, keepDuplicate } from "./actions";
 import { mergeDuplicateAs } from "./duplicates";
 
@@ -53,18 +55,11 @@ describe("mergeDuplicateAs", () => {
     const kept = await stored(KEEP);
     expect(kept).toMatchObject({
       email: "theo@dd.test",
-      partnerEmail: "nina@dd.test",
+      partnerEmail: null,
       notes: "Allergic to cats",
       addressLine1: "1 Elm St",
     });
     await expect(stored(REMOVE)).resolves.toBeUndefined();
-  });
-
-  it("frees the deleted contact's email before the kept contact takes it", async () => {
-    await dbAdmin.execute(sql`update public.contacts set email = null where id = ${KEEP}`);
-    await dbAdmin.execute(sql`update public.contacts set partner_name = null, full_name = 'Theo Marsh' where id = ${REMOVE}`);
-    await expect(merge()).resolves.toEqual({ ok: true });
-    await expect(stored(KEEP)).resolves.toMatchObject({ email: "nina@dd.test" });
   });
 
   it("keeps a copy of the deleted contact on the kept contact's history", async () => {
@@ -151,6 +146,25 @@ describe("duplicate actions", () => {
     for (const [key, value] of Object.entries(fields)) data.set(key, value);
     return data;
   };
+  const seed = async () => {
+    vi.mocked(requireUser).mockResolvedValue(claims);
+    await dbAdmin.execute(sql`delete from public.books where id = ${B}`);
+    await dbAdmin.execute(sql`
+      insert into auth.users (id, email) values (${U}, 'dd-merge@test.dev') on conflict (id) do nothing`);
+    await dbAdmin.execute(sql`insert into public.books (id, owner_id, slug) values (${B}, ${U}, 'dd-merge')`);
+    await dbAdmin.execute(sql`
+      insert into public.contacts (id, book_id, full_name, partner_name, notes) values
+        (${KEEP}, ${B}, 'Theo Marsh', 'Nina Marsh', null),
+        (${REMOVE}, ${B}, 'Nina Marsh', 'Theo Marsh', 'From the other row')`);
+  };
+  const keepForm = async (fields: Record<string, string> = {}) =>
+    form({
+      keep_id: KEEP,
+      remove_id: REMOVE,
+      keep_version: await version(KEEP),
+      remove_version: await version(REMOVE),
+      ...fields,
+    });
 
   it("rejects a malformed id before touching the database", async () => {
     await expect(keepDuplicate({}, form({ keep_id: "x", remove_id: REMOVE }))).resolves.toMatchObject({
@@ -159,5 +173,31 @@ describe("duplicate actions", () => {
     await expect(dismissDuplicate({}, form({ first_id: "x", second_id: REMOVE }))).resolves.toMatchObject({
       error: expect.any(String),
     });
+  });
+
+  it("keeps the named contact, deletes the other, and refreshes Review", async () => {
+    await seed();
+    await expect(keepDuplicate({}, await keepForm())).resolves.toEqual({});
+    await expect(stored(REMOVE)).resolves.toBeUndefined();
+    await expect(stored(KEEP)).resolves.toMatchObject({ notes: "From the other row" });
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboard/review");
+  });
+
+  it("refuses a form opened before either contact changed", async () => {
+    await seed();
+    const stale = await keepForm();
+    await dbAdmin.execute(sql`update public.contacts set city = 'Bend' where id = ${KEEP}`);
+    await expect(keepDuplicate({}, stale)).resolves.toEqual({ error: expect.stringContaining("changed") });
+    await expect(stored(REMOVE)).resolves.toBeDefined();
+  });
+
+  it("marks a pair as not duplicates and leaves both contacts", async () => {
+    await seed();
+    await expect(
+      dismissDuplicate({}, form({ first_id: REMOVE, second_id: KEEP })),
+    ).resolves.toEqual({});
+    await expect(listDetectedDuplicates(claims)).resolves.toEqual([]);
+    await expect(stored(REMOVE)).resolves.toBeDefined();
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboard/review");
   });
 });

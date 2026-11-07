@@ -15,6 +15,7 @@ import {
   CLEARABLE_FIELDS,
   DISPLAY_VALUE_MAX,
   parseSubmissionForDisplay,
+  payloadNames,
   withoutInviteAddresses,
   submittedPeople,
   type EnabledFields,
@@ -23,7 +24,7 @@ import {
 import { countryName } from "@/lib/address";
 import { birthday } from "@/lib/history";
 import { planDuplicateMerge, type MergeLine } from "@/lib/duplicate-merge";
-import { matchInBook, type MatchableNames } from "@/lib/household-match";
+import { matchInBook, sameSlots } from "@/lib/household-match";
 import { householdLine, pickStoredNames } from "@/lib/names";
 import { NameWithReading } from "@/components/name-with-reading";
 import { contactReadings, readingsForContact } from "@/lib/pinyin";
@@ -93,7 +94,7 @@ const EMAIL_FIELDS: ReadonlySet<ReviewField> = new Set(["email", "partner_email"
 
 type CardModel = { id: string; submittedAtLabel: string; readings: Readings } & (
   | { kind: "malformed" }
-  | { kind: "new"; fields: FieldRow[]; nameMatch?: { name: string; address: string | null } }
+  | { kind: "new"; fields: FieldRow[]; nameMatch?: { name: string; address: string | null; comparable: boolean } }
   | {
       kind: "merge";
       contactName: string;
@@ -109,18 +110,7 @@ const addressLine = (contact: BookContact) =>
     .filter((part) => part !== null)
     .join(", ") || null;
 
-function payloadNames(payload: unknown, enabled: EnabledFields): MatchableNames | null {
-  const [person, partner] = submittedPeople(payload, enabled);
-  if (!person?.full) return null;
-  return {
-    fullName: person.full,
-    partnerName: partner?.full ?? null,
-    firstName: person.first,
-    lastName: person.last,
-    partnerFirstName: partner?.first ?? null,
-    partnerLastName: partner?.last ?? null,
-  };
-}
+const DUPLICATES_SHOWN = 50;
 
 const SEND_LABELS: Record<SendStatus, string> = {
   none: "Never",
@@ -207,7 +197,8 @@ async function toCardModel(
       : null;
   const [best] = names ? matchInBook(names, contacts) : [];
   const namedContact = best && contacts.find((contact) => contact.id === best.id);
-  const comparing = namedContact && compare === submission.id ? namedContact : undefined;
+  const comparable = namedContact && names ? sameSlots(namedContact, names) : false;
+  const comparing = comparable && compare === submission.id ? namedContact : undefined;
   const matchedContact = linkedContact ?? comparing ?? null;
   if (!matchedContact) {
     return {
@@ -217,6 +208,7 @@ async function toCardModel(
       nameMatch: namedContact && {
         name: householdLine(pickStoredNames(namedContact)),
         address: addressLine(namedContact),
+        comparable,
       },
       fields: present(TOKEN_UPDATE_FIELDS).map((field) => ({
         field,
@@ -309,7 +301,9 @@ export default async function ReviewPage({
     pending.map((item) => toCardModel(item, book.enabledFields, { contacts, compare })),
   );
   const sends = new Map(sendRows.map((row) => [row.id, row.sendStatus]));
-  const duplicates = await Promise.all(pairs.map((pair) => toDuplicateModel(pair, sends)));
+  const duplicates = await Promise.all(
+    pairs.slice(0, DUPLICATES_SHOWN).map((pair) => toDuplicateModel(pair, sends)),
+  );
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
@@ -324,13 +318,18 @@ export default async function ReviewPage({
       {duplicates.length > 0 ? (
         <section aria-labelledby="duplicates-heading" className="mt-6">
           <h2 id="duplicates-heading" className={sectionHeadingClasses}>
-            Detected duplicates · {duplicates.length}
+            Detected duplicates · {pairs.length}
           </h2>
           <ol className="mt-3 flex flex-col gap-4">
             {duplicates.map(({ key, ...pair }) => (
               <DuplicateCard key={key} {...pair} />
             ))}
           </ol>
+          {pairs.length > duplicates.length ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Showing the first {duplicates.length}. Resolve these to see the rest.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -368,6 +367,9 @@ export default async function ReviewPage({
                 <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   Possible match by name: <span className="font-medium">{card.nameMatch.name}</span>
                   {card.nameMatch.address ? `, ${card.nameMatch.address}` : ""}.
+                  {card.nameMatch.comparable
+                    ? null
+                    : " The names sit differently, so edit that contact by hand if this is them."}
                 </p>
               ) : null}
               {card.kind === "merge" && card.comparing ? (
@@ -461,7 +463,7 @@ export default async function ReviewPage({
               <ReviewCardActions
                 submissionId={card.id}
                 compareHref={
-                  card.kind === "new" && card.nameMatch
+                  card.kind === "new" && card.nameMatch?.comparable
                     ? `/dashboard/review?compare=${card.id}`
                     : undefined
                 }

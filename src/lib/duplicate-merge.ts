@@ -55,10 +55,7 @@ const addressOf = (contact: MergeContact) =>
     .filter((part) => part !== null)
     .join(", ");
 
-const EMAIL_COLUMNS = {
-  primary: { work: "email", personal: "personalEmail" },
-  partner: { work: "partnerEmail", personal: "partnerPersonalEmail" },
-} as const;
+const EMAIL_COLUMNS = ["email", "partnerEmail", "personalEmail", "partnerPersonalEmail"] as const;
 const EMAIL_LABELS = {
   email: "Email",
   partnerEmail: "Partner email",
@@ -94,29 +91,14 @@ export function planDuplicateMerge(keep: MergeContact, remove: MergeContact): Me
     if (absent[slot] && slot !== gained && name !== null) notKept.push({ label: "Person", value: name });
   }
 
-  // A value moves only with the person who owns it, so it can never land on someone else.
-  const owner = (slot: Slot): Slot | null => target[slot] ?? (slot === gained ? "partner" : null);
-
-  for (const kind of ["work", "personal"] as const) {
-    for (const slot of SLOTS) {
-      const value = remove[EMAIL_COLUMNS[slot][kind]];
-      if (value === null) continue;
-      const held = [
-        keep.email,
-        keep.partnerEmail,
-        keep.personalEmail,
-        keep.partnerPersonalEmail,
-        ...Object.keys(EMAIL_LABELS).map((key) => set[key as keyof typeof EMAIL_LABELS] ?? null),
-      ];
-      if (held.some((email) => sameEmail(email, value))) continue;
-      const to = owner(slot);
-      const column = to && EMAIL_COLUMNS[to][kind];
-      if (column && keep[column] === null && set[column] === undefined) {
-        set[column] = value;
-        carried.push({ label: EMAIL_LABELS[column], value });
-      } else {
-        notKept.push({ label: EMAIL_LABELS[EMAIL_COLUMNS.primary[kind]], value });
-      }
+  // Never fill an email here: one can come from a public invite reply, and an
+  // address on a contact receives that contact's link and home address.
+  for (const column of EMAIL_COLUMNS) {
+    const value = remove[column];
+    if (value === null) continue;
+    const held = EMAIL_COLUMNS.map((kept) => keep[kept]);
+    if (!held.some((email) => sameEmail(email, value))) {
+      notKept.push({ label: EMAIL_LABELS[column], value });
     }
   }
 

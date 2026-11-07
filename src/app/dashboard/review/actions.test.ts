@@ -136,10 +136,17 @@ describe("review actions", () => {
     const storedEmail = async () =>
       (await dbAdmin.select().from(contacts).where(eq(contacts.id, C)))[0].email;
 
+    it("refuses a partner replying alone, which would overwrite the other person", async () => {
+      await permalink({ full_name: "Mei Rao", city: "Bend" });
+      await expect(approveMerge({}, compare())).resolves.toMatchObject({ error: expect.any(String) });
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row).toMatchObject({ fullName: "Satya Rao", city: "Seattle" });
+    });
+
     it("updates the compared contact but never its stored email", async () => {
       const before = await storedEmail();
       expect(before).not.toBeNull();
-      await permalink({ full_name: "Someone", email: "attacker@ab.test", city: "Bend" });
+      await permalink({ full_name: "Satya Rao", email: "attacker@ab.test", city: "Bend" });
       await expect(approveMerge({}, compare())).resolves.toEqual({});
       const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
       expect(row.email).toBe(before);
@@ -148,7 +155,7 @@ describe("review actions", () => {
 
     it("never sets an email on a contact that has none", async () => {
       await dbAdmin.execute(sql`update public.contacts set email = null, partner_email = null where id = ${C}`);
-      await permalink({ full_name: "Someone", email: "attacker@ab.test", partner_email: "too@ab.test", city: "Bend" });
+      await permalink({ full_name: "Satya Rao", email: "attacker@ab.test", partner_email: "too@ab.test", city: "Bend" });
       await expect(approveMerge({}, compare())).resolves.toEqual({});
       const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
       expect(row).toMatchObject({ email: null, partnerEmail: null, city: "Bend" });

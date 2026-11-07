@@ -50,14 +50,15 @@ whether it matched anything?
   events cascade. `diff.merged_from` on the kept contact's history event is the
   only record left, so it is written in the merge's transaction, through the
   `contact_events_insert_merge` policy, not after commit like other owner events.
+- A merge never fills an email. An address can come from a public invite reply
+  or a link reply, and it would then receive that contact's link. Emails are
+  listed in `notKept` for the owner to add by hand.
 - Values follow people. `pairSlots` lines the two contacts up person by person.
-  An email or birthday whose owner has no slot on the kept contact is reported
-  in `notKept`, never placed. A birthday belongs to the contact's own person, so
-  a swapped pair's birthday is lost rather than moved.
+  A birthday belongs to the contact's own person, so a swapped pair's birthday
+  is lost rather than moved. Compare offers Apply only when `sameSlots` holds,
+  because `mergeUpdate` writes a reply's names into the slots it arrived in.
 - Marking a pair changes neither contact, so the version check cannot see it.
   The merge rechecks dismissals itself.
-- Delete before filling. The kept contact may take the deleted contact's email,
-  and `contacts_book_email_unique` would reject it the other way round.
 - Do not reuse `mergeUpdate` for a merge. It has no `notes`, and it overwrites
   rather than fills.
 - A pending reply on the deleted contact blocks the merge. Repointing it could

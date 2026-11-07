@@ -54,6 +54,8 @@ const eventsOf = (id: string) =>
   dbAdmin.select().from(contactEvents).where(eq(contactEvents.contactId, id));
 const update = (input: object) => updateContact(ctx, updateContactInput.parse(input));
 const create = (fields: object) => createContact(ctx, createContactInput.parse({ fields }));
+const createAsReader = (fields: object) =>
+  createContact({ ...ctx, canRead: true }, createContactInput.parse({ fields }));
 
 async function requestDeletion(ids: string[]) {
   const preview = await previewDeleteContacts(ctx, ids);
@@ -118,7 +120,8 @@ describe("agent write tools", () => {
         http: { authInfo: { token: "t", clientId: ctx.tokenId, scopes, extra: { claims: ctx.claims } } },
       }) as unknown as ServerContext;
     expect(() => agentContext(serverContext(["read"]), "write")).toThrow(AgentScopeError);
-    expect(agentContext(serverContext(["write"]), "write")).toEqual(ctx);
+    expect(agentContext(serverContext(["write"]), "write")).toEqual({ ...ctx, canRead: false });
+    expect(agentContext(serverContext(["read", "write"]), "write")).toEqual({ ...ctx, canRead: true });
   });
 
   describe("update_contact", () => {
@@ -678,5 +681,21 @@ describe("agent write tools", () => {
         after: { city: "X", country: "Y", email: null },
       }),
     ).toBe("Removed email; City A → X and 1 more");
+  });
+
+  describe("create_contact's duplicate check", () => {
+    it("names the contact a new one matches, for a token that can read", async () => {
+      const made = await createAsReader({ first_name: "Duplicate", last_name: "Checkone" });
+      const again = await createAsReader({ first_name: "duplicate", last_name: "CHECKONE" });
+      expect(again).toMatchObject({
+        detected_duplicates: [{ id: made.id, name: "Duplicate Checkone", match: "same_people" }],
+      });
+    });
+
+    it("tells a write-only token nothing about other contacts", async () => {
+      await create({ first_name: "Duplicate", last_name: "Checktwo" });
+      const again = await create({ first_name: "Duplicate", last_name: "Checktwo" });
+      expect(again).not.toHaveProperty("detected_duplicates");
+    });
   });
 });

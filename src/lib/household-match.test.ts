@@ -4,6 +4,7 @@ import {
   duplicateRows,
   detectDuplicates,
   matchInBook,
+  sameSlots,
   type MatchableNames,
 } from "./household-match";
 
@@ -164,5 +165,23 @@ describe("duplicateRows", () => {
     const book = [{ id: "x", ...legacy("Theo Marsh", "Nina Marsh") }];
     const rows = [legacy("Nina Marsh", "Theo Marsh"), legacy("Ana Ruiz"), legacy("ana ruiz"), legacy("Ben Park")];
     expect(duplicateRows(rows, book)).toEqual([0, 2]);
+  });
+});
+
+describe("sameSlots", () => {
+  const couple = legacy("Theo Marsh", "Nina Marsh");
+
+  it("accepts the same person, with or without their partner", () => {
+    expect(sameSlots(couple, legacy("Theo Marsh"))).toBe(true);
+    expect(sameSlots(couple, legacy("Theo Marsh", "Nina Marsh"))).toBe(true);
+  });
+
+  it("refuses a partner replying alone, or a swapped reply", () => {
+    expect(sameSlots(couple, legacy("Nina Marsh"))).toBe(false);
+    expect(sameSlots(couple, legacy("Nina Marsh", "Theo Marsh"))).toBe(false);
+  });
+
+  it("refuses a reply naming a different partner", () => {
+    expect(sameSlots(couple, legacy("Theo Marsh", "Mary Smith"))).toBe(false);
   });
 });

@@ -34,7 +34,7 @@ import {
   REQUEST_TTL_DAYS,
   requestDeleteContacts,
 } from "./requests";
-import { AgentScopeError, requireScope, type AgentScope } from "./scopes";
+import { AgentScopeError, hasScope, requireScope, type AgentScope } from "./scopes";
 import { verifyAgentToken } from "./tokens";
 import {
   agentActor,
@@ -94,7 +94,7 @@ export function agentContext(ctx: ServerContext, scope: AgentScope): AgentContex
   const claims = auth?.extra?.claims as SessionClaims | undefined;
   if (!auth || !claims?.sub) throw new ToolError("Not authenticated.");
   requireScope(auth.scopes, scope);
-  return { claims, tokenId: auth.clientId };
+  return { claims, tokenId: auth.clientId, canRead: hasScope(auth.scopes, "read") };
 }
 
 function json(value: unknown): CallToolResult {
