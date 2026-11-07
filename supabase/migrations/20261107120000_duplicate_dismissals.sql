@@ -34,19 +34,3 @@ create policy "contact_duplicate_dismissals_insert_own_book" on public.contact_d
                 where c.id = contact_b and c.book_id = contact_duplicate_dismissals.book_id));
 
 grant select, insert on public.contact_duplicate_dismissals to authenticated;
-
--- A merge's history must commit with its delete, so it cannot be written after commit.
-create policy "contact_events_insert_merge" on public.contact_events
-  for insert to authenticated
-  with check (
-    source = 'owner'
-    and recipient is null
-    and agent_token_id is null
-    and diff ? 'merged_from'
-    and exists (
-      select 1 from public.contacts c join public.books b on b.id = c.book_id
-      where c.id = contact_id
-        and (b.owner_id = (select auth.uid())
-             or exists (select 1 from public.book_members m
-                        where m.book_id = b.id and m.user_id = (select auth.uid()))))
-  );

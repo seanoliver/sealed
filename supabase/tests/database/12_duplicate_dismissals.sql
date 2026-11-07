@@ -59,7 +59,8 @@ select throws_ok(
 reset role;
 
 delete from public.contacts where id = '20000000-0000-0000-0000-00000000dd02';
-select is_empty('select 1 from public.contact_duplicate_dismissals',
+select is_empty($$ select 1 from public.contact_duplicate_dismissals
+                  where book_id = '10000000-0000-0000-0000-00000000dd01' $$,
   'deleting a contact removes its dismissals');
 
 select * from finish();

@@ -23,8 +23,7 @@ import {
 } from "@/lib/validation/submission";
 import { countryName } from "@/lib/address";
 import { birthday } from "@/lib/history";
-import { planDuplicateMerge, type MergeLine } from "@/lib/duplicate-merge";
-import { matchInBook, sameSlots } from "@/lib/household-match";
+import { matchInBook, parseBook, sameSlots, type ParsedBook } from "@/lib/household-match";
 import { householdLine, pickStoredNames } from "@/lib/names";
 import { NameWithReading } from "@/components/name-with-reading";
 import { contactReadings, readingsForContact } from "@/lib/pinyin";
@@ -123,26 +122,14 @@ const SEND_LABELS: Record<SendStatus, string> = {
   unconfirmed: "Unconfirmed",
 };
 
-const birthdayText = (value: string) => birthday(value, { year: true }) ?? value;
-
-const readableLines = (lines: readonly MergeLine[]) =>
-  lines.map((line) => (line.label === "Birthday" ? { ...line, value: birthdayText(line.value) } : line));
-
-function duplicateSide(
-  contact: BookContact & { version: string },
-  other: BookContact,
-  lastSent: SendStatus,
-): DuplicateSide {
-  const plan = planDuplicateMerge(contact, other);
+function duplicateSide(contact: BookContact, lastSent: SendStatus): DuplicateSide {
   return {
     id: contact.id,
-    version: contact.version,
     name: householdLine(pickStoredNames(contact)),
     address: addressLine(contact),
     email: contact.email,
-    birthday: contact.birthday && birthdayText(contact.birthday),
+    birthday: contact.birthday && (birthday(contact.birthday, { year: true }) ?? contact.birthday),
     lastSent: SEND_LABELS[lastSent],
-    plan: { carried: readableLines(plan.carried), notKept: readableLines(plan.notKept) },
   };
 }
 
@@ -153,8 +140,8 @@ async function toDuplicateModel(
   return {
     key: `${first.id}:${second.id}`,
     match,
-    first: duplicateSide(first, second, sends.get(first.id) ?? "none"),
-    second: duplicateSide(second, first, sends.get(second.id) ?? "none"),
+    first: duplicateSide(first, sends.get(first.id) ?? "none"),
+    second: duplicateSide(second, sends.get(second.id) ?? "none"),
     readings: { ...(await readingsForContact(first)), ...(await readingsForContact(second)) },
   };
 }
@@ -162,7 +149,7 @@ async function toDuplicateModel(
 async function toCardModel(
   { submission, matchedContact: linkedContact }: PendingSubmission,
   enabled: EnabledFields,
-  { contacts, compare }: { contacts: readonly BookContact[]; compare?: string },
+  { contacts, book, compare }: { contacts: readonly BookContact[]; book: ParsedBook; compare?: string },
 ): Promise<CardModel> {
   const base = {
     readings: {},
@@ -195,7 +182,7 @@ async function toCardModel(
     submission.source === "permalink" && !linkedContact
       ? payloadNames(submission.payload, enabled)
       : null;
-  const [best] = names ? matchInBook(names, contacts) : [];
+  const [best] = names ? matchInBook(names, book) : [];
   const namedContact = best && contacts.find((contact) => contact.id === best.id);
   const comparable = namedContact && names ? sameSlots(namedContact, names) : false;
   const comparing = comparable && compare === submission.id ? namedContact : undefined;
@@ -297,8 +284,11 @@ export default async function ReviewPage({
     loadDuplicateReview(claims),
     listContacts(claims),
   ]);
+  const parsedBook = parseBook(contacts);
   const cards = await Promise.all(
-    pending.map((item) => toCardModel(item, book.enabledFields, { contacts, compare })),
+    pending.map((item) =>
+      toCardModel(item, book.enabledFields, { contacts, book: parsedBook, compare }),
+    ),
   );
   const sends = new Map(sendRows.map((row) => [row.id, row.sendStatus]));
   const duplicates = await Promise.all(

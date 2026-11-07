@@ -49,15 +49,6 @@ describe("describeEvent", () => {
     });
   });
 
-  it("names the deleted contact on a merge, even when nothing else changed", () => {
-    expect(
-      describeEvent({
-        source: "owner",
-        diff: { before: {}, after: {}, merged_from: { full_name: "Nina Marsh" } },
-      }),
-    ).toEqual({ kind: "changed", rows: [], undo: false, mergedFrom: "Nina Marsh" });
-  });
-
   it("reads a one-click confirm as confirmed", () => {
     expect(describeEvent({ source: "token", diff: { before: row, after: row, payload: {} } })).toEqual({
       kind: "confirmed",

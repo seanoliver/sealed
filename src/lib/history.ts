@@ -15,7 +15,7 @@ export type HistoryRow = { label: string; before: string; after: string };
 export type HistoryEntry =
   | { kind: "created" }
   | { kind: "confirmed" }
-  | { kind: "changed"; rows: HistoryRow[]; undo: boolean; mergedFrom?: string }
+  | { kind: "changed"; rows: HistoryRow[]; undo: boolean }
   | { kind: "unknown" };
 
 type Side = Record<string, unknown>;
@@ -159,10 +159,6 @@ export function describeEvent(
   if (!after) return { kind: "unknown" };
 
   const rows = changedRows(before, after, countryCode);
-  if (isRecord(diff.merged_from)) {
-    const mergedFrom = cap(plain(diff.merged_from.full_name) ?? "another contact");
-    return { kind: "changed", rows, undo: false, mergedFrom };
-  }
   if (rows.length === 0) {
     // A reply whose visible fields all match is a confirm, even when a
     // hidden field (the name split) moved.

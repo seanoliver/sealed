@@ -4,6 +4,7 @@ import {
   duplicateRows,
   detectDuplicates,
   matchInBook,
+  parseBook,
   sameSlots,
   type MatchableNames,
 } from "./household-match";
@@ -153,7 +154,7 @@ describe("matchInBook", () => {
       { id: "couple", ...split("Nina", "Marsh", "Theo", "Marsh") },
       { id: "other", ...legacy("Ana Ruiz") },
     ];
-    expect(matchInBook(split("Theo", "Marsh", "Nina", "Marsh"), book)).toEqual([
+    expect(matchInBook(split("Theo", "Marsh", "Nina", "Marsh"), parseBook(book))).toEqual([
       { id: "couple", match: "same_people" },
       { id: "solo", match: "shares_person" },
     ]);

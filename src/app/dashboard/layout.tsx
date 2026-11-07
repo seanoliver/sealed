@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
   if (!book) redirect("/onboarding");
   const [submissionCount, duplicateCount] = await Promise.all([
     countPendingSubmissions(claims, book.id),
-    countDetectedDuplicates(claims, book.id),
+    countDetectedDuplicates(claims),
   ]);
   const reviewCount = submissionCount + duplicateCount;
 

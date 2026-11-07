@@ -89,32 +89,23 @@ test("warns before one household gets two requests", async () => {
   await page.getByRole("button", { name: "Cancel" }).click();
 });
 
-test("keeps one contact after showing what happens to the other", async () => {
+test("Not duplicates removes a pair and keeps both contacts", async () => {
   await page.goto("/dashboard/review");
-  const card = page.getByRole("listitem").filter({ hasText: "Same people" });
-  await card
-    .locator("div.rounded-lg")
-    .filter({ hasText: "theo@dup.test" })
-    .getByRole("button", { name: "Keep this one" })
-    .click();
-  await expect(card.getByText("Nina & Theo Marsh will be deleted. You can't undo this.")).toBeVisible();
-  await expect(card.getByText("Lost with the deleted contact")).toBeVisible();
-  await expect(card.getByText("Email: nina@dup.test")).toBeVisible();
-  await expect(card.getByText("Birthday: Jun 15, 1980")).toBeVisible();
-  await shot("keep-confirm");
-  await card.getByRole("button", { name: "Keep and delete the other" }).click();
+  const card = page.getByRole("listitem").filter({ hasText: "Might be the same people" });
+  await card.getByRole("button", { name: "Not duplicates" }).click();
   await expect(page.getByRole("heading", { name: "Detected duplicates · 1" })).toBeVisible();
-  const [kept] = await db`
-    select partner_email, birthday::text from public.contacts
-    where book_id = ${bookId} and email = 'theo@dup.test'`;
-  expect(kept).toEqual({ partner_email: null, birthday: null });
-});
-
-test("Not duplicates removes the pair and keeps both contacts", async () => {
-  await page.getByRole("button", { name: "Not duplicates" }).click();
-  await expect(page.getByText("No duplicates detected.")).toBeVisible();
   const rows = await db`select id from public.contacts where book_id = ${bookId} and full_name = 'Maya Chen'`;
   expect(rows).toHaveLength(2);
+});
+
+test("deleting one contact from its page clears the pair", async () => {
+  const card = page.getByRole("listitem").filter({ hasText: "Same people" });
+  await card.getByRole("link", { name: "Nina & Theo Marsh" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete contact" }).click();
+  await page.waitForURL(/\/dashboard$/);
+  await page.goto("/dashboard/review");
+  await expect(page.getByText("No duplicates detected.")).toBeVisible();
 });
 
 test("adding a contact saves it and points at the match", async () => {

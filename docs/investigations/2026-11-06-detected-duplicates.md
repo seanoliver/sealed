@@ -39,30 +39,16 @@ whether it matched anything?
   it. A name that still has no last name matches any last name.
 - Normalizing drops case, Latin accents, apostrophes and periods, and treats
   other punctuation as a space. Han and other scripts compare exactly.
-- `planDuplicateMerge` in `src/lib/duplicate-merge.ts` is the only thing that
-  decides what a merge fills. `mergeDuplicateAs` in
-  `src/app/dashboard/review/duplicates.ts` applies it and refuses when either
-  contact's `updated_at` moved or the deleted contact has a pending submission.
 
 ## Gotchas
 
-- Merging deletes a contact, and there is no owner undo. Its links, sends and
-  events cascade. `diff.merged_from` on the kept contact's history event is the
-  only record left, so it is written in the merge's transaction, through the
-  `contact_events_insert_merge` policy, not after commit like other owner events.
-- A merge never fills an email. An address can come from a public invite reply
-  or a link reply, and it would then receive that contact's link. Emails are
-  listed in `notKept` for the owner to add by hand.
-- Values follow people. `pairSlots` lines the two contacts up person by person.
-  A birthday belongs to the contact's own person, so a swapped pair's birthday
-  is lost rather than moved. Compare offers Apply only when `sameSlots` holds,
-  because `mergeUpdate` writes a reply's names into the slots it arrived in.
-- Marking a pair changes neither contact, so the version check cannot see it.
-  The merge rechecks dismissals itself.
-- Do not reuse `mergeUpdate` for a merge. It has no `notes`, and it overwrites
-  rather than fills.
-- A pending reply on the deleted contact blocks the merge. Repointing it could
-  apply one person's reply to another person's fields.
+- There is no merge, on purpose. Copying values between contacts assumes they are
+  one person, and a name can't prove that: an email moved onto a real contact,
+  or a real address moved onto a stranger's email, would send that contact's
+  link and home address to the wrong person. Review links both contacts, and the
+  owner deletes one from its contact page.
+- Compare offers Apply only when `sameSlots` holds, because `mergeUpdate` writes a
+  reply's names into the slots it arrived in.
 - `find_duplicates` also reports email and street matches. Those are facts and
   do not honor dismissals; only its name matches do.
 - Vitest files use fixed fixture ids, so two checkouts testing against the one
@@ -75,15 +61,11 @@ whether it matched anything?
 - A multi-word surname on one person only: "Ana de la Cruz & Bob" gives Bob the
   last word, so he misses "Bob de la Cruz". "Marsh, Theo" and letters like ø
   that have no accent to strip do not match either.
-- A permalink submit that lands while a merge deletes its matched contact waits
-  on the row lock, then fails the FK, so the visitor sees the generic error. A
-  plain delete does the same.
 - A dismissal cannot be undone: clients have no DELETE on the table.
 
 ## References
 
-- `src/lib/household-match.ts`, `src/lib/duplicate-merge.ts`
-- `src/app/dashboard/review/duplicates.ts`, `src/app/dashboard/review/page.tsx`
+- `src/lib/household-match.ts`, `src/app/dashboard/review/page.tsx`
 - `src/lib/queries/duplicates.ts`, `src/lib/agent/read.ts` (`findDuplicates`)
 - `supabase/migrations/20261107120000_duplicate_dismissals.sql`
 - `supabase/tests/database/12_duplicate_dismissals.sql`

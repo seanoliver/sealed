@@ -86,54 +86,22 @@ export function compareHouseholds(a: MatchableNames, b: MatchableNames): Househo
   return compareSets(peopleIn(a), peopleIn(b));
 }
 
-export type SlotPairing = {
-  target: Record<Slot, Slot | null>;
-  absent: Record<Slot, boolean>;
-  single: Record<Slot, boolean>;
-};
-
-const SLOTS = ["primary", "partner"] as const;
-
-export function pairSlots(keep: MatchableNames, other: MatchableNames): SlotPairing {
-  const kept = namedPeople(keep);
-  const others = namedPeople(other);
+/** An update names the same contact only when its people sit in the same slots. */
+export function sameSlots(contact: MatchableNames, update: MatchableNames): boolean {
   const onlyIn = (people: NamedPerson[], slot: Slot) => {
     const found = people.filter((person) => person.slot === slot);
     return found.length === 1 && !found[0].label ? found[0] : null;
   };
-  const pairing: SlotPairing = {
-    target: { primary: null, partner: null },
-    absent: { primary: false, partner: false },
-    single: { primary: false, partner: false },
-  };
-  const inSlot = (people: NamedPerson[], slot: Slot) =>
-    people.filter((person) => person.slot === slot);
-  for (const slot of SLOTS) {
-    const person = onlyIn(others, slot);
-    pairing.single[slot] = person !== null;
-    pairing.target[slot] = person
-      ? (SLOTS.find((keptSlot) => {
-          const match = onlyIn(kept, keptSlot);
-          return match !== null && samePerson(match, person);
-        }) ?? null)
-      : inSlot(others, slot).length > 0 && compareSets(inSlot(kept, slot), inSlot(others, slot)) === "same_people"
-        ? slot
-        : null;
-    pairing.absent[slot] = others
-      .filter((candidate) => candidate.slot === slot)
-      .some((candidate) => !kept.some((match) => samePerson(match, candidate)));
-  }
-  return pairing;
+  const kept = namedPeople(contact);
+  const sent = namedPeople(update);
+  const person = onlyIn(sent, "primary");
+  const keptPerson = onlyIn(kept, "primary");
+  if (!person || !keptPerson || !samePerson(keptPerson, person)) return false;
+  if (!sent.some((candidate) => candidate.slot === "partner")) return true;
+  const partner = onlyIn(sent, "partner");
+  const keptPartner = onlyIn(kept, "partner");
+  return partner !== null && keptPartner !== null && samePerson(keptPartner, partner);
 }
-
-/** An update names the same contact only when its people sit in the same slots. */
-export function sameSlots(contact: MatchableNames, update: MatchableNames): boolean {
-  const { target, absent } = pairSlots(contact, update);
-  const hasPartner = update.partnerName !== null || update.partnerFirstName !== null;
-  return target.primary === "primary" && !absent.primary && (!hasPartner || target.partner === "partner");
-}
-
-export const householdSize = (names: MatchableNames) => peopleIn(names).length;
 
 const strongestFirst = <T extends { match: HouseholdMatch }>(a: T, b: T) =>
   Number(a.match === "shares_person") - Number(b.match === "shares_person");
@@ -187,14 +155,19 @@ export function duplicateRows(
   });
 }
 
+export type ParsedBook = { id: string; people: Person[] }[];
+
+export const parseBook = (contacts: readonly (MatchableNames & { id: string })[]): ParsedBook =>
+  contacts.map((contact) => ({ id: contact.id, people: peopleIn(contact) }));
+
 export function matchInBook(
   candidate: MatchableNames,
-  contacts: readonly (MatchableNames & { id: string })[],
+  book: ParsedBook,
 ): { id: string; match: HouseholdMatch }[] {
   const people = peopleIn(candidate);
-  return contacts
-    .flatMap(({ id, ...names }) => {
-      const match = compareSets(people, peopleIn(names));
+  return book
+    .flatMap(({ id, people: other }) => {
+      const match = compareSets(people, other);
       return match ? [{ id, match }] : [];
     })
     .sort(strongestFirst);
