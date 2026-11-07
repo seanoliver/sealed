@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { countryCodeFor } from "@/lib/address/countries";
+import { type MatchableNames } from "@/lib/household-match";
 import { formatKids, formatPerson, type Kid } from "@/lib/names";
 import { contactSchema, tokenUpdateSchema, type TokenUpdateField } from "./contact";
 import { householdShape, requirePartnerFirstName } from "./household";
@@ -264,6 +265,19 @@ export function submittedPeople(payload: unknown, enabled: EnabledFields): Submi
     person(data.full_name, data.first_name, data.last_name),
     person(data.partner_name, data.partner_first_name, data.partner_last_name),
   ];
+}
+
+export function payloadNames(payload: unknown, enabled: EnabledFields): MatchableNames | null {
+  const [person, partner] = submittedPeople(payload, enabled);
+  if (!person?.full) return null;
+  return {
+    fullName: person.full,
+    partnerName: partner?.full ?? null,
+    firstName: person.first,
+    lastName: person.last,
+    partnerFirstName: partner?.first ?? null,
+    partnerLastName: partner?.last ?? null,
+  };
 }
 
 export const CLEARABLE_FIELDS = [

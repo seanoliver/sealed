@@ -263,6 +263,19 @@ export function sendPlan(
   };
 }
 
+export function doubledHouseholds(
+  pairs: readonly (readonly [string, string])[],
+  input: SendPlan["input"],
+  rows: readonly Pick<SheetRow, "id" | "values">[],
+): number {
+  const targets = new Set(
+    "recipients" in input ? input.recipients.map((target) => target.contactId) : input.contactIds,
+  );
+  const emailable = new Set(rows.filter((row) => emailCount(row.values) > 0).map((row) => row.id));
+  const reached = (id: string) => targets.has(id) && emailable.has(id);
+  return pairs.filter(([first, second]) => reached(first) && reached(second)).length;
+}
+
 type SheetEmails = Pick<SheetValues, "email" | "partner_email"> &
   Partial<Pick<SheetValues, "personal_email" | "partner_personal_email">>;
 

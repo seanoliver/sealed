@@ -48,6 +48,10 @@ _Avoid_: Primary email, send-to address
 The invite-page section where a recipient enters their own first and last name, then optionally adds a partner and up to 10 kids. Each added person has a first name and a last name that defaults to the recipient's.
 _Avoid_: Family form, name fields
 
+**Detected duplicate**:
+Two contacts whose names say they may hold the same people, in any order. Sealed flags the pair for the owner and never merges it alone, because two different people can share a name.
+_Avoid_: Possible duplicate, match
+
 **Sender country**:
 The country an owner mails from, set as "I mail from" in Settings and stored as a two-letter code (default US). Envelopes to that country leave off the country line.
 _Avoid_: Home country, owner country

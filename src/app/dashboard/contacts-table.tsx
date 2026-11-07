@@ -51,6 +51,7 @@ import {
   changedValues,
   draftFromNames,
   draftToValues,
+  doubledHouseholds,
   emailCount,
   householdEdited,
   householdPatchInput,
@@ -431,7 +432,13 @@ type SavedOverlay = {
 
 type SortChoice = "default" | "last_name";
 
-export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
+export function ContactsTable({
+  rows: allRows,
+  duplicatePairs = [],
+}: {
+  rows: SheetRow[];
+  duplicatePairs?: readonly (readonly [string, string])[];
+}) {
   const [attentionIds, setAttentionIds] = useState<ReadonlySet<string> | null>(null);
   const attentionCount = useMemo(
     () => allRows.filter((row) => row.needsAttention).length,
@@ -673,6 +680,8 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
       if (!("error" in res)) table.resetRowSelection(true);
     });
   }
+
+  const doubled = confirm ? doubledHouseholds(duplicatePairs, confirm.input, rows) : 0;
 
   const banner =
     result === null ? null : "error" in result ? (
@@ -959,6 +968,16 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
               </>
             ) : null}
           </p>
+          {doubled > 0 ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              {doubled === 1 ? "1 detected duplicate" : `${doubled} detected duplicates`} could get
+              two requests.{" "}
+              <Link href="/dashboard/review" className="underline underline-offset-2">
+                Review {doubled === 1 ? "it" : "them"} first
+              </Link>
+              .
+            </p>
+          ) : null}
           <div className="mt-3 flex gap-2">
             <button
               type="button"

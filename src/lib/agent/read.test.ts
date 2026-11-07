@@ -200,8 +200,36 @@ describe("agent read tools", () => {
       const { items, total } = await findDuplicates(claims, findDuplicatesInput.parse({}));
       expect(total).toBe(2);
       const byIds = Object.fromEntries(items.map((group) => [ids(group.contacts).join(), group.reasons]));
-      expect(byIds[[ANA, ANA_AGAIN].join()]).toEqual(["same household name and street"]);
+      expect(byIds[[ANA, ANA_AGAIN].join()]).toEqual(["same household name and street", "one person in common by name"]);
       expect(byIds[[CARA, DEV].join()]).toEqual(["same email shared@rt.test"]);
+    });
+
+    it("drops a name match the owner marked as not duplicates", async () => {
+      const [a, b] = [ANA, ANA_AGAIN].sort();
+      await dbAdmin.execute(sql`
+        insert into public.contact_duplicate_dismissals (book_id, contact_a, contact_b)
+        values (${B}, ${a}, ${b})`);
+      try {
+        const { items } = await findDuplicates(claims, findDuplicatesInput.parse({}));
+        const reasons = items.flatMap((group) => group.reasons);
+        expect(reasons).not.toContain("one person in common by name");
+      } finally {
+        await dbAdmin.execute(sql`delete from public.contact_duplicate_dismissals where book_id = ${B}`);
+      }
+    });
+
+    it("names a swapped couple as the same people", async () => {
+      const swapped = "20000000-0000-4000-8000-0000000a90f1";
+      await dbAdmin.execute(sql`
+        insert into public.contacts (id, book_id, full_name, partner_name) values
+          (${swapped}, ${B}, 'Ben Reyes', 'Ana Reyes')`);
+      try {
+        const { items } = await findDuplicates(claims, findDuplicatesInput.parse({}));
+        const group = items.find((item) => ids(item.contacts).includes(swapped));
+        expect(group?.reasons).toContain("same people by name");
+      } finally {
+        await dbAdmin.execute(sql`delete from public.contacts where id = ${swapped}`);
+      }
     });
 
     it("normalizes street spelling", () => {
