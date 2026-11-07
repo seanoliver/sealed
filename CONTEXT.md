@@ -32,9 +32,25 @@ _Avoid_: Invite (reserved for the invite page)
 A recipient detail that an owner deliberately enables for the invite page. Partner name, kids’ names, and birthday are optional invite fields and default to disabled for a new address book.
 _Avoid_: Required field, custom field
 
+**Personal email**:
+The address a person uses outside work, stored beside their email and never replacing it. Each person on a contact has their own, and a recipient can add theirs through their link.
+_Avoid_: Home email, alternate email
+
+**Work address**:
+An email address on a domain outside the consumer list, unless the owner has marked it as personal. An owner can also mark a consumer address as work.
+_Avoid_: Company email, business email
+
+**Invite address**:
+Where a person's address request is sent: their personal email when there is one, otherwise their email.
+_Avoid_: Primary email, send-to address
+
 **Household builder**:
 The invite-page section where a recipient enters their own first and last name, then optionally adds a partner and up to 10 kids. Each added person has a first name and a last name that defaults to the recipient's.
 _Avoid_: Family form, name fields
+
+**Detected duplicate**:
+Two contacts whose names say they may hold the same people, in any order. Sealed flags the pair for the owner and never merges it alone, because two different people can share a name.
+_Avoid_: Possible duplicate, match
 
 **Sender country**:
 The country an owner mails from, set as "I mail from" in Settings and stored as a two-letter code (default US). Envelopes to that country leave off the country line.

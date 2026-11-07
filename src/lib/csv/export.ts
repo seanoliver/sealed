@@ -6,7 +6,12 @@ import { CONTACT_FIELDS, type ContactField } from "@/lib/validation/contact";
 
 const DETAIL_COLUMNS = CONTACT_FIELDS.filter(
   (field) =>
-    field !== "full_name" && field !== "partner_name" && field !== "kids_names" && field !== "notes",
+    field !== "full_name" &&
+    field !== "partner_name" &&
+    field !== "kids_names" &&
+    field !== "notes" &&
+    field !== "email_kind" &&
+    field !== "partner_email_kind",
 );
 
 export const CSV_COLUMNS = [

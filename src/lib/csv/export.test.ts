@@ -4,7 +4,7 @@ import { CSV_COLUMNS, contactsToCsv } from "./export";
 import { parseContactsCsv } from "./import";
 
 const HEADER =
-  "full_name,partner_name,kids_names,first_name,last_name,partner_first_name,partner_last_name,email,partner_email,birthday,address_line1,address_line2,district,city,state_region,postal_code,country_code,country,notes,envelope";
+  "full_name,partner_name,kids_names,first_name,last_name,partner_first_name,partner_last_name,email,partner_email,personal_email,partner_personal_email,birthday,address_line1,address_line2,district,city,state_region,postal_code,country_code,country,notes,envelope";
 
 /** Split a CSV string into records on CRLF, dropping the trailing empty entry. */
 function records(csv: string): string[] {
@@ -16,9 +16,9 @@ function records(csv: string): string[] {
 describe("contactsToCsv", () => {
   it("emits exactly the canonical header row for zero rows", () => {
     expect(contactsToCsv([])).toBe(`${HEADER}\r\n`);
-    expect(CSV_COLUMNS.filter((c) => (CONTACT_FIELDS as readonly string[]).includes(c))).toEqual([
-      ...CONTACT_FIELDS,
-    ]);
+    expect(CSV_COLUMNS.filter((c) => (CONTACT_FIELDS as readonly string[]).includes(c))).toEqual(
+      CONTACT_FIELDS.filter((field) => field !== "email_kind" && field !== "partner_email_kind"),
+    );
   });
 
   it("serializes fields in canonical column order", () => {
@@ -45,13 +45,13 @@ describe("contactsToCsv", () => {
     ]);
     expect(records(csv)).toEqual([
       HEADER,
-      "Ada Lovelace,William King,Byron,Ada,Lovelace,William,King,ada@example.com,will@example.com,1815-12-10,12 St James Sq,Flat 2,,London,Greater London,SW1Y 4JH,,UK,met at a party,",
+      "Ada Lovelace,William King,Byron,Ada,Lovelace,William,King,ada@example.com,will@example.com,,,1815-12-10,12 St James Sq,Flat 2,,London,Greater London,SW1Y 4JH,,UK,met at a party,",
     ]);
   });
 
   it("uses CRLF line endings throughout, including a trailing one", () => {
     const csv = contactsToCsv([{ full_name: "Ada" }, { full_name: "Grace" }]);
-    expect(csv).toBe(`${HEADER}\r\nAda,,,,,,,,,,,,,,,,,,,\r\nGrace,,,,,,,,,,,,,,,,,,,\r\n`);
+    expect(csv).toBe(`${HEADER}\r\nAda,,,,,,,,,,,,,,,,,,,,,\r\nGrace,,,,,,,,,,,,,,,,,,,,,\r\n`);
     // No bare LFs anywhere (every \n is part of a \r\n).
     expect(csv.replace(/\r\n/g, "")).not.toContain("\n");
   });
@@ -60,18 +60,18 @@ describe("contactsToCsv", () => {
     const csv = contactsToCsv([
       { full_name: "Grace Hopper", email: null, city: "Arlington" },
     ]);
-    expect(records(csv)[1]).toBe("Grace Hopper,,,,,,,,,,,,,Arlington,,,,,,");
+    expect(records(csv)[1]).toBe("Grace Hopper,,,,,,,,,,,,,,,Arlington,,,,,,");
   });
 
   describe("RFC 4180 quoting", () => {
     it("quotes fields containing commas", () => {
       const csv = contactsToCsv([{ full_name: "Lovelace, Ada" }]);
-      expect(records(csv)[1]).toBe('"Lovelace, Ada",,,,,,,,,,,,,,,,,,,');
+      expect(records(csv)[1]).toBe('"Lovelace, Ada",,,,,,,,,,,,,,,,,,,,,');
     });
 
     it("quotes fields containing double quotes and doubles them", () => {
       const csv = contactsToCsv([{ full_name: 'Ada "The Countess" Lovelace' }]);
-      expect(records(csv)[1]).toBe('"Ada ""The Countess"" Lovelace",,,,,,,,,,,,,,,,,,,');
+      expect(records(csv)[1]).toBe('"Ada ""The Countess"" Lovelace",,,,,,,,,,,,,,,,,,,,,');
     });
 
     it("quotes fields containing newlines (LF and CRLF)", () => {
@@ -81,14 +81,14 @@ describe("contactsToCsv", () => {
       ]);
       expect(csv).toBe(
         `${HEADER}\r\n` +
-          'Ada,,,,,,,,,,,,,,,,,,"line one\nline two",\r\n' +
-          'Grace,,,,,,,,,,,,,,,,,,"line one\r\nline two",\r\n',
+          'Ada,,,,,,,,,,,,,,,,,,,,"line one\nline two",\r\n' +
+          'Grace,,,,,,,,,,,,,,,,,,,,"line one\r\nline two",\r\n',
       );
     });
 
     it("leaves plain fields unquoted", () => {
       const csv = contactsToCsv([{ full_name: "Ada Lovelace" }]);
-      expect(records(csv)[1]).toBe("Ada Lovelace,,,,,,,,,,,,,,,,,,,");
+      expect(records(csv)[1]).toBe("Ada Lovelace,,,,,,,,,,,,,,,,,,,,,");
     });
   });
 
@@ -104,7 +104,7 @@ describe("contactsToCsv", () => {
       const csv = contactsToCsv([{ full_name: "Ada", notes: value }]);
       const row = records(csv)[1] ?? "";
       // The serialized cell must start with ' (possibly inside RFC 4180 quotes).
-      const prefix = "Ada,,,,,,,,,,,,,,,,,,";
+      const prefix = "Ada,,,,,,,,,,,,,,,,,,,,";
       // Notes is the last column but one; the empty envelope cell follows it.
       const cell = row.startsWith(prefix) ? row.slice(prefix.length, -1) : "";
       const unquoted = cell.startsWith('"')
@@ -117,13 +117,13 @@ describe("contactsToCsv", () => {
       const csv = contactsToCsv([
         { full_name: "Ada", notes: "safe =embedded, not leading" },
       ]);
-      expect(records(csv)[1]).toBe('Ada,,,,,,,,,,,,,,,,,,"safe =embedded, not leading",');
+      expect(records(csv)[1]).toBe('Ada,,,,,,,,,,,,,,,,,,,,"safe =embedded, not leading",');
     });
 
     it("applies quoting after sanitizing (formula value with a comma)", () => {
       const csv = contactsToCsv([{ full_name: '=HYPERLINK("http://evil.test","x")' }]);
       expect(records(csv)[1]).toBe(
-        '"\'=HYPERLINK(""http://evil.test"",""x"")",,,,,,,,,,,,,,,,,,,',
+        '"\'=HYPERLINK(""http://evil.test"",""x"")",,,,,,,,,,,,,,,,,,,,,',
       );
     });
   });

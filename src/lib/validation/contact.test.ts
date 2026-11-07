@@ -153,12 +153,13 @@ describe("tokenUpdateSchema", () => {
 });
 
 describe("TOKEN_UPDATE_FIELDS", () => {
-  it("is CONTACT_FIELDS minus notes, in display order", () => {
+  it("is CONTACT_FIELDS minus notes and the owner's and partner's keys, in display order", () => {
     expect(TOKEN_UPDATE_FIELDS).toEqual([
       "full_name",
       "partner_name",
       "kids_names",
       "email",
+      "personal_email",
       "birthday",
       "address_line1",
       "address_line2",

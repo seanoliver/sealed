@@ -493,4 +493,36 @@ describe("requestAddresses", () => {
       error: "Invalid request.",
     });
   });
+
+  it("sends to the personal email and leaves the work email on file", async () => {
+    await dbAdmin
+      .update(contacts)
+      .set({ personalEmail: "personal@ra.test" })
+      .where(eq(contacts.id, A));
+    const [before] = await dbAdmin.select().from(contacts).where(eq(contacts.id, A));
+    answer();
+
+    const result = await requestAddresses({ contactIds: [A] });
+
+    expect(result).toMatchObject({ sent: 1, failed: 0 });
+    expect(send.mock.calls[0][0].map((item) => item.to)).toEqual(["personal@ra.test"]);
+    const [after] = await dbAdmin.select().from(contacts).where(eq(contacts.id, A));
+    expect(after.email).toBe(before.email);
+  });
+
+  it("sends both contacts when they resolve to the same address", async () => {
+    await dbAdmin
+      .update(contacts)
+      .set({ personalEmail: "shared@ra.test" })
+      .where(inArray(contacts.id, [A, C]));
+    answer();
+
+    const result = await requestAddresses({ contactIds: [A, C] });
+
+    expect(result).toMatchObject({ sent: 2, failed: 0 });
+    expect(send.mock.calls[0][0].map((item) => item.to)).toEqual([
+      "shared@ra.test",
+      "shared@ra.test",
+    ]);
+  });
 });

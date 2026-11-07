@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { dismissDuplicateAs } from "@/lib/queries/duplicates";
 import { approveMergeAs, approveNewAs, NOT_FOUND, rejectAs } from "./resolve";
 
 export type ReviewActionState = { error?: string };
@@ -37,7 +38,10 @@ export async function approveMerge(
   const id = String(formData.get("id") ?? "");
   if (!uuidSchema.safeParse(id).success) return { error: NOT_FOUND };
 
-  const result = await approveMergeAs(claims, id);
+  const compared = String(formData.get("contact_id") ?? "");
+  const contactId = uuidSchema.safeParse(compared).success ? compared : undefined;
+
+  const result = await approveMergeAs(claims, id, { contactId });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/dashboard");
@@ -60,6 +64,28 @@ export async function reject(
   if (!result.ok) return { error: result.error };
 
   // Else the sheet keeps a stale "Two answers" chip for this reply.
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/review");
+  return {};
+}
+
+const CONTACT_NOT_FOUND = "Contact not found.";
+
+export async function dismissDuplicate(
+  _prevState: ReviewActionState,
+  formData: FormData,
+): Promise<ReviewActionState> {
+  const claims = await requireUser();
+
+  const firstId = String(formData.get("first_id") ?? "");
+  const secondId = String(formData.get("second_id") ?? "");
+  if (!uuidSchema.safeParse(firstId).success || !uuidSchema.safeParse(secondId).success) {
+    return { error: CONTACT_NOT_FOUND };
+  }
+
+  const result = await dismissDuplicateAs(claims, firstId, secondId);
+  if (!result.ok) return { error: result.error };
+
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/review");
   return {};

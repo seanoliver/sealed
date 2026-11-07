@@ -4,6 +4,7 @@ import {
   bookCounts,
   changedValues,
   combineSends,
+  doubledHouseholds,
   draftFromNames,
   draftToValues,
   emailCount,
@@ -39,6 +40,10 @@ const listRow: ContactListRow = {
   kids: null,
   email: "ada@example.test",
   partnerEmail: null,
+  personalEmail: null,
+  partnerPersonalEmail: null,
+  emailKind: null,
+  partnerEmailKind: null,
   birthday: null,
   addressLine1: "12 St James's Square",
   addressLine2: null,
@@ -59,6 +64,27 @@ const listRow: ContactListRow = {
   changedAfterSend: false,
   updatedAt: new Date("2026-10-01T12:00:00Z"),
 };
+
+describe("doubledHouseholds", () => {
+  const row = (id: string, email: string) => ({ id, values: { email, partner_email: "" } as Parameters<typeof emailCount>[0] as never });
+  const rows = [row("a", "a@x.test"), row("b", "b@x.test"), row("c", "")];
+
+  it("counts a pair only when the send reaches both contacts by email", () => {
+    expect(doubledHouseholds([["a", "b"]], { contactIds: ["a", "b"] }, rows)).toBe(1);
+    expect(doubledHouseholds([["a", "b"]], { contactIds: ["a"] }, rows)).toBe(0);
+    expect(doubledHouseholds([["a", "c"]], { contactIds: ["a", "c"] }, rows)).toBe(0);
+  });
+
+  it("reads the people list from a needs-attention send", () => {
+    const input = {
+      recipients: [
+        { contactId: "a", recipient: "primary" as const },
+        { contactId: "b", recipient: "partner" as const },
+      ],
+    };
+    expect(doubledHouseholds([["a", "b"]], input, rows)).toBe(1);
+  });
+});
 
 describe("combineSends", () => {
   const none = { status: "none", failureReason: null } as const;
@@ -159,6 +185,20 @@ describe("toSheetRow", () => {
 });
 
 describe("emailCount", () => {
+  it("counts the invite address, one per inbox", () => {
+    expect(
+      emailCount({ email: "", partner_email: "", personal_email: "a@gmail.test", partner_personal_email: "" }),
+    ).toBe(1);
+    expect(
+      emailCount({
+        email: "a@work.test",
+        partner_email: "b@work.test",
+        personal_email: "home@gmail.test",
+        partner_personal_email: "HOME@gmail.test",
+      }),
+    ).toBe(1);
+  });
+
   it("counts one email per address", () => {
     expect(emailCount({ email: "a@x.test", partner_email: "b@x.test" })).toBe(2);
     expect(emailCount({ email: "a@x.test", partner_email: "" })).toBe(1);

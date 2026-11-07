@@ -34,7 +34,7 @@ import {
   REQUEST_TTL_DAYS,
   requestDeleteContacts,
 } from "./requests";
-import { AgentScopeError, requireScope, type AgentScope } from "./scopes";
+import { AgentScopeError, hasScope, requireScope, type AgentScope } from "./scopes";
 import { verifyAgentToken } from "./tokens";
 import {
   agentActor,
@@ -94,7 +94,7 @@ export function agentContext(ctx: ServerContext, scope: AgentScope): AgentContex
   const claims = auth?.extra?.claims as SessionClaims | undefined;
   if (!auth || !claims?.sub) throw new ToolError("Not authenticated.");
   requireScope(auth.scopes, scope);
-  return { claims, tokenId: auth.clientId };
+  return { claims, tokenId: auth.clientId, canRead: hasScope(auth.scopes, "read") };
 }
 
 function json(value: unknown): CallToolResult {
@@ -202,7 +202,7 @@ export function registerAgentTools(server: McpServer): void {
     name: "find_duplicates",
     title: "Find duplicates",
     description:
-      "Groups of contacts that look like the same household: a shared email (either person's), or the same normalized household name and street. Each group lists why it matched.",
+      "Groups of contacts that look like the same household: a shared email (either person's), the same normalized household name and street, or the same people by name in any order. Name matches leave out pairs the owner marked as not duplicates. Each group lists why it matched. A name match can be two different people, so never merge on it.",
     inputSchema: findDuplicatesInput,
     run: asOwner(findDuplicates),
   });

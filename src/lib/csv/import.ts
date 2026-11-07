@@ -60,6 +60,8 @@ const HEADER_ALIASES: Record<string, ImportColumn> = {
   email_address: "email",
   email_2: "partner_email",
   second_email: "partner_email",
+  home_email: "personal_email",
+  partner_home_email: "partner_personal_email",
   dob: "birthday",
   date_of_birth: "birthday",
   note: "notes",

@@ -70,6 +70,7 @@ type Props = {
   household: HouseholdValues;
   recipient: Recipient;
   enabled: EnabledFields;
+  asksPersonalEmail: boolean;
   senderCountry: string;
   legacyCountry: string | null;
   seenAt: string;
@@ -254,9 +255,75 @@ function ChangeItem({ change }: { change: Change }) {
       );
     case "email":
       return change.to ? <>Email: {strong(change.to)}</> : <>Removed your email</>;
+    case "personal_email":
+      return change.to ? <>Personal email: {strong(change.to)}</> : <>Removed your personal email</>;
     case "birthday":
       return change.to ? <>Birthday: {strong(change.to)}</> : <>Removed your birthday</>;
   }
+}
+
+function PersonalEmailQuestion({
+  value,
+  onChange,
+  senderNames,
+  workEmail,
+  changed,
+  error,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  senderNames: string;
+  workEmail: string;
+  changed: boolean;
+  error?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
+      <p className="text-sm leading-snug font-semibold text-foreground">
+        This looks like a work email. Is there a personal one {senderNames} should use next time?
+      </p>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="personal_email" className={envelopeLabelClasses}>
+          Personal email (optional)
+        </label>
+        <input
+          id="personal_email"
+          // Blank posts nothing: a present blank clears an address the owner added since load.
+          name={value.trim() === "" ? undefined : "personal_email"}
+          type="email"
+          autoComplete="email"
+          enterKeyHint="done"
+          maxLength={320}
+          placeholder="you@example.com"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          // Return closes the keyboard; only the button sends the reply.
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.currentTarget.blur();
+          }}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "personal_email-error" : undefined}
+          className={cn(
+            envelopeInputClasses,
+            "font-sans text-base",
+            changed && "bg-accent text-accent-foreground",
+            error && "border-destructive",
+          )}
+        />
+      </div>
+      {error ? (
+        <p id="personal_email-error" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : value.trim() !== "" ? (
+        <p className="text-xs leading-snug text-muted-foreground">
+          {senderNames} {ownerVerb(senderNames, "keeps", "keep")} {workEmail} too. This link keeps working.
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function SavedView({ ownerName, saved, expiresAt }: { ownerName: string; saved: Saved; expiresAt: string }) {
@@ -344,6 +411,7 @@ export function EnvelopeEditor({
   household,
   recipient,
   enabled,
+  asksPersonalEmail,
   senderCountry,
   legacyCountry,
   seenAt,
@@ -364,6 +432,7 @@ export function EnvelopeEditor({
   const [draft, setDraft] = useState<HouseholdDraft>(() => draftFromValues(household));
   const [editingPerson, setEditingPerson] = useState<number | null>(null);
   const [email, setEmail] = useState(defaults.email);
+  const [personalEmail, setPersonalEmail] = useState(defaults.personal_email);
   const [birthday, setBirthday] = useState(defaults.birthday);
   const [changed, setChanged] = useState<ReadonlySet<string>>(new Set());
   const [touched, setTouched] = useState(false);
@@ -394,6 +463,7 @@ export function EnvelopeEditor({
     {},
   );
 
+  const [personalEditedAfter, setPersonalEditedAfter] = useState<EditorState | null>(null);
   const [seenState, setSeenState] = useState(state);
   if (state !== seenState) {
     setSeenState(state);
@@ -401,6 +471,9 @@ export function EnvelopeEditor({
     if (person !== null) {
       setOpen({ kind: "names" });
       setEditingPerson(person);
+    }
+    if (state.fieldErrors?.personal_email && defaults.personal_email !== "") {
+      setOpen({ kind: "details" });
     }
   }
 
@@ -484,7 +557,16 @@ export function EnvelopeEditor({
 
   if (state.done) return <SavedView ownerName={ownerName} saved={sent} expiresAt={expiresAt} />;
 
-  const emailChanged = changed.has("email") || changed.has("birthday");
+  // An error describes what was submitted, so typing clears it until the next submit.
+  const personalEmailError =
+    personalEditedAfter === state ? undefined : state.fieldErrors?.personal_email;
+  const onPersonalEmail = (value: string) => {
+    setPersonalEmail(value);
+    setPersonalEditedAfter(state);
+  };
+  const emailChanged =
+    changed.has("email") || changed.has("personal_email") || changed.has("birthday");
+  const hasPersonalEmail = defaults.personal_email !== "";
 
   function show(next: Open, opener: HTMLElement | null) {
     returnTo.current = opener?.dataset.lineFocus ?? null;
@@ -824,6 +906,34 @@ export function EnvelopeEditor({
                 className={cn(envelopeInputClasses, "font-sans text-base")}
               />
             </div>
+            {hasPersonalEmail ? (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="personal_email" className={envelopeLabelClasses}>
+                  Personal email
+                </label>
+                <input
+                  id="personal_email"
+                  name="personal_email"
+                  type="email"
+                  autoComplete="email"
+                  maxLength={320}
+                  value={personalEmail}
+                  onChange={(event) => onPersonalEmail(event.target.value)}
+                  aria-invalid={personalEmailError ? true : undefined}
+                  aria-describedby={personalEmailError ? "personal_email-error" : undefined}
+                  className={cn(
+                    envelopeInputClasses,
+                    "font-sans text-base",
+                    personalEmailError && "border-destructive",
+                  )}
+                />
+                {personalEmailError ? (
+                  <p id="personal_email-error" className="text-xs text-destructive">
+                    {personalEmailError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {enabled.birthday ? (
               <div className="flex flex-col gap-1">
                 <label htmlFor="birthday" className={envelopeLabelClasses}>
@@ -845,6 +955,9 @@ export function EnvelopeEditor({
         ) : (
           <>
             <input type="hidden" name="email" value={email} />
+            {hasPersonalEmail ? (
+              <input type="hidden" name="personal_email" value={personalEmail} />
+            ) : null}
             {enabled.birthday ? <input type="hidden" name="birthday" value={birthday} /> : null}
             <button
               type="button"
@@ -852,7 +965,7 @@ export function EnvelopeEditor({
               onClick={(event) => show({ kind: "details" }, event.currentTarget)}
               className={cn(
                 "flex min-h-11 items-center justify-between gap-3 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
-                emailChanged && "text-accent-foreground",
+                (changed.has("email") || changed.has("birthday")) && "text-accent-foreground",
               )}
             >
               <span className="min-w-0 truncate">
@@ -860,8 +973,35 @@ export function EnvelopeEditor({
               </span>
               <span className="shrink-0 font-semibold text-primary">Change</span>
             </button>
+            {hasPersonalEmail ? (
+              <button
+                type="button"
+                data-line-focus="details"
+                onClick={(event) => show({ kind: "details" }, event.currentTarget)}
+                className={cn(
+                  "flex min-h-11 items-center justify-between gap-3 rounded-lg px-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
+                  changed.has("personal_email") && "text-accent-foreground",
+                )}
+              >
+                <span className="min-w-0 truncate">
+                  Personal email: <span className="text-foreground">{personalEmail || "none"}</span>
+                </span>
+                <span className="shrink-0 font-semibold text-primary">Change</span>
+              </button>
+            ) : null}
           </>
         )}
+
+        {asksPersonalEmail ? (
+          <PersonalEmailQuestion
+            value={personalEmail}
+            onChange={onPersonalEmail}
+            senderNames={senderNames}
+            workEmail={email}
+            changed={changed.has("personal_email")}
+            error={personalEmailError}
+          />
+        ) : null}
 
         <button
           type="submit"
@@ -894,9 +1034,10 @@ export function EnvelopeEditor({
           );
         const lines = read();
         const start = before.current ?? { lines, address: read("address") };
-        const reply = (snap: Omit<ReplySnapshot, "email" | "birthday">, from: TokenUpdateValues | null): ReplySnapshot => ({
+        const reply = (snap: Omit<ReplySnapshot, "email" | "personalEmail" | "birthday">, from: TokenUpdateValues | null): ReplySnapshot => ({
           ...snap,
           email: from ? from.email : email,
+          personalEmail: from ? from.personal_email : personalEmail,
           birthday: from ? from.birthday : birthday,
         });
         setSent({

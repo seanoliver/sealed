@@ -51,6 +51,7 @@ import {
   changedValues,
   draftFromNames,
   draftToValues,
+  doubledHouseholds,
   emailCount,
   householdEdited,
   householdPatchInput,
@@ -74,6 +75,7 @@ import {
   type SheetValues,
   type StatusKey,
   type TwoAnswers,
+  sheetInviteAddresses,
 } from "@/lib/contacts-sheet";
 import type { FailureReason } from "@/lib/email/resend";
 import { type Readings } from "@/lib/readings";
@@ -402,10 +404,12 @@ export function ContactsTable({
   rows: allRows,
   book,
   searching,
+  duplicatePairs = [],
 }: {
   rows: SheetRow[];
   book: BookCounts;
   searching: boolean;
+  duplicatePairs?: readonly (readonly [string, string])[];
 }) {
   // The ids are captured when the filter turns on, so a row being fixed stays
   // in view until the owner clears the filter.
@@ -666,6 +670,8 @@ export function ContactsTable({
       if (!("error" in res)) table.resetRowSelection(true);
     });
   }
+
+  const doubled = confirm ? doubledHouseholds(duplicatePairs, confirm.input, rows) : 0;
 
   const banner =
     result === null ? null : "error" in result ? (
@@ -965,6 +971,16 @@ export function ContactsTable({
               </>
             ) : null}
           </p>
+          {doubled > 0 ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              {doubled === 1 ? "1 detected duplicate" : `${doubled} detected duplicates`} could get
+              two requests.{" "}
+              <Link href="/dashboard/review" className="underline underline-offset-2">
+                Review {doubled === 1 ? "it" : "them"} first
+              </Link>
+              .
+            </p>
+          ) : null}
           <div className="mt-3 flex gap-2">
             <button
               type="button"
@@ -1129,7 +1145,12 @@ export function ContactsTable({
             const { values, names } = row.original;
             const name = sheetName(names);
             const place = row.original.place;
-            const emails = [values.email, values.partner_email]
+            const invites = sheetInviteAddresses(values);
+            const emails = [
+              invites.primary,
+              invites.partner,
+              values.personal_email && values.email ? `was ${values.email}` : "",
+            ]
               .filter(Boolean)
               .join(" · ");
             const answers = row.original.answers;
@@ -1441,14 +1462,21 @@ function ViewRow({
           );
         }
         if (field?.field === "email") {
+          const invites = sheetInviteAddresses(values);
           return (
             <td key={cell.id} className={`${cellClasses} py-1 text-foreground/80`}>
-              <span className="block truncate">
-                {values.email || <span className="text-muted-foreground/50">—</span>}
+              <span
+                className="block truncate"
+                title={values.personal_email ? `Was ${values.email}` : undefined}
+              >
+                {invites.primary ?? <span className="text-muted-foreground/50">—</span>}
               </span>
-              {values.partner_email ? (
-                <span className="block truncate text-muted-foreground">
-                  {values.partner_email}
+              {invites.partner ? (
+                <span
+                  className="block truncate text-muted-foreground"
+                  title={values.partner_personal_email ? `Was ${values.partner_email}` : undefined}
+                >
+                  {invites.partner}
                 </span>
               ) : null}
             </td>
@@ -1621,9 +1649,13 @@ function EditingRow({
                 {(
                   [
                     ["email", "Email"],
+                    ["personal_email", "Personal email"],
                     ["partner_email", "Partner email"],
+                    ["partner_personal_email", "Partner's personal email"],
                   ] as const
-                ).map(([name, label]) => (
+                )
+                  .filter(([name]) => name === "email" || name === "partner_email" || values[name] !== "")
+                  .map(([name, label]) => (
                   <input
                     key={name}
                     data-cell-input={name === "email" ? true : undefined}
@@ -1639,7 +1671,7 @@ function EditingRow({
                     onKeyDown={onInputKeyDown}
                     className={`${cellInputClasses} placeholder:text-muted-foreground`}
                   />
-                ))}
+                  ))}
               </span>
             </td>
           );

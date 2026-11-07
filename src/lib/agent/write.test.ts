@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { type ServerContext } from "@modelcontextprotocol/server";
 import { dbAdmin } from "@/lib/db/admin";
@@ -19,6 +19,7 @@ import {
 } from "./requests";
 import { AgentScopeError } from "./scopes";
 import { mintAgentToken, revokeAgentToken } from "./tokens";
+import { listBookNames } from "@/lib/queries/duplicates";
 import {
   agentActor,
   createContact,
@@ -28,6 +29,11 @@ import {
   updateContactInput,
   type AgentContext,
 } from "./write";
+
+vi.mock("@/lib/queries/duplicates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/queries/duplicates")>();
+  return { ...actual, listBookNames: vi.fn(actual.listBookNames) };
+});
 
 const U = "00000000-0000-4000-8000-0000000d7001";
 const OTHER = "00000000-0000-4000-8000-0000000d7002";
@@ -54,6 +60,8 @@ const eventsOf = (id: string) =>
   dbAdmin.select().from(contactEvents).where(eq(contactEvents.contactId, id));
 const update = (input: object) => updateContact(ctx, updateContactInput.parse(input));
 const create = (fields: object) => createContact(ctx, createContactInput.parse({ fields }));
+const createAsReader = (fields: object) =>
+  createContact({ ...ctx, canRead: true }, createContactInput.parse({ fields }));
 
 async function requestDeletion(ids: string[]) {
   const preview = await previewDeleteContacts(ctx, ids);
@@ -118,7 +126,8 @@ describe("agent write tools", () => {
         http: { authInfo: { token: "t", clientId: ctx.tokenId, scopes, extra: { claims: ctx.claims } } },
       }) as unknown as ServerContext;
     expect(() => agentContext(serverContext(["read"]), "write")).toThrow(AgentScopeError);
-    expect(agentContext(serverContext(["write"]), "write")).toEqual(ctx);
+    expect(agentContext(serverContext(["write"]), "write")).toEqual({ ...ctx, canRead: false });
+    expect(agentContext(serverContext(["read", "write"]), "write")).toEqual({ ...ctx, canRead: true });
   });
 
   describe("update_contact", () => {
@@ -220,6 +229,26 @@ describe("agent write tools", () => {
       });
       expect(await listPendingRequests(ctx.claims)).toEqual([]);
       expect(await approveRequest(ctx.claims, requestId)).toEqual({ ok: false, error: REQUEST_FINISHED });
+    });
+
+    it("applies an approved personal email", async () => {
+      const result = await update({ id: ANA, fields: { personal_email: "ana@home.test" } });
+      const requestId = result.pending_email_change!.request_id;
+      expect((await stored(ANA)).personalEmail).toBeNull();
+      expect(await approveRequest(ctx.claims, requestId)).toMatchObject({ ok: true });
+      expect(await stored(ANA)).toMatchObject({ email: "ana@wt.test", personalEmail: "ana@home.test" });
+    });
+
+    it("refuses a personal email another contact took while it waited", async () => {
+      const result = await update({ id: ANA, fields: { personal_email: "shared@home.test" } });
+      await dbAdmin
+        .update(contacts)
+        .set({ personalEmail: "shared@home.test" })
+        .where(eq(contacts.id, CARA));
+      expect(await approveRequest(ctx.claims, result.pending_email_change!.request_id)).toMatchObject({
+        ok: false,
+      });
+      expect((await stored(ANA)).personalEmail).toBeNull();
     });
 
     it("keeps the email when the owner discards the change", async () => {
@@ -658,5 +687,53 @@ describe("agent write tools", () => {
         after: { city: "X", country: "Y", email: null },
       }),
     ).toBe("Removed email; City A → X and 1 more");
+  });
+
+  describe("create_contact's duplicate check", () => {
+    it("names the contact a new one matches, for a token that can read", async () => {
+      const made = await createAsReader({ first_name: "Duplicate", last_name: "Checkone" });
+      const again = await createAsReader({ first_name: "duplicate", last_name: "CHECKONE" });
+      expect(again).toMatchObject({
+        detected_duplicates: [{ id: made.id, name: "Duplicate Checkone", match: "same_people" }],
+      });
+    });
+
+    it("names the existing contact whichever side of the pair it sorts on", async () => {
+      const low = "00000000-0000-4000-8000-0000000d70a1";
+      const high = "ffffffff-0000-4000-8000-0000000d70a1";
+      await dbAdmin.execute(sql`
+        insert into public.contacts (id, book_id, full_name) values
+          (${low}, ${B}, 'Sortlow Person'), (${high}, ${B}, 'Sorthigh Person')`);
+      const first = await createAsReader({ first_name: "Sortlow", last_name: "Person" });
+      const second = await createAsReader({ first_name: "Sorthigh", last_name: "Person" });
+      expect(first).toMatchObject({ detected_duplicates: [{ id: low, name: "Sortlow Person" }] });
+      expect(second).toMatchObject({ detected_duplicates: [{ id: high, name: "Sorthigh Person" }] });
+    });
+
+    it("finds a new contact's match even when the book has more pairs than the cap", async () => {
+      await dbAdmin.execute(sql`
+        insert into public.contacts (book_id, full_name)
+        select ${B}, 'Capfill Person' from generate_series(1, 40)`);
+      try {
+        const made = await createAsReader({ first_name: "Capcheck", last_name: "Person" });
+        const again = await createAsReader({ first_name: "Capcheck", last_name: "Person" });
+        expect(again).toMatchObject({ detected_duplicates: [{ id: made.id, match: "same_people" }] });
+      } finally {
+        await dbAdmin.execute(sql`delete from public.contacts where book_id = ${B} and full_name = 'Capfill Person'`);
+      }
+    });
+
+    it("still reports a saved contact when the check fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(listBookNames).mockRejectedValueOnce(new Error("down"));
+      const made = await createAsReader({ first_name: "Duplicate", last_name: "Checkthree" });
+      expect(made).toMatchObject({ id: expect.any(String), detected_duplicates: null });
+    });
+
+    it("tells a write-only token nothing about other contacts", async () => {
+      await create({ first_name: "Duplicate", last_name: "Checktwo" });
+      const again = await create({ first_name: "Duplicate", last_name: "Checktwo" });
+      expect(again).not.toHaveProperty("detected_duplicates");
+    });
   });
 });

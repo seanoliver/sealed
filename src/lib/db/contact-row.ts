@@ -46,6 +46,10 @@ export function contactDetailsToRow(d: ContactDetailsInput) {
   return {
     email: d.email ?? null,
     partnerEmail: d.partner_email ?? null,
+    personalEmail: d.personal_email ?? null,
+    partnerPersonalEmail: d.partner_personal_email ?? null,
+    emailKind: d.email_kind ?? null,
+    partnerEmailKind: d.partner_email_kind ?? null,
     birthday: d.birthday ?? null,
     addressLine1: d.address_line1 ?? null,
     addressLine2: d.address_line2 ?? null,

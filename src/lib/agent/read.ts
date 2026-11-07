@@ -29,10 +29,13 @@ import {
   type SendStatus,
 } from "@/lib/queries/contacts";
 import { listCsvRows } from "@/lib/queries/export";
+import { listDismissedPairs } from "@/lib/queries/duplicates";
 import { listPendingSubmissions } from "@/lib/queries/submissions";
+import { detectDuplicates } from "@/lib/household-match";
 import { type Recipient } from "@/lib/recipients";
 import {
   parseSubmissionForDisplay,
+  withoutInviteAddresses,
   type SubmissionDisplayFields,
 } from "@/lib/validation/submission";
 
@@ -77,6 +80,8 @@ export type ContactSummary = {
   name: string;
   email: string | null;
   partnerEmail: string | null;
+  personalEmail: string | null;
+  partnerPersonalEmail: string | null;
   city: string | null;
   stateRegion: string | null;
   postalCode: string | null;
@@ -98,6 +103,8 @@ function summarize(row: ContactListRow): ContactSummary {
     name: householdLine(pickStoredNames(row)),
     email: row.email,
     partnerEmail: row.partnerEmail,
+    personalEmail: row.personalEmail,
+    partnerPersonalEmail: row.partnerPersonalEmail,
     city: row.city,
     stateRegion: row.stateRegion,
     postalCode: row.postalCode,
@@ -106,7 +113,10 @@ function summarize(row: ContactListRow): ContactSummary {
     needsAttention: attention.length > 0,
     attention,
     updatedAfterSend: row.updatedAfterSend,
-    missing: [...addressGaps(row), ...(blank(row.email) ? (["email"] as const) : [])],
+    missing: [
+      ...addressGaps(row),
+      ...(blank(row.email) && blank(row.personalEmail) ? (["email"] as const) : []),
+    ],
   };
 }
 
@@ -166,6 +176,8 @@ export async function searchContacts(
         row.partnerName,
         row.email,
         row.partnerEmail,
+        row.personalEmail,
+        row.partnerPersonalEmail,
         row.city,
       ];
       if (!haystack.some((value) => value?.toLowerCase().includes(query))) return false;
@@ -247,6 +259,8 @@ export async function getContact(claims: SessionClaims, input: z.output<typeof g
   const { status, failureReason, attention } = effectiveSends({
     email: contact.email,
     partnerEmail: contact.partnerEmail,
+    personalEmail: contact.personalEmail,
+    partnerPersonalEmail: contact.partnerPersonalEmail,
     sendStatuses: { primary, partner },
     updatedAfterSend,
     changedAfterSend,
@@ -427,6 +441,14 @@ export async function findDuplicates(
       holders.set(key, entry);
     }
   });
+  const dismissed = await listDismissedPairs(claims);
+  const indexOf = new Map(rows.map((row, index) => [row.id, index]));
+  for (const { a, b, match } of detectDuplicates(rows, { dismissed })) {
+    holders.set(`names:${a}:${b}`, {
+      reason: match === "same_people" ? "same people by name" : "one person in common by name",
+      indices: [indexOf.get(a) ?? 0, indexOf.get(b) ?? 0],
+    });
+  }
 
   const parent = rows.map((_, index) => index);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
@@ -456,7 +478,7 @@ export async function findDuplicates(
 
 function duplicateKeys(row: ContactListRow): [key: string, reason: string][] {
   const keys: [string, string][] = [];
-  for (const email of [row.email, row.partnerEmail]) {
+  for (const email of [row.email, row.partnerEmail, row.personalEmail, row.partnerPersonalEmail]) {
     if (blank(email)) continue;
     const normalized = email!.trim().toLowerCase();
     keys.push([`email:${normalized}`, `same email ${normalized}`]);
@@ -502,7 +524,12 @@ export async function listReviewQueue(
       matchedContact: matchedContact
         ? { id: matchedContact.id, name: householdLine(pickStoredNames(matchedContact)) }
         : null,
-      fields: parseSubmissionForDisplay(submission.payload, book.enabledFields),
+      fields: parseSubmissionForDisplay(
+        submission.source === "token"
+          ? submission.payload
+          : withoutInviteAddresses(submission.payload),
+        book.enabledFields,
+      ),
     })),
     input,
   );

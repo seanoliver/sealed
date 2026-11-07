@@ -4,8 +4,10 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { listContacts } from "@/lib/queries/contacts";
+import { findDuplicateOf, listDetectedDuplicates } from "@/lib/queries/duplicates";
 import { listPendingReplies } from "@/lib/queries/submissions";
 import { bookCounts, toSheetRow, type PendingAnswer } from "@/lib/contacts-sheet";
+import { householdLine, pickStoredNames } from "@/lib/names";
 import { readingsForContact } from "@/lib/pinyin";
 import {
   parseSubmissionForDisplay,
@@ -20,7 +22,7 @@ export const maxDuration = 300;
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string | string[] }>;
+  searchParams: Promise<{ q?: string | string[]; added?: string | string[] }>;
 }) {
   const claims = await requireUser();
   const book = await getOwnBook(claims);
@@ -29,14 +31,17 @@ export default async function DashboardPage({
   if (!book) redirect("/onboarding");
 
   // A crafted URL can repeat ?q=; take the first value rather than crashing.
-  const { q } = await searchParams;
+  const { q, added } = await searchParams;
   const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
-  const [contacts, wholeBook, replies] = await Promise.all([
+  const [contacts, wholeBook, replies, duplicates] = await Promise.all([
     listContacts(claims, query || undefined),
     // Search filters in SQL, and the counts always cover the whole book.
     query ? listContacts(claims) : null,
     listPendingReplies(claims),
+    listDetectedDuplicates(claims),
   ]);
+  // Checked directly, not from the capped list, so a full book still warns.
+  const duplicateOfAdded = typeof added === "string" ? await findDuplicateOf(claims, added) : undefined;
 
   const answers = new Map<string, PendingAnswer>();
   const answerPeople = new Map<string, SubmittedPerson[]>();
@@ -107,6 +112,19 @@ export default async function DashboardPage({
         </div>
       </div>
 
+      {duplicateOfAdded ? (
+        <p
+          role="status"
+          className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
+        >
+          Saved. This may be the same people as{" "}
+          {householdLine(pickStoredNames(duplicateOfAdded))}.{" "}
+          <Link href="/dashboard/review" className="underline underline-offset-2">
+            Review
+          </Link>
+        </p>
+      ) : null}
+
       <Form action="/dashboard" className="mt-6 flex gap-2">
         <label htmlFor="q" className="sr-only">
           Search contacts
@@ -161,7 +179,13 @@ export default async function DashboardPage({
         )
       ) : (
         // Remount per search, or an open "Send to all shown" keeps the old rows.
-        <ContactsTable key={query} rows={rows} book={counts} searching={query !== ""} />
+        <ContactsTable
+          key={query}
+          rows={rows}
+          book={counts}
+          searching={query !== ""}
+          duplicatePairs={duplicates.map(({ first, second }) => [first.id, second.id] as const)}
+        />
       )}
     </main>
   );

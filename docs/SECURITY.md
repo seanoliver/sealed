@@ -17,7 +17,7 @@ A leak requires **two independent failures** — a bug in server code *and* a bu
 The two unauthenticated flows — token updates (`/u/[token]`) and permalink self-adds (`/b/[slug]`) — go through four narrow `SECURITY DEFINER` functions in a `private` schema (`supabase/migrations/00000000000002_private_functions.sql`):
 
 - `private.get_contact_for_token` — token lookup, returns only the contact's own fields plus display metadata
-- `private.apply_token_reply` — applies a recipient's reply through a live link, re-gated against the book's enabled fields server-side
+- `private.apply_token_reply` — applies a recipient's reply through a live link, re-gated against the book's enabled fields server-side. It writes `personal_email` to the link's own person only; there is no payload key for the other person's
 - `private.submit_to_book` — write-only permalink insert
 - `private.check_rate_limit` — Postgres-backed fixed-window rate limiter
 
@@ -73,8 +73,9 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 - **32 bytes CSPRNG** (`crypto.randomBytes`), 43-char unpadded base64url in the URL
 - **SHA-256 at rest** — the database stores only `update_tokens.token_hash`; a DB leak exposes no live links
 - **30-day TTL** (`TOKEN_TTL_DAYS`)
-- **Reusable until expiry** — a recipient can reopen their link and change their reply until it expires (`used_at` records the latest reply). The row is locked (`SELECT … FOR UPDATE`) per reply, and a reply from a page opened before the same person's own later change is refused as stale. Anyone holding the URL can read and edit that contact until expiry, so a forwarded link stays live; the owner retires it with a re-send or an email change
-- **Single-active-per-person** — once a re-sent "Request addresses" email is delivered, every earlier link for that person is deleted, used or not. An owner changing a person's email also deletes all of that person's links; a recipient changing their own email keeps only the link they used
+- **Reusable until expiry** — a recipient can reopen their link and change their reply until it expires (`used_at` records the latest reply). The row is locked (`SELECT … FOR UPDATE`) per reply, and a reply from a page opened before the same person's own later change is refused as stale. Anyone holding the URL can read and edit that contact until expiry, so a forwarded link stays live; the owner retires it with a re-send or an email change. Retiring a person takes clearing their personal email too, because invites go there first, and saving a cleared email with a personal one still set is refused until the owner clears it or confirms
+- **Single-active-per-person** — once a re-sent "Request addresses" email is delivered, every earlier link for that person is deleted, used or not. An owner changing a person's email also deletes all of that person's links; a recipient changing their own email keeps only the link they used. The same holds for a personal email, with one exception: adding the first one deletes nothing, because no address lost access and the link sent to the work address must keep working
+- **Invites prefer the personal email** — a request goes to the person's personal email when one is on file, otherwise to their email (`src/lib/recipients.ts`). A recipient adding one never touches `email`. Someone reading a work mailbox can open that link and read the personal address until the link expires, as with every other field on the link. A link only ever shows its own person's personal email, never the other person's
 - **Shape gate before DB** — both the page and the action test the token against `TOKEN_SHAPE` (`^[A-Za-z0-9_-]{43}$`) before any query; malformed tokens cost zero DB work
 - **Never logged** — the raw token exists only in the emailed URL; `logDbError` strips query params, and the sole exception is the `EMAIL_DRY_RUN=1` non-production log, which is hard-disabled when `APP_ENV=production`
 - `/u/*` responses carry `X-Robots-Tag: noindex, nofollow` (`next.config.ts`) so a leaked link can't end up in a search index
@@ -83,7 +84,8 @@ Update links (`/u/<token>`) are bearer credentials, treated accordingly (`src/li
 ## Enumeration-proofing
 
 - Invalid, expired, and already-used tokens all render the **same generic page** — no distinction an attacker can use to probe for live tokens.
-- Permalink submits return an **identical response** (and take the same code path) whether or not the submitted email matches an existing contact. A match surfaces only to the owner, in the review queue.
+- The personal email columns have **no unique index**, deliberately. `contacts_book_email_unique` would turn a recipient's reply into an error, or a visible difference, when the address is already in the book, so a reply stores the address the same way either way. Only owner and agent writes refuse an address another contact uses. Two contacts can therefore share an invite address; each gets its own email, because each envelope differs and skipping one would leave a contact with no link.
+- Permalink submits return an **identical response** (and take the same code path) whether or not the submitted email matches an existing contact. A match surfaces only to the owner, in the review queue. Name matches are worked out when the owner opens Review, so `private.submit_to_book` never compares names, and a name match can never bring an email. Sealed has no contact merge: values never move between contacts on a name match, because an email or address could then reach the wrong person.
 - The permalink page itself (`src/lib/queries/public-book.ts`) selects only the owner display name and enabled-field flags — never ids, counts, contact data, or profile details; the select's key set is asserted in tests so a widened query fails CI.
 - Auth failures on the entry page show one generic error, never Supabase's detail.
 - Requesting access returns the **same "Your request is in" response** whether the email has an account, is approved, or was just put on the waitlist, including when Supabase rate-limits or fails the email send.

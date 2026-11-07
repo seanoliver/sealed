@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, or, sql } from "drizzle-orm";
 import { bookAccessibleBy } from "@/lib/queries/books";
 import { type SessionClaims } from "@/lib/auth";
 import { withRls, type RlsTx } from "@/lib/db";
@@ -56,6 +56,10 @@ const SNAPSHOT_COLUMNS = {
   kids_names: "kidsNames",
   email: "email",
   partner_email: "partnerEmail",
+  personal_email: "personalEmail",
+  partner_personal_email: "partnerPersonalEmail",
+  email_kind: "emailKind",
+  partner_email_kind: "partnerEmailKind",
   birthday: "birthday",
   address_line1: "addressLine1",
   address_line2: "addressLine2",
@@ -210,6 +214,32 @@ export function mergeNames(existing: ContactRow | null, names: NamePatch): House
   return draftToValues(draft);
 }
 
+const PERSON_EMAILS = [
+  ["email", "personal_email"],
+  ["partner_email", "partner_personal_email"],
+] as const;
+
+export type PersonalEmailField = (typeof PERSON_EMAILS)[number][1];
+
+/**
+ * Clearing an email is how an owner retires someone, and it does nothing to
+ * invites while a personal address stays saved, so that needs saying out loud.
+ */
+export function invitesStillGoTo(
+  before: Snapshot,
+  after: Snapshot,
+  { confirmed = [] }: { confirmed?: readonly PersonalEmailField[] } = {},
+): string | undefined {
+  for (const [email, personal] of PERSON_EMAILS) {
+    const address = after[personal];
+    if (before[email] !== null && after[email] === null && typeof address === "string") {
+      if (confirmed.includes(personal)) continue;
+      return `Invites would still go to ${address}. Clear that personal email too, or confirm on the contact form.`;
+    }
+  }
+  return undefined;
+}
+
 export type PatchPlan =
   | { kind: "invalid"; error: string }
   | { kind: "ok"; row: Partial<Row>; before: Snapshot; after: Snapshot; diff?: ContactDiff };
@@ -236,6 +266,8 @@ export function planPatch(existing: ContactRow, request: PatchRequest): PatchPla
   };
   const before = rowToSnapshot(existing);
   const after = rowToSnapshot({ ...existing, ...row });
+  const stillGoes = invitesStillGoTo(before, after);
+  if (stillGoes) return { kind: "invalid", error: stillGoes };
   return { kind: "ok", row, before, after, diff: changedFields(before, after) };
 }
 
@@ -291,10 +323,55 @@ export const GENERIC_ERROR = "Something went wrong. Please try again.";
 
 export type WriteResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export const EMAIL_FIELDS = ["email", "partner_email"] as const;
+/** Where invites go, so an agent's change to any of these waits for the owner. */
+export const EMAIL_FIELDS = [
+  "email",
+  "partner_email",
+  "personal_email",
+  "partner_personal_email",
+] as const;
 export type EmailField = (typeof EMAIL_FIELDS)[number];
 export type EmailChange = Partial<Record<EmailField, [string | null, string | null]>>;
 export const EMAIL_REQUEST_TTL_DAYS = 7;
+
+/** Owner and agent writes only: a recipient's reply must never learn this. */
+export async function emailTaken(
+  tx: RlsTx,
+  { bookId, address, contactId }: { bookId: string; address: string; contactId?: string },
+): Promise<boolean> {
+  const [taken] = await tx
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.bookId, bookId),
+        or(
+          sql`lower(${contacts.email}) = lower(${address})`,
+          sql`lower(${contacts.personalEmail}) = lower(${address})`,
+          sql`lower(${contacts.partnerPersonalEmail}) = lower(${address})`,
+        ),
+        contactId ? ne(contacts.id, contactId) : undefined,
+      ),
+    )
+    .limit(1);
+  return taken !== undefined;
+}
+
+const PERSONAL_FIELDS = ["personal_email", "partner_personal_email"] as const;
+
+export async function personalEmailConflict(
+  tx: RlsTx,
+  { bookId, contactId, after }: { bookId: string; contactId?: string; after: Partial<Snapshot> },
+): Promise<string | null> {
+  for (const field of PERSONAL_FIELDS) {
+    const address = after[field];
+    if (typeof address !== "string" || address === "") continue;
+    if (await emailTaken(tx, { bookId, address, contactId })) {
+      return `${DUPLICATE_EMAIL} (${field.replaceAll("_", " ")}).`;
+    }
+  }
+  return null;
+}
 
 export type PatchOutcome = {
   diff?: ContactDiff;
@@ -345,24 +422,24 @@ export async function patchContactAs(
       if (holding) {
         for (const [field, [, proposed]] of Object.entries(held)) {
           if (proposed === null) continue;
-          const [taken] = await tx
-            .select({ id: contacts.id })
-            .from(contacts)
-            .where(
-              and(
-                eq(contacts.bookId, book.id),
-                sql`lower(${contacts.email}) = lower(${proposed})`,
-                sql`${contacts.id} <> ${id}`,
-              ),
-            )
-            .limit(1);
-          if (taken) return { kind: "invalid", error: `${DUPLICATE_EMAIL} (${field.replace("_", " ")}).` };
+          if (await emailTaken(tx, { bookId: book.id, address: proposed, contactId: id })) {
+            return { kind: "invalid", error: `${DUPLICATE_EMAIL} (${field.replaceAll("_", " ")}).` };
+          }
         }
         const values = Object.fromEntries(
           Object.entries(request.values ?? {}).filter(([field]) => !(field in held)),
         );
         plan = planPatch(existing, { ...request, values });
         if (plan.kind === "invalid") return plan;
+      }
+
+      if (plan.diff) {
+        const conflict = await personalEmailConflict(tx, {
+          bookId: book.id,
+          contactId: id,
+          after: plan.diff.after,
+        });
+        if (conflict) return { kind: "invalid", error: conflict };
       }
 
       let eventId: string | undefined;
@@ -391,6 +468,8 @@ export async function patchContactAs(
         const stored: Record<EmailField, string | null> = {
           email: existing.email,
           partner_email: existing.partnerEmail,
+          personal_email: existing.personalEmail,
+          partner_personal_email: existing.partnerPersonalEmail,
         };
         const changes: EmailChange = {};
         for (const previous of open) {
@@ -451,6 +530,7 @@ export async function createContactAs(
   const row = { ...householdToRow(input.household), ...contactDetailsToRow(input.details) };
   const diff = { after: definedFields(rowToSnapshot(row)) };
   let inserted: { id: string; eventId?: string } | undefined;
+  let conflict: string | undefined;
   try {
     inserted = await withRls(claims, async (tx) => {
       // Resolve the book inside the RLS tx — never trust a client bookId.
@@ -460,6 +540,8 @@ export async function createContactAs(
         .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
+      conflict = (await personalEmailConflict(tx, { bookId: book.id, after: diff.after })) ?? undefined;
+      if (conflict) return undefined;
       const [created] = await tx
         .insert(contacts)
         .values({ bookId: book.id, ...row })
@@ -475,6 +557,7 @@ export async function createContactAs(
     logDbError("[ct] [createContactAs] insert failed", err);
     return { ok: false, error: GENERIC_ERROR };
   }
+  if (conflict) return { ok: false, error: conflict };
   if (!inserted) return { ok: false, error: "Set up your address book first." };
   const eventId =
     actor.source === "agent"

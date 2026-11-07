@@ -4,7 +4,7 @@ import { Notice } from "../../notice";
 import { saveTokenUpdate } from "../actions";
 import { loadTokenPage } from "../load";
 import { isSpentToken } from "../owner";
-import { recipientPrefill } from "../token-data";
+import { personalEmailPrompt, recipientPrefill } from "../token-data";
 import { confirmTokenAddress } from "./actions";
 import { EnvelopeEditor } from "./envelope-editor";
 
@@ -49,6 +49,7 @@ export default async function ConfirmAddressPage({
         household={household}
         recipient={loaded.data.recipient}
         enabled={enabled_fields}
+        asksPersonalEmail={personalEmailPrompt(loaded.data) !== null}
         senderCountry={loaded.data.sender_country}
         legacyCountry={contact.country_code ? null : contact.country}
         seenAt={loaded.data.updated_at}

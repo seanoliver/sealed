@@ -33,6 +33,8 @@ export async function listCsvRows(claims: SessionClaims): Promise<ContactCsvRow[
       partner_last_name: row.partnerLastName,
       email: row.email,
       partner_email: row.partnerEmail,
+      personal_email: row.personalEmail,
+      partner_personal_email: row.partnerPersonalEmail,
       birthday: row.birthday,
       address_line1: row.addressLine1,
       address_line2: row.addressLine2,

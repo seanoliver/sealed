@@ -1,6 +1,7 @@
 import {
   pgTable, uuid, text, jsonb, timestamp, date, customType,
 } from "drizzle-orm/pg-core";
+import type { EmailKind } from "../email-kind";
 import type { Kid } from "../names";
 import type { Recipient } from "../recipients";
 import type { AgentScope } from "../agent/scopes";
@@ -48,6 +49,10 @@ export const contacts = pgTable("contacts", {
   kids: jsonb("kids").$type<Kid[]>(),
   email: citext("email"),
   partnerEmail: citext("partner_email"),
+  personalEmail: citext("personal_email"),
+  partnerPersonalEmail: citext("partner_personal_email"),
+  emailKind: text("email_kind").$type<EmailKind>(),
+  partnerEmailKind: text("partner_email_kind").$type<EmailKind>(),
   birthday: date("birthday"),
   addressLine1: text("address_line1"),
   addressLine2: text("address_line2"),
@@ -106,6 +111,13 @@ export const contactEvents = pgTable("contact_events", {
   agentTokenId: uuid("agent_token_id"),
   agentPreviewId: uuid("agent_preview_id"),
   contactUpdatedAt: timestamp("contact_updated_at", { withTimezone: true }),
+});
+
+export const contactDuplicateDismissals = pgTable("contact_duplicate_dismissals", {
+  bookId: uuid("book_id").notNull(),
+  contactA: uuid("contact_a").notNull(),
+  contactB: uuid("contact_b").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const agentTokens = pgTable("agent_tokens", {
