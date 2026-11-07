@@ -39,7 +39,6 @@ export async function approveMerge(
   const id = String(formData.get("id") ?? "");
   if (!uuidSchema.safeParse(id).success) return { error: NOT_FOUND };
 
-  // Set only by Compare on a name match. The email match on the submission wins.
   const compared = String(formData.get("contact_id") ?? "");
   const contactId = uuidSchema.safeParse(compared).success ? compared : undefined;
 
@@ -73,7 +72,6 @@ export async function reject(
 
 const CONTACT_NOT_FOUND = "Contact not found.";
 
-/** Keep one of a detected pair: fill its empty fields from the other, then delete the other. */
 export async function keepDuplicate(
   _prevState: ReviewActionState,
   formData: FormData,
@@ -100,7 +98,6 @@ export async function keepDuplicate(
   return {};
 }
 
-/** The owner says these two are different people. Nothing about either contact changes. */
 export async function dismissDuplicate(
   _prevState: ReviewActionState,
   formData: FormData,

@@ -98,7 +98,6 @@ type CardModel = { id: string; submittedAtLabel: string; readings: Readings } & 
       kind: "merge";
       contactName: string;
       rows: DiffRow[];
-      /** Set while Compare holds a name match open: nothing is linked until Apply update. */
       comparing?: string;
     }
 );
@@ -110,7 +109,6 @@ const addressLine = (contact: BookContact) =>
     .filter((part) => part !== null)
     .join(", ") || null;
 
-/** Payload names go through the same parser as the card, and only ever reach the owner. */
 function payloadNames(payload: unknown, enabled: EnabledFields): MatchableNames | null {
   const [person, partner] = submittedPeople(payload, enabled);
   if (!person?.full) return null;

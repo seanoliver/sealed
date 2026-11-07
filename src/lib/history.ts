@@ -159,7 +159,6 @@ export function describeEvent(
   if (!after) return { kind: "unknown" };
 
   const rows = changedRows(before, after, countryCode);
-  // Review's Keep this one. The deleted contact is otherwise gone, so say so even if nothing moved.
   if (isRecord(diff.merged_from)) {
     const mergedFrom = cap(plain(diff.merged_from.full_name) ?? "another contact");
     return { kind: "changed", rows, undo: false, mergedFrom };

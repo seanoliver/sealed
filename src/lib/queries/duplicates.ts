@@ -57,7 +57,6 @@ export async function countDetectedDuplicates(claims: SessionClaims, bookId: str
   });
 }
 
-/** Worked out from the book on every read, so an edit or a delete can never leave a stale pair. */
 export async function loadDuplicateReview(
   claims: SessionClaims,
 ): Promise<{ pairs: DetectedDuplicate[]; contacts: Contact[] }> {

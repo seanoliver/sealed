@@ -1,23 +1,17 @@
 import { isHouseholdLabel, isSplit, type StoredNames } from "@/lib/names";
 
-/**
- * Order-independent name matching for detected duplicate contacts. A match only
- * ever flags a pair for the owner: two different people can share a name, so
- * nothing here may merge, skip or delete a contact on its own.
- */
+/** A match only flags a pair: two people can share a name, so never merge or skip on one. */
 
 export type MatchableNames = Pick<
   StoredNames,
   "fullName" | "partnerName" | "firstName" | "lastName" | "partnerFirstName" | "partnerLastName"
 >;
 
-/** `same_people`: every person pairs up. `shares_person`: at least one does. */
 export type HouseholdMatch = "same_people" | "shares_person";
 
 export type ContactPair = { a: string; b: string };
 export type DuplicatePair = ContactPair & { match: HouseholdMatch };
 
-/** `first` is one word (or a whole household label); `rest` is everything after it. */
 type Person = { first: string; rest: string };
 
 function normalize(name: string): string {
@@ -33,15 +27,12 @@ function normalize(name: string): string {
 
 const nameWords = (name: string) => normalize(name).split(" ").filter((word) => word !== "");
 
-/** "Theo & Nina Marsh" and "Theo and Nina Marsh" name two people. */
 const couples = (name: string) => name.split(/\s*[&+/]\s*|\s+and\s+/i);
 
-/** Which contact column a person came from. A label stands for a household, not a person. */
 type NamedPerson = Person & { slot: Slot; label: boolean };
 
 export type Slot = "primary" | "partner";
 
-/** The people a contact names. A row with no partner names one, unless its name holds a couple. */
 function namedPeople(names: MatchableNames): NamedPerson[] {
   const labelled = !isSplit(names) && isHouseholdLabel(names.fullName);
   const label = labelled ? normalize(names.fullName) : "";
@@ -58,7 +49,6 @@ function namedPeople(names: MatchableNames): NamedPerson[] {
     ({ words }) => words.length > 0,
   );
 
-  // A one-word name takes the household's last name, as householdLine prints it.
   const surnamed = named.findLast(({ words }) => words.length > 1);
   const surname =
     isSplit(names) && names.lastName ? normalize(names.lastName) : surnamed?.words.at(-1);
@@ -75,7 +65,6 @@ function namedPeople(names: MatchableNames): NamedPerson[] {
 
 const peopleIn = (names: MatchableNames): Person[] => namedPeople(names);
 
-/** A missing last name matches any last name, so "Theo" can be "Theo Marsh". */
 const samePerson = (a: Person, b: Person) =>
   a.first === b.first && (a.rest === b.rest || a.rest === "" || b.rest === "");
 
@@ -98,17 +87,13 @@ export function compareHouseholds(a: MatchableNames, b: MatchableNames): Househo
 }
 
 export type SlotPairing = {
-  /** The kept slot holding the same one person as this slot of the other contact. */
   target: Record<Slot, Slot | null>;
-  /** This slot of the other contact names someone the kept contact does not. */
   absent: Record<Slot, boolean>;
-  /** This slot of the other contact holds exactly one real person. */
   single: Record<Slot, boolean>;
 };
 
 const SLOTS = ["primary", "partner"] as const;
 
-/** Lines up two contacts person by person, so a value can follow the person who owns it. */
 export function pairSlots(keep: MatchableNames, other: MatchableNames): SlotPairing {
   const kept = namedPeople(keep);
   const others = namedPeople(other);
@@ -148,7 +133,6 @@ export function orderedPair(first: string, second: string): ContactPair {
 
 const pairKey = ({ a, b }: ContactPair) => `${a}:${b}`;
 
-/** Every undismissed pair in the book. Only people with the same first word are compared. */
 export function detectDuplicates(
   contacts: readonly (MatchableNames & { id: string })[],
   { dismissed = [] }: { dismissed?: readonly ContactPair[] } = {},
@@ -179,7 +163,6 @@ export function detectDuplicates(
     .sort(strongestFirst);
 }
 
-/** Rows that match the book or an earlier row in the file. Each row stays the owner's call. */
 export function duplicateRows(
   rows: readonly MatchableNames[],
   book: readonly (MatchableNames & { id: string })[],
@@ -193,7 +176,6 @@ export function duplicateRows(
   });
 }
 
-/** The contacts a household that is not in the book yet would duplicate. */
 export function matchInBook(
   candidate: MatchableNames,
   contacts: readonly (MatchableNames & { id: string })[],

@@ -1,8 +1,5 @@
 set lock_timeout = '5s';
 
--- Pairs an owner marked as not duplicates. Detected duplicates themselves are
--- computed from names on read (src/lib/household-match.ts), so only this
--- decision is stored. contact_a < contact_b keeps one row per pair.
 create table public.contact_duplicate_dismissals (
   book_id uuid not null references public.books (id) on delete cascade,
   contact_a uuid not null references public.contacts (id) on delete cascade,
@@ -38,8 +35,7 @@ create policy "contact_duplicate_dismissals_insert_own_book" on public.contact_d
 
 grant select, insert on public.contact_duplicate_dismissals to authenticated;
 
--- A merge deletes a contact, so its record must commit with the delete. The
--- app writes every other owner event after commit, through the admin connection.
+-- A merge's history must commit with its delete, so it cannot be written after commit.
 create policy "contact_events_insert_merge" on public.contact_events
   for insert to authenticated
   with check (

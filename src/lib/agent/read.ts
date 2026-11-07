@@ -441,7 +441,6 @@ export async function findDuplicates(
       holders.set(key, entry);
     }
   });
-  // Pairs the owner marked as different people stay out of the name match.
   const dismissed = await listDismissedPairs(claims);
   const indexOf = new Map(rows.map((row, index) => [row.id, index]));
   for (const { a, b, match } of detectDuplicates(rows, { dismissed })) {

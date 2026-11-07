@@ -23,7 +23,6 @@ type Preview = {
   warnings: CsvRowError[];
   /** In-file duplicate emails removed client-side (first occurrence kept). */
   duplicates: number;
-  /** Indexes into `ready` that name people already in the book or earlier in the file. */
   nameMatches: number[];
 };
 

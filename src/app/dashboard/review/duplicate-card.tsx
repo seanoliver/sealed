@@ -16,7 +16,6 @@ export type DuplicateSide = {
   email: string | null;
   birthday: string | null;
   lastSent: string;
-  /** What keeping this side would do to the other. */
   plan: Pick<MergePlan, "carried" | "notKept">;
 };
 

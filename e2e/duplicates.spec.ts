@@ -27,7 +27,7 @@ async function shot(name: string) {
   await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
   for (const [width, label] of [[1280, "desktop"], [390, "phone"]] as const) {
     await page.setViewportSize({ width, height: 844 });
-    await page.screenshot({ path: path.join(shotDir, `${name}-${label}.png`), fullPage: true });
+    await page.locator("main").screenshot({ path: path.join(shotDir, `${name}-${label}.png`) });
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 }

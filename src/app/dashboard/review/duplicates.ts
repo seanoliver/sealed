@@ -26,7 +26,6 @@ const PENDING_REPLY =
 export type MergeInput = {
   keepId: string;
   removeId: string;
-  /** Each contact's updated_at text from the page that showed the pair. */
   keepVersion: string;
   removeVersion: string;
 };
@@ -34,11 +33,8 @@ export type MergeInput = {
 export type MergeResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Deletes a contact, so it cannot be undone: the links, send history and
- * events of `removeId` go with it. The copy under `merged_from` on the kept
- * contact's history is the only record left, so it commits with the delete.
- * Both rows lock in id order, so two merges of one pair, in either direction,
- * cannot deadlock or both win.
+ * Cannot be undone: `merged_from` is the only record left, so it must commit with the delete.
+ * Lock both rows in id order, or two merges of one pair can deadlock or both win.
  */
 export async function mergeDuplicateAs(claims: SessionClaims, input: MergeInput): Promise<MergeResult> {
   const { keepId, removeId, keepVersion, removeVersion } = input;

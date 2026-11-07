@@ -173,7 +173,6 @@ export async function approveMergeAs(
       const loaded = await loadPendingSubmission(tx, claims.sub, id);
       if (!loaded) return { kind: "not_found" };
       const { book, submission } = loaded;
-      // A name match is the owner's call on Compare, and only an invite reply can take one.
       const compared = submission.source === "permalink" ? contactId : undefined;
       const targetId = submission.matchedContactId ?? compared;
       if (!targetId) return { kind: "no_match" };

@@ -23,10 +23,8 @@ export function ReviewCardActions({
 }: {
   submissionId: string;
   approve?: "new" | "merge";
-  /** Opens the side-by-side view for a name match. */
   compareHref?: string;
   backHref?: string;
-  /** The compared contact. Apply update needs it because the submission has no link yet. */
   contactId?: string;
 }) {
   const [approveState, approveAction, approvePending] = useActionState(

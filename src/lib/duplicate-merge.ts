@@ -21,10 +21,8 @@ export type MergeContact = StoredNames & {
 export type MergeLine = { label: string; value: string };
 
 export type MergePlan = {
-  /** Columns to set on the kept contact. Names and filled fields never appear here. */
   set: Partial<MergeContact>;
   carried: MergeLine[];
-  /** Values that go with the deleted contact. The confirm step must show these. */
   notKept: MergeLine[];
 };
 
@@ -69,7 +67,6 @@ const EMAIL_LABELS = {
 } as const;
 const SLOTS = ["primary", "partner"] as const;
 
-/** Fills what the kept contact lacks. It never replaces a value or changes a name. */
 export function planDuplicateMerge(keep: MergeContact, remove: MergeContact): MergePlan {
   const set: Partial<MergeContact> = {};
   const carried: MergeLine[] = [];
@@ -77,7 +74,6 @@ export function planDuplicateMerge(keep: MergeContact, remove: MergeContact): Me
   const { target, absent, single } = pairSlots(keep, remove);
   const slotName = (slot: Slot) => (slot === "primary" ? remove.fullName : remove.partnerName);
 
-  // Only a lone contact gains a partner: the one person the other contact adds to them.
   const gainsPartner =
     keep.partnerName === null && keep.partnerFirstName === null && householdSize(keep) === 1;
   const gained = gainsPartner

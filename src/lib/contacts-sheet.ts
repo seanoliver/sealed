@@ -263,7 +263,6 @@ export function sendPlan(
   };
 }
 
-/** Detected pairs where this send would reach both contacts, so one household gets two requests. */
 export function doubledHouseholds(
   pairs: readonly (readonly [string, string])[],
   input: SendPlan["input"],
