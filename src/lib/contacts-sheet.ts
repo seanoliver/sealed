@@ -52,7 +52,6 @@ export interface SheetRow {
   values: SheetValues;
   legacyCountry: string | null;
   place: string;
-  /** An envelope can print: the same test formatEnvelope applies. */
   hasAddress: boolean;
   status: StatusKey;
   failureReason: FailureReason | null;
@@ -322,7 +321,6 @@ export function matchesFilter(row: FilterableRow, filter: ContactFilter): boolea
 export type StatusCount = { status: StatusKey; count: number };
 export type RouteCounts = { total: number; statuses: StatusCount[] };
 
-/** Contacts, not emails: a row is one household and one envelope. */
 export type BookCounts = {
   contacts: number;
   withAddress: number;

@@ -730,7 +730,6 @@ export function ContactsTable({
         searching={searching}
         active={activeFilter?.filter ?? null}
         onFilter={(filter, label) => {
-          // The card is tall on a phone: bring the list up to where it can be seen.
           if (toggleFilter(filter, label) && window.matchMedia("(max-width: 767px)").matches) {
             toolbarRef.current?.scrollIntoView({ block: "start" });
           }

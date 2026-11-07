@@ -35,8 +35,7 @@ function useSummaryHidden() {
   return { hidden, setHidden: setStored };
 }
 
-// A status chip says "Not sent" for a failure and puts the reason beside it;
-// a count needs a name of its own to stand apart from the unsent rows.
+// Not chipLabels alone: it calls a failure "Not sent", the same name as the unsent count.
 const statusLabel = (status: StatusKey) =>
   status === "failed" ? "Send failed" : chipLabels[status];
 

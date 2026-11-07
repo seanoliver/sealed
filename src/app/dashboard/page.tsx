@@ -35,7 +35,6 @@ export default async function DashboardPage({
   const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
   const [contacts, wholeBook, replies, duplicates] = await Promise.all([
     listContacts(claims, query || undefined),
-    // Search filters in SQL, and the counts always cover the whole book.
     query ? listContacts(claims) : null,
     listPendingReplies(claims),
     listDetectedDuplicates(claims),
