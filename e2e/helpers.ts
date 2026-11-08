@@ -190,3 +190,7 @@ export async function calls(page: Page): Promise<TurnstileCalls> {
     return { renders: ts.renders.length, resets: ts.resets.length, removes: ts.removes.length };
   });
 }
+
+export async function openCityLine(page: Page): Promise<void> {
+  await page.getByRole("button", { name: /(Add|Edit) city/ }).click();
+}

@@ -19,9 +19,11 @@ import {
   type AddressRow,
 } from "@/lib/address/fields";
 import {
+  COUNTRY_LINE_AT,
   envelopeSlots,
   formatEnvelope,
   type Envelope as EnvelopeModel,
+  type EnvelopeLine,
   type EnvelopeSlot,
 } from "@/lib/address/format";
 import { normalizePostcode, normalizeState, postcodeProblem } from "@/lib/address/rules";
@@ -49,6 +51,7 @@ export type AddressFieldStyles = { input: string; label: string };
 export type AddressPreview = {
   envelope: EnvelopeModel | null;
   slots: EnvelopeSlot[];
+  partial: EnvelopeLine[];
   name: string;
   country: Country | null;
   caption: ReactNode;
@@ -564,12 +567,19 @@ export function AddressFields({
   );
 
   if (typeof preview === "function") {
+    const partial =
+      envelope || audience.kind !== "owner"
+        ? []
+        : (formatEnvelope({ ...typed, addressLine1: "-" }, { name, senderCountry, asTyped: true })?.lines ?? []).filter(
+            (line) => line.at !== COUNTRY_LINE_AT && !line.tokens.includes("A") && !line.tokens.includes("N"),
+          );
     return preview({
       fields,
       preview: {
         envelope,
         // Nothing prints without line 1, so line 2 alone must not count as a street.
         slots: envelopeSlots(envelope ? typed : { ...typed, addressLine2: "" }, { senderCountry }),
+        partial,
         name,
         country,
         caption: envelope ? previewCaption(envelope, values, audience) : null,

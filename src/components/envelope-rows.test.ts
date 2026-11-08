@@ -29,6 +29,17 @@ describe("envelopeRows", () => {
     expect(rows[openRowIndex(rows, open)]).toEqual({ kind: "slot", tokens: ["A"], at: 2 });
   });
 
+  it("keeps partial lines visible when no street prints an envelope", () => {
+    const rows = envelopeRows({
+      envelope: null,
+      name: "Cora",
+      slots: [{ tokens: ["A"], at: 1 }],
+      partial: [{ text: "London", uppercased: false, tokens: ["C", "S", "Z"], at: 2 }],
+    });
+    expect(rows.map((row) => row.kind)).toEqual(["line", "slot", "line"]);
+    expect(rows[2]).toMatchObject({ kind: "line", text: "London", tokens: ["C", "S", "Z"] });
+  });
+
   it("puts out-of-order slots and the open row in print order", () => {
     const rows = envelopeRows(
       {

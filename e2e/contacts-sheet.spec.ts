@@ -13,7 +13,7 @@ import {
   setContactCity,
   setContactKidsByEmail,
 } from "./db";
-import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
+import { openCityLine, signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -201,6 +201,8 @@ test("Enter edits the row in place and keeps fields the row does not show", asyn
 
   await page.goto(`/dashboard/contacts/${adaId}`);
   await expect(page.locator("#city")).toHaveValue("Paris");
+  await page.getByRole("button", { name: /Edit names on the envelope$/ }).click();
+  await page.getByRole("button", { name: /^Edit Byron/ }).click();
   await expect(page.locator("#kid_0_first")).toHaveValue("Byron");
   const latest = page.getByRole("region", { name: "History" }).locator("li").first();
   await expect(latest.locator("dd", { hasText: "Paris" }).locator("del")).toHaveText("London");
@@ -291,6 +293,8 @@ test("a row save keeps changes made elsewhere since the page loaded", async () =
   await expect(bodyRow("Bea Brown")).toContainText("· 1 kid");
 
   await page.goto(`/dashboard/contacts/${beaId}`);
+  await page.getByRole("button", { name: /Edit names on the envelope$/ }).click();
+  await page.getByRole("button", { name: /^Edit Sam/ }).click();
   await expect(page.locator("#kid_0_first")).toHaveValue("Sam");
   await expect(page.locator("#city")).toHaveValue("Oslo");
 });
@@ -1003,6 +1007,7 @@ test("the contact form saves a detail on an unsplit contact it cannot split", as
     kidsNames,
   });
   await page.goto(`/dashboard/contacts/${id}`);
+  await openCityLine(page);
   await page.locator("#city").fill("Oslo");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved.");
@@ -1027,7 +1032,10 @@ test("the contact form still checks names edited on an unsplit contact", async (
     kidsNames,
   });
   await page.goto(`/dashboard/contacts/${id}`);
-  await page.getByRole("button", { name: "Remove child 12" }).click();
+  await page.getByRole("button", { name: /^.* Edit names on the envelope$/ }).click();
+  await page.getByRole("button", { name: /^Remove L/ }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await openCityLine(page);
   await page.locator("#city").fill("Oslo");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Add up to 10 children.")).toBeVisible();
@@ -1048,6 +1056,7 @@ test("the contact form rejects a bad detail on an unsplit contact", async () => 
   });
   await page.goto(`/dashboard/contacts/${id}`);
   await page.locator("#email").fill("a@b");
+  await openCityLine(page);
   await page.locator("#city").fill("Oslo");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Invalid email address")).toBeVisible();
@@ -1060,6 +1069,7 @@ test("the contact form saves a detail on an unsplit contact with a long name", a
   const fullName = `Pia ${"L".repeat(90)}`;
   const id = await seedContact({ bookId, fullName, email: "pia@example.test" });
   await page.goto(`/dashboard/contacts/${id}`);
+  await openCityLine(page);
   await page.locator("#city").fill("Oslo");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved.");
