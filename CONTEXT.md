@@ -16,6 +16,14 @@ _Avoid_: Book title, named book, contact list
 The human-readable name of the person who owns the address book. A first name is sufficient; this is distinct from both the address book’s link and the owner’s email alias.
 _Avoid_: Account name, book title, email alias
 
+**Book member**:
+A person the owner shares the address book with, such as a partner. A member signs in with their own account and can read and change contacts, review replies and send address requests; the book's settings stay the owner's. An admin adds a member by email, and the membership attaches to that person's account when they next sign in.
+_Avoid_: Collaborator, co-owner, shared user
+
+**Sender names**:
+The full names shown as "From …" on the recipient page, such as "Mei Lin and Daniel Park". Set per address book; when blank, the owner name is shown instead.
+_Avoid_: Signature, display name
+
 **Invite page**:
 The public, write-only page an owner shares so another person can submit contact information to the address book.
 _Avoid_: Ask-your-friends page, public address book
