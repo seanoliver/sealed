@@ -57,7 +57,7 @@ function country(side: Side): string | null | undefined {
 
 const BIRTHDAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function birthday(value: unknown, { year }: { year: boolean }): string | null {
+export function birthday(value: unknown, { year }: { year: boolean }): string | null {
   const text = plain(value);
   const match = text === null ? null : BIRTHDAY.exec(text);
   if (!match) return text;
@@ -97,6 +97,10 @@ const FIELDS: FieldReader[] = [
   { key: "kids", label: () => "Kids", read: (side) => displayName(side, "kids_names") },
   simple("email", "Email"),
   simple("partner_email", "Partner email"),
+  simple("personal_email", "Personal email"),
+  simple("partner_personal_email", "Partner personal email"),
+  simple("email_kind", "Email type"),
+  simple("partner_email_kind", "Partner email type"),
   {
     key: "birthday",
     label: () => "Birthday",

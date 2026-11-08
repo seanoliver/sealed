@@ -51,9 +51,11 @@ import {
   changedValues,
   draftFromNames,
   draftToValues,
+  doubledHouseholds,
   emailCount,
   householdEdited,
   householdPatchInput,
+  matchesFilter,
   moveCursor,
   NAME_LINE_LABELS,
   namesFromValues,
@@ -63,6 +65,8 @@ import {
   statusRank,
   validateHousehold,
   type AnswerSide,
+  type BookCounts,
+  type ContactFilter,
   type HouseholdDraft,
   type RowKey,
   type SendPlan,
@@ -71,54 +75,20 @@ import {
   type SheetValues,
   type StatusKey,
   type TwoAnswers,
+  sheetInviteAddresses,
 } from "@/lib/contacts-sheet";
 import type { FailureReason } from "@/lib/email/resend";
 import { type Readings } from "@/lib/readings";
 import { NameWithReading } from "@/components/name-with-reading";
 import { compareLastName, lastNameKey, type StoredNames } from "@/lib/names";
 import { type HouseholdFieldErrors } from "@/lib/validation/household";
+import { BookSummary } from "./book-summary";
+import { chipBase, chipLabels, chipStyles } from "./status-chip-styles";
 import {
   HouseholdLabel,
   HouseholdNameCell,
   UnsplitDot,
 } from "./household-panel";
-
-const chipBase =
-  "inline-flex items-center rounded-full border px-2 py-px text-xs font-medium whitespace-nowrap";
-
-const chipStyles: Record<StatusKey, string> = {
-  updated:
-    "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200",
-  confirmed:
-    "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200",
-  none: "border-border bg-secondary/50 text-muted-foreground",
-  sent: "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200",
-  delivered:
-    "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200",
-  opened:
-    "border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-200",
-  bounced:
-    "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
-  complained:
-    "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
-  failed:
-    "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
-  unconfirmed:
-    "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200",
-};
-
-const chipLabels: Record<StatusKey, string> = {
-  updated: "Updated",
-  confirmed: "Confirmed",
-  none: "Not sent",
-  sent: "Sent",
-  delivered: "Delivered",
-  opened: "Opened",
-  bounced: "Bounced",
-  complained: "Complained",
-  failed: "Not sent",
-  unconfirmed: "Unconfirmed",
-};
 
 const failureLabels: Record<FailureReason, string> = {
   rejected: "Invalid email",
@@ -430,22 +400,50 @@ type SavedOverlay = {
 
 type SortChoice = "default" | "last_name";
 
-export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
-  const [attentionIds, setAttentionIds] = useState<ReadonlySet<string> | null>(null);
+export function ContactsTable({
+  rows: allRows,
+  book,
+  searching,
+  duplicatePairs = [],
+}: {
+  rows: SheetRow[];
+  book: BookCounts;
+  searching: boolean;
+  duplicatePairs?: readonly (readonly [string, string])[];
+}) {
+  // The ids are captured when the filter turns on, so a row being fixed stays
+  // in view until the owner clears the filter.
+  const [activeFilter, setActiveFilter] = useState<{
+    filter: ContactFilter;
+    label: string;
+    ids: ReadonlySet<string>;
+  } | null>(null);
+  const attentionIds = activeFilter?.filter === "attention" ? activeFilter.ids : null;
   const attentionCount = useMemo(
     () => allRows.filter((row) => row.needsAttention).length,
     [allRows],
   );
   const rows = useMemo(
-    () => (attentionIds ? allRows.filter((row) => attentionIds.has(row.id)) : allRows),
-    [allRows, attentionIds],
+    () => (activeFilter ? allRows.filter((row) => activeFilter.ids.has(row.id)) : allRows),
+    [allRows, activeFilter],
   );
   const [sendLost, setSendLost] = useState(false);
-  const attentionSnapshot = () =>
-    new Set([
-      ...allRows.filter((row) => row.needsAttention).map((row) => row.id),
-      ...(editingIdRef.current ? [editingIdRef.current] : []),
-    ]);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  function toggleFilter(filter: ContactFilter, label: string) {
+    if (activeFilter?.filter === filter) {
+      setActiveFilter(null);
+      return false;
+    }
+    setActiveFilter({
+      filter,
+      label,
+      ids: new Set([
+        ...allRows.filter((row) => matchesFilter(row, filter)).map((row) => row.id),
+        ...(editingIdRef.current ? [editingIdRef.current] : []),
+      ]),
+    });
+    return true;
+  }
   const router = useRouter();
   const layout = useStoredLayout();
   const hasReadings = useMemo(
@@ -673,6 +671,8 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
     });
   }
 
+  const doubled = confirm ? doubledHouseholds(duplicatePairs, confirm.input, rows) : 0;
+
   const banner =
     result === null ? null : "error" in result ? (
       <div
@@ -725,7 +725,19 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
     <div>
       {banner}
 
+      <BookSummary
+        book={book}
+        searching={searching}
+        active={activeFilter?.filter ?? null}
+        onFilter={(filter, label) => {
+          if (toggleFilter(filter, label) && window.matchMedia("(max-width: 767px)").matches) {
+            toolbarRef.current?.scrollIntoView({ block: "start" });
+          }
+        }}
+      />
+
       <div
+        ref={toolbarRef}
         role="toolbar"
         aria-label="Contact actions"
         className={`mt-4 flex flex-wrap items-center gap-2 rounded-xl px-2 py-1.5 transition-colors ${
@@ -791,7 +803,7 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
           <button
             type="button"
             aria-pressed={attentionIds !== null}
-            onClick={() => setAttentionIds(attentionIds ? null : attentionSnapshot())}
+            onClick={() => toggleFilter("attention", "needs attention")}
             className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
               attentionIds
                 ? "border-primary bg-primary text-primary-foreground"
@@ -958,6 +970,16 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
               </>
             ) : null}
           </p>
+          {doubled > 0 ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              {doubled === 1 ? "1 detected duplicate" : `${doubled} detected duplicates`} could get
+              two requests.{" "}
+              <Link href="/dashboard/review" className="underline underline-offset-2">
+                Review {doubled === 1 ? "it" : "them"} first
+              </Link>
+              .
+            </p>
+          ) : null}
           <div className="mt-3 flex gap-2">
             <button
               type="button"
@@ -984,6 +1006,21 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
           className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
         >
           {editing?.error ?? notice}
+        </p>
+      ) : null}
+
+      {activeFilter && activeFilter.filter !== "attention" ? (
+        <p className="mt-2 flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
+          <span>
+            Showing {rows.length} {activeFilter.label}
+          </span>
+          <button
+            type="button"
+            onClick={() => setActiveFilter(null)}
+            className="cursor-pointer text-foreground underline underline-offset-2 hover:text-foreground/80"
+          >
+            Clear
+          </button>
         </p>
       ) : null}
 
@@ -1107,7 +1144,12 @@ export function ContactsTable({ rows: allRows }: { rows: SheetRow[] }) {
             const { values, names } = row.original;
             const name = sheetName(names);
             const place = row.original.place;
-            const emails = [values.email, values.partner_email]
+            const invites = sheetInviteAddresses(values);
+            const emails = [
+              invites.primary,
+              invites.partner,
+              values.personal_email && values.email ? `was ${values.email}` : "",
+            ]
               .filter(Boolean)
               .join(" · ");
             const answers = row.original.answers;
@@ -1419,14 +1461,21 @@ function ViewRow({
           );
         }
         if (field?.field === "email") {
+          const invites = sheetInviteAddresses(values);
           return (
             <td key={cell.id} className={`${cellClasses} py-1 text-foreground/80`}>
-              <span className="block truncate">
-                {values.email || <span className="text-muted-foreground/50">—</span>}
+              <span
+                className="block truncate"
+                title={values.personal_email ? `Was ${values.email}` : undefined}
+              >
+                {invites.primary ?? <span className="text-muted-foreground/50">—</span>}
               </span>
-              {values.partner_email ? (
-                <span className="block truncate text-muted-foreground">
-                  {values.partner_email}
+              {invites.partner ? (
+                <span
+                  className="block truncate text-muted-foreground"
+                  title={values.partner_personal_email ? `Was ${values.partner_email}` : undefined}
+                >
+                  {invites.partner}
                 </span>
               ) : null}
             </td>
@@ -1599,9 +1648,13 @@ function EditingRow({
                 {(
                   [
                     ["email", "Email"],
+                    ["personal_email", "Personal email"],
                     ["partner_email", "Partner email"],
+                    ["partner_personal_email", "Partner's personal email"],
                   ] as const
-                ).map(([name, label]) => (
+                )
+                  .filter(([name]) => name === "email" || name === "partner_email" || values[name] !== "")
+                  .map(([name, label]) => (
                   <input
                     key={name}
                     data-cell-input={name === "email" ? true : undefined}
@@ -1617,7 +1670,7 @@ function EditingRow({
                     onKeyDown={onInputKeyDown}
                     className={`${cellInputClasses} placeholder:text-muted-foreground`}
                   />
-                ))}
+                  ))}
               </span>
             </td>
           );

@@ -5,6 +5,7 @@ export type ReplySnapshot = {
   household: HouseholdDraft;
   address: string[];
   email: string;
+  personalEmail: string;
   birthday: string;
 };
 
@@ -14,6 +15,7 @@ export type Change =
   | { kind: "renamed"; from: string; to: string }
   | { kind: "address"; from: string; to: string }
   | { kind: "email"; from: string; to: string }
+  | { kind: "personal_email"; from: string; to: string }
   | { kind: "birthday"; from: string; to: string };
 
 const personName = (person: Person | undefined): string | null =>
@@ -51,6 +53,13 @@ export function whatChanged(before: ReplySnapshot, after: ReplySnapshot): Change
 
   if (before.email.trim() !== after.email.trim()) {
     push({ kind: "email", from: before.email.trim(), to: after.email.trim() });
+  }
+  if (before.personalEmail.trim() !== after.personalEmail.trim()) {
+    push({
+      kind: "personal_email",
+      from: before.personalEmail.trim(),
+      to: after.personalEmail.trim(),
+    });
   }
   if (before.birthday !== after.birthday) {
     push({ kind: "birthday", from: before.birthday, to: after.birthday });

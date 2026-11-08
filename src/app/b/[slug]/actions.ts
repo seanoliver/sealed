@@ -21,7 +21,7 @@ import {
 } from "@/lib/queries/public-book";
 import { hashedRateLimitKey, requestIp } from "@/lib/request-ip";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { checkAddress, readTokenDetails, tokenDetailSchema } from "@/lib/validation/contact";
+import { checkAddress, permalinkDetailSchema, readTokenDetails } from "@/lib/validation/contact";
 import {
   parseHouseholdForm,
   readHouseholdValues,
@@ -140,7 +140,7 @@ export async function submitToBook(
   }
   if (!book) notFound();
   const household = parseHouseholdForm(formData, { ownerName: book.ownerName });
-  const parsedDetails = tokenDetailSchema.safeParse(echo.values);
+  const parsedDetails = permalinkDetailSchema.safeParse(echo.values);
   const address = parsedDetails.success ? checkAddress(parsedDetails.data) : null;
   if (address?.ok === false) {
     return { error: address.error, fieldErrors: { postal_code: address.error }, ...echo };

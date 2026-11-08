@@ -201,6 +201,21 @@ export async function getContactSnapshot(contactId: string): Promise<Record<stri
   return rows[0].snap as Record<string, unknown>;
 }
 
+export async function setContactEmailFields(
+  contactId: string,
+  fields: { email_kind?: "personal" | "work"; personal_email?: string },
+): Promise<void> {
+  await db`update public.contacts set ${db(fields)} where id = ${contactId}`;
+}
+
+export async function getEmailColumns(contactId: string) {
+  const [row] = await db`
+    select email::text, partner_email::text, personal_email::text,
+           partner_personal_email::text, email_kind
+    from public.contacts where id = ${contactId}`;
+  return row;
+}
+
 export async function setContactKidsByEmail(
   email: string,
   kids: { first: string; last?: string }[],

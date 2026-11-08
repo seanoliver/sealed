@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ContactListRow } from "@/lib/queries/contacts";
 import {
+  bookCounts,
   changedValues,
   combineSends,
+  doubledHouseholds,
   draftFromNames,
   draftToValues,
   emailCount,
   householdEdited,
   householdPatchInput,
   isNoOpReply,
+  matchesFilter,
   moveCursor,
   namesFromValues,
   parseStoredLayout,
@@ -20,6 +23,7 @@ import {
   toSheetRow,
   twoAnswers,
   validateHousehold,
+  type ContactFilter,
   type HouseholdDraft,
   type StatusKey,
 } from "./contacts-sheet";
@@ -36,6 +40,10 @@ const listRow: ContactListRow = {
   kids: null,
   email: "ada@example.test",
   partnerEmail: null,
+  personalEmail: null,
+  partnerPersonalEmail: null,
+  emailKind: null,
+  partnerEmailKind: null,
   birthday: null,
   addressLine1: "12 St James's Square",
   addressLine2: null,
@@ -56,6 +64,27 @@ const listRow: ContactListRow = {
   changedAfterSend: false,
   updatedAt: new Date("2026-10-01T12:00:00Z"),
 };
+
+describe("doubledHouseholds", () => {
+  const row = (id: string, email: string) => ({ id, values: { email, partner_email: "" } as Parameters<typeof emailCount>[0] as never });
+  const rows = [row("a", "a@x.test"), row("b", "b@x.test"), row("c", "")];
+
+  it("counts a pair only when the send reaches both contacts by email", () => {
+    expect(doubledHouseholds([["a", "b"]], { contactIds: ["a", "b"] }, rows)).toBe(1);
+    expect(doubledHouseholds([["a", "b"]], { contactIds: ["a"] }, rows)).toBe(0);
+    expect(doubledHouseholds([["a", "c"]], { contactIds: ["a", "c"] }, rows)).toBe(0);
+  });
+
+  it("reads the people list from a needs-attention send", () => {
+    const input = {
+      recipients: [
+        { contactId: "a", recipient: "primary" as const },
+        { contactId: "b", recipient: "partner" as const },
+      ],
+    };
+    expect(doubledHouseholds([["a", "b"]], input, rows)).toBe(1);
+  });
+});
 
 describe("combineSends", () => {
   const none = { status: "none", failureReason: null } as const;
@@ -156,6 +185,20 @@ describe("toSheetRow", () => {
 });
 
 describe("emailCount", () => {
+  it("counts the invite address, one per inbox", () => {
+    expect(
+      emailCount({ email: "", partner_email: "", personal_email: "a@gmail.test", partner_personal_email: "" }),
+    ).toBe(1);
+    expect(
+      emailCount({
+        email: "a@work.test",
+        partner_email: "b@work.test",
+        personal_email: "home@gmail.test",
+        partner_personal_email: "HOME@gmail.test",
+      }),
+    ).toBe(1);
+  });
+
   it("counts one email per address", () => {
     expect(emailCount({ email: "a@x.test", partner_email: "b@x.test" })).toBe(2);
     expect(emailCount({ email: "a@x.test", partner_email: "" })).toBe(1);
@@ -647,5 +690,78 @@ describe("household drafts", () => {
 describe("NEEDS_ATTENTION", () => {
   it("covers every send the owner should look at", () => {
     expect([...NEEDS_ATTENTION].sort()).toEqual(["bounced", "complained", "failed", "unconfirmed"]);
+  });
+});
+
+describe("hasAddress", () => {
+  it("needs a street line, the same test the envelope uses", () => {
+    expect(toSheetRow(listRow, String).hasAddress).toBe(true);
+    expect(toSheetRow({ ...listRow, addressLine1: null }, String).hasAddress).toBe(false);
+    expect(toSheetRow({ ...listRow, addressLine1: "  " }, String).hasAddress).toBe(false);
+  });
+});
+
+describe("book counts and filters", () => {
+  const row = (
+    status: StatusKey,
+    { email = "", partner_email = "", hasAddress = true, needsAttention = false } = {},
+  ) => ({
+    status,
+    hasAddress,
+    needsAttention,
+    values: { ...toSheetRow(listRow, String).values, email, partner_email },
+  });
+  const rows = [
+    row("none", { email: "a@e.test", partner_email: "b@e.test", hasAddress: false }),
+    row("none", { partner_email: "c@e.test" }),
+    row("bounced", { email: "d@e.test", needsAttention: true }),
+    row("none"),
+    row("none", { hasAddress: false }),
+    row("updated"),
+  ];
+
+  it("counts one contact per row, however many emails it has", () => {
+    const counts = bookCounts(rows);
+    expect(counts.contacts).toBe(6);
+    expect(counts.withAddress).toBe(4);
+    expect(counts.toEmail.total).toBe(3);
+    expect(counts.askManually.total).toBe(3);
+    expect(counts.askManually.withAddress).toBe(2);
+  });
+
+  it("lists only statuses that occur, problems first", () => {
+    expect(bookCounts(rows).toEmail.statuses).toEqual([
+      { status: "bounced", count: 1 },
+      { status: "none", count: 2 },
+    ]);
+    expect(bookCounts(rows).askManually.statuses).toEqual([
+      { status: "none", count: 2 },
+      { status: "updated", count: 1 },
+    ]);
+  });
+
+  it("every count matches the rows its filter shows", () => {
+    const shown = (filter: ContactFilter) =>
+      rows.filter((one) => matchesFilter(one, filter)).length;
+    const counts = bookCounts(rows);
+    expect(shown("to_email")).toBe(counts.toEmail.total);
+    expect(shown("no_email")).toBe(counts.askManually.total);
+    expect(shown("no_address")).toBe(counts.contacts - counts.withAddress);
+    expect(shown("attention")).toBe(1);
+    for (const { status, count } of counts.toEmail.statuses) {
+      expect(shown(`email:${status}`)).toBe(count);
+    }
+    for (const { status, count } of counts.askManually.statuses) {
+      expect(shown(`manual:${status}`)).toBe(count);
+    }
+  });
+
+  it("handles an empty book", () => {
+    expect(bookCounts([])).toEqual({
+      contacts: 0,
+      withAddress: 0,
+      toEmail: { total: 0, statuses: [] },
+      askManually: { total: 0, statuses: [], withAddress: 0 },
+    });
   });
 });

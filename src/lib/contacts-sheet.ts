@@ -12,7 +12,7 @@ import { addressSummary, countryName, DEFAULT_SENDER_COUNTRY, envelopeLines, row
 import type { FailureReason } from "@/lib/email/resend";
 import type { ContactListRow, SendStatus } from "@/lib/queries/contacts";
 import type { Readings } from "@/lib/readings";
-import type { Recipient } from "@/lib/recipients";
+import { inviteAddresses, type Recipient } from "@/lib/recipients";
 import type { ContactFormValues } from "@/lib/validation/contact";
 import {
   CLEARABLE_FIELDS,
@@ -31,6 +31,10 @@ export type SheetField = Extract<
   keyof ContactFormValues,
   | "email"
   | "partner_email"
+  | "personal_email"
+  | "partner_personal_email"
+  | "email_kind"
+  | "partner_email_kind"
   | "address_line1"
   | "city"
   | "state_region"
@@ -48,6 +52,7 @@ export interface SheetRow {
   values: SheetValues;
   legacyCountry: string | null;
   place: string;
+  hasAddress: boolean;
   status: StatusKey;
   failureReason: FailureReason | null;
   people: PersonSend[];
@@ -78,6 +83,10 @@ export function toSheetRow(
   const values: SheetValues = {
     email: row.email ?? "",
     partner_email: row.partnerEmail ?? "",
+    personal_email: row.personalEmail ?? "",
+    partner_personal_email: row.partnerPersonalEmail ?? "",
+    email_kind: row.emailKind ?? "",
+    partner_email_kind: row.partnerEmailKind ?? "",
     address_line1: row.addressLine1 ?? "",
     city: row.city ?? "",
     state_region: row.stateRegion ?? "",
@@ -100,6 +109,7 @@ export function toSheetRow(
     values,
     legacyCountry: row.countryCode ? null : (row.legacyCountry?.trim() || null),
     place: addressSummary(rowAddress(row), { senderCountry }),
+    hasAddress: envelopeLines(rowAddress(row), { senderCountry }) !== null,
     status,
     failureReason,
     people:
@@ -129,12 +139,14 @@ export function effectiveSends(
   row: Pick<
     ContactListRow,
     "email" | "partnerEmail" | "sendStatuses" | "updatedAfterSend" | "changedAfterSend"
-  >,
+  > &
+    Partial<Pick<ContactListRow, "personalEmail" | "partnerPersonalEmail">>,
 ): EffectiveSends {
   // A person whose email was removed no longer counts: their old bounce
   // can't be resent, so it must not hold the row in Needs attention.
+  const invited = inviteAddresses(row);
   const emailed = (["primary", "partner"] as const).filter(
-    (recipient) => (recipient === "primary" ? row.email : row.partnerEmail) !== null,
+    (recipient) => invited[recipient] !== undefined,
   );
   const sendOf = (recipient: Recipient): RecipientSend =>
     emailed.includes(recipient)
@@ -253,8 +265,91 @@ export function sendPlan(
   };
 }
 
-export function emailCount(values: Pick<SheetValues, "email" | "partner_email">): number {
-  return (values.email === "" ? 0 : 1) + (values.partner_email === "" ? 0 : 1);
+export function doubledHouseholds(
+  pairs: readonly (readonly [string, string])[],
+  input: SendPlan["input"],
+  rows: readonly Pick<SheetRow, "id" | "values">[],
+): number {
+  const targets = new Set(
+    "recipients" in input ? input.recipients.map((target) => target.contactId) : input.contactIds,
+  );
+  const emailable = new Set(rows.filter((row) => emailCount(row.values) > 0).map((row) => row.id));
+  const reached = (id: string) => targets.has(id) && emailable.has(id);
+  return pairs.filter(([first, second]) => reached(first) && reached(second)).length;
+}
+
+type SheetEmails = Pick<SheetValues, "email" | "partner_email"> &
+  Partial<Pick<SheetValues, "personal_email" | "partner_personal_email">>;
+
+export function sheetInviteAddresses(values: SheetEmails) {
+  const address = (value: string | undefined) => (value ? value : null);
+  return inviteAddresses({
+    email: address(values.email),
+    partnerEmail: address(values.partner_email),
+    personalEmail: address(values.personal_email),
+    partnerPersonalEmail: address(values.partner_personal_email),
+  });
+}
+
+export function emailCount(values: SheetEmails): number {
+  return Object.keys(sheetInviteAddresses(values)).length;
+}
+
+export type SendRoute = "email" | "manual";
+
+export type ContactFilter =
+  | "attention"
+  | "to_email"
+  | "no_email"
+  | "no_address"
+  | `${SendRoute}:${StatusKey}`;
+
+type FilterableRow = Pick<SheetRow, "needsAttention" | "status" | "hasAddress" | "values">;
+
+function sendRoute(row: Pick<SheetRow, "values">): SendRoute {
+  return emailCount(row.values) > 0 ? "email" : "manual";
+}
+
+export function matchesFilter(row: FilterableRow, filter: ContactFilter): boolean {
+  if (filter === "attention") return row.needsAttention;
+  if (filter === "to_email") return sendRoute(row) === "email";
+  if (filter === "no_email") return sendRoute(row) === "manual";
+  if (filter === "no_address") return !row.hasAddress;
+  return filter === `${sendRoute(row)}:${row.status}`;
+}
+
+export type StatusCount = { status: StatusKey; count: number };
+export type RouteCounts = { total: number; statuses: StatusCount[] };
+
+export type BookCounts = {
+  contacts: number;
+  withAddress: number;
+  toEmail: RouteCounts;
+  askManually: RouteCounts & { withAddress: number };
+};
+
+function routeCounts(rows: Pick<SheetRow, "status">[]): RouteCounts {
+  const counts = new Map<StatusKey, number>();
+  for (const { status } of rows) counts.set(status, (counts.get(status) ?? 0) + 1);
+  return {
+    total: rows.length,
+    statuses: [...counts]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]),
+  };
+}
+
+export function bookCounts(rows: Pick<SheetRow, "status" | "hasAddress" | "values">[]): BookCounts {
+  const manual = rows.filter((row) => sendRoute(row) === "manual");
+  return {
+    contacts: rows.length,
+    withAddress: rows.filter((row) => row.hasAddress).length,
+    toEmail: routeCounts(rows.filter((row) => sendRoute(row) === "email")),
+    askManually: {
+      ...routeCounts(manual),
+      withAddress: manual.filter((row) => row.hasAddress).length,
+    },
+  };
 }
 
 function personName(names: StoredNames, recipient: Recipient): string | null {
@@ -300,6 +395,8 @@ const OTHER_FIELDS = [
   ["birthday", "Birthday"],
   ["email", "Email"],
   ["partner_email", "Partner email"],
+  ["personal_email", "Personal email"],
+  ["partner_personal_email", "Partner personal email"],
 ] as const;
 
 type AnswerField =
@@ -318,6 +415,8 @@ export function twoAnswers(
     birthday: row.birthday ?? "",
     email: row.email ?? "",
     partner_email: row.partnerEmail ?? "",
+    personal_email: row.personalEmail ?? "",
+    partner_personal_email: row.partnerPersonalEmail ?? "",
     address_line1: row.addressLine1 ?? "",
     address_line2: row.addressLine2 ?? "",
     district: row.district ?? "",

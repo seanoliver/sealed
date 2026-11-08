@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { dbAdmin } from "@/lib/db/admin";
 import { contacts, submissions } from "@/lib/db/schema";
-import { approveMerge, reject } from "./actions";
+import { approveMerge, approveNew, reject } from "./actions";
 
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -77,6 +77,102 @@ describe("review actions", () => {
       addressLine2: null,
       partnerFirstName: null,
       partnerName: null,
+    });
+  });
+
+  it("clears a personal email a queued reply emptied", async () => {
+    await dbAdmin.update(contacts).set({ personalEmail: "satya@home.test" }).where(eq(contacts.id, C));
+    await queue({ first_name: "Satya", last_name: "Rao", personal_email: "" });
+    await expect(approveMerge({}, form(S))).resolves.toEqual({});
+    const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+    expect(row.personalEmail).toBeNull();
+  });
+
+  it("ignores a personal email when adding a permalink submission as a new contact", async () => {
+    await dbAdmin.execute(sql`
+      insert into public.submissions (id, book_id, payload) values (${S}, ${B}, ${JSON.stringify({
+        first_name: "Jo",
+        last_name: "Fox",
+        email: "jo@rv.test",
+        personal_email: "x@attacker.test",
+        partner_personal_email: "y@attacker.test",
+      })}::jsonb)`);
+    await expect(approveNew({}, form(S))).resolves.toEqual({});
+    const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.email, "jo@rv.test"));
+    expect(row).toMatchObject({ personalEmail: null, partnerPersonalEmail: null });
+  });
+
+  it("ignores a personal email in a stored permalink payload", async () => {
+    await queue({ first_name: "Satya", last_name: "Rao" });
+    await dbAdmin
+      .update(submissions)
+      .set({
+        source: "permalink",
+        recipient: null,
+        savedBy: null,
+        payload: {
+          first_name: "Satya",
+          last_name: "Rao",
+          personal_email: "x@attacker.test",
+          partner_personal_email: "y@attacker.test",
+        },
+      })
+      .where(eq(submissions.id, S));
+    await expect(approveMerge({}, form(S))).resolves.toEqual({});
+    const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+    expect(row).toMatchObject({ personalEmail: null, partnerPersonalEmail: null });
+  });
+
+  describe("a name match opened with Compare", () => {
+    const permalink = async (payload: Record<string, unknown>) => {
+      await dbAdmin.execute(sql`
+        insert into public.submissions (id, book_id, payload) values (${S}, ${B}, ${JSON.stringify(payload)}::jsonb)`);
+    };
+    const compare = () => {
+      const data = form(S);
+      data.set("contact_id", C);
+      return data;
+    };
+    const storedEmail = async () =>
+      (await dbAdmin.select().from(contacts).where(eq(contacts.id, C)))[0].email;
+
+    it("refuses a partner replying alone, which would overwrite the other person", async () => {
+      await permalink({ full_name: "Mei Rao", city: "Bend" });
+      await expect(approveMerge({}, compare())).resolves.toMatchObject({ error: expect.any(String) });
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row).toMatchObject({ fullName: "Satya Rao", city: "Seattle" });
+    });
+
+    it("updates the compared contact but never its stored email", async () => {
+      const before = await storedEmail();
+      expect(before).not.toBeNull();
+      await permalink({ full_name: "Satya Rao", email: "attacker@ab.test", city: "Bend" });
+      await expect(approveMerge({}, compare())).resolves.toEqual({});
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row.email).toBe(before);
+      expect(row.city).toBe("Bend");
+    });
+
+    it("never sets an email on a contact that has none", async () => {
+      await dbAdmin.execute(sql`update public.contacts set email = null, partner_email = null where id = ${C}`);
+      await permalink({ full_name: "Satya Rao", email: "attacker@ab.test", partner_email: "too@ab.test", city: "Bend" });
+      await expect(approveMerge({}, compare())).resolves.toEqual({});
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row).toMatchObject({ email: null, partnerEmail: null, city: "Bend" });
+    });
+
+    it("needs the Compare step: an unlinked submission alone cannot merge", async () => {
+      await permalink({ full_name: "Someone", city: "Bend" });
+      await expect(approveMerge({}, form(S))).resolves.toMatchObject({ error: expect.any(String) });
+    });
+
+    it("ignores a compared contact on a token reply", async () => {
+      await dbAdmin.execute(sql`
+        insert into public.submissions (id, book_id, payload, source, recipient, saved_by)
+        values (${S}, ${B}, '{"full_name":"Satya Rao","city":"Bend"}'::jsonb, 'token', 'primary', 'partner')`);
+      await expect(approveMerge({}, compare())).resolves.toMatchObject({ error: expect.any(String) });
+      const [row] = await dbAdmin.select().from(contacts).where(eq(contacts.id, C));
+      expect(row.city).toBe("Seattle");
     });
   });
 });

@@ -39,6 +39,8 @@ import { readSeenAt, storedNames, type TokenData, tokenDataSchema } from "./toke
 export type TokenUpdateState = RecipientFormState & { saved?: true };
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
+const BAD_PERSONAL_EMAIL = "Check this address. It needs to look like name@example.com.";
+const SAME_PERSONAL_EMAIL = "That's the address this came to. Leave this blank if it's already personal.";
 
 function keepLegacyNames(data: TokenData, posted: HouseholdValues): boolean {
   const sections = {
@@ -136,6 +138,9 @@ async function applyTokenUpdate(
   const details = address?.ok ? { success: true as const, data: address.data } : parsedDetails;
   const keepNames =
     data !== null && keepLegacyNames(data, readHouseholdValues(formData, { kidsLimit: Infinity }));
+  if (!details.success && details.error.issues[0]?.path[0] === "personal_email") {
+    return { fieldErrors: { personal_email: BAD_PERSONAL_EMAIL }, ...echo };
+  }
   if ((!household.ok && !keepNames) || !details.success) {
     const fieldErrors = household.ok || keepNames ? undefined : household.fieldErrors;
     if (fieldErrors?.last_name !== undefined && data !== null) {
@@ -150,6 +155,10 @@ async function applyTokenUpdate(
       fieldErrors,
       ...echo,
     };
+  }
+  const { email, personal_email: personalEmail } = details.data;
+  if (personalEmail !== undefined && personalEmail.toLowerCase() === email?.toLowerCase()) {
+    return { fieldErrors: { personal_email: SAME_PERSONAL_EMAIL }, ...echo };
   }
   // Only the street: legacy contacts keep the whole address in it, other fields blank.
   if (formData.has("address_line1") && details.data.address_line1 === undefined) {

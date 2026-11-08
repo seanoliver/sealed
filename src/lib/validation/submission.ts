@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { countryCodeFor } from "@/lib/address/countries";
+import { type MatchableNames } from "@/lib/household-match";
 import { formatKids, formatPerson, type Kid } from "@/lib/names";
 import { contactSchema, tokenUpdateSchema, type TokenUpdateField } from "./contact";
 import { householdShape, requirePartnerFirstName } from "./household";
@@ -52,6 +53,15 @@ export function withCountryCode(payload: unknown): unknown {
   return code === null ? { ...rest, country } : { ...rest, country_code: code };
 }
 
+/** Payloads are hostile: a stored permalink row must never decide where invites go. */
+export function withoutInviteAddresses(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
+  const rest: Record<string, unknown> = { ...payload };
+  delete rest.personal_email;
+  delete rest.partner_personal_email;
+  return rest;
+}
+
 export function parseSubmissionPayload(
   raw: unknown,
   enabled: EnabledFields,
@@ -73,6 +83,19 @@ export function parsePartnerEmail(
   const parsed = partnerEmailSchema.safeParse(payload);
   return parsed.success
     ? { success: true, data: parsed.data.partner_email }
+    : { success: false };
+}
+
+const partnerPersonalEmailSchema = z.object({
+  partner_personal_email: contactSchema.shape.partner_personal_email,
+});
+
+export function parsePartnerPersonalEmail(
+  payload: unknown,
+): { success: true; data: string | undefined } | { success: false } {
+  const parsed = partnerPersonalEmailSchema.safeParse(payload);
+  return parsed.success
+    ? { success: true, data: parsed.data.partner_personal_email }
     : { success: false };
 }
 
@@ -116,6 +139,8 @@ export const submissionDisplaySchema = z.object({
   kids_names: displayValue,
   email: displayValue,
   partner_email: displayValue,
+  personal_email: displayValue,
+  partner_personal_email: displayValue,
   birthday: displayValue,
   address_line1: displayValue,
   address_line2: displayValue,
@@ -133,7 +158,7 @@ export const submissionDisplaySchema = z.object({
 });
 
 export type SubmissionDisplayFields = Partial<
-  Record<TokenUpdateField | "partner_email", string>
+  Record<TokenUpdateField | "partner_email" | "partner_personal_email", string>
 > & {
   country?: string;
 };
@@ -242,6 +267,19 @@ export function submittedPeople(payload: unknown, enabled: EnabledFields): Submi
   ];
 }
 
+export function payloadNames(payload: unknown, enabled: EnabledFields): MatchableNames | null {
+  const [person, partner] = submittedPeople(payload, enabled);
+  if (!person?.full) return null;
+  return {
+    fullName: person.full,
+    partnerName: partner?.full ?? null,
+    firstName: person.first,
+    lastName: person.last,
+    partnerFirstName: partner?.first ?? null,
+    partnerLastName: partner?.last ?? null,
+  };
+}
+
 export const CLEARABLE_FIELDS = [
   "address_line1",
   "address_line2",
@@ -253,6 +291,8 @@ export const CLEARABLE_FIELDS = [
   "birthday",
   "partner_name",
   "kids_names",
+  "personal_email",
+  "partner_personal_email",
 ] as const;
 
 export type ClearableField = (typeof CLEARABLE_FIELDS)[number];

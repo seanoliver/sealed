@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { dbAdmin } from "@/lib/db/admin";
 import { checkRateLimit } from "@/lib/db/rate-limit";
 import { getPublicBook } from "@/lib/queries/public-book";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -54,5 +55,22 @@ describe("submitToBook", () => {
       error: "A Dutch postcode is four digits and two letters, like 1234 AB.",
       fieldErrors: { postal_code: "A Dutch postcode is four digits and two letters, like 1234 AB." },
     });
+  });
+
+  it("never lets a posted personal email reach the payload", async () => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({
+      first_name: "Jane",
+      last_name: "Doe",
+      email: "jane@acme.test",
+      personal_email: "jane@attacker.test",
+      address_line1: "1 Main St",
+    })) {
+      form.set(key, value);
+    }
+    const execute = vi.spyOn(dbAdmin, "execute").mockResolvedValue([{ ok: true }] as never);
+    await submitToBook("sb-test-book", {}, form).catch(() => {});
+    expect(JSON.stringify(execute.mock.calls)).toContain("jane@acme.test");
+    expect(JSON.stringify(execute.mock.calls)).not.toContain("attacker.test");
   });
 });
