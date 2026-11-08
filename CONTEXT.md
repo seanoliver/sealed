@@ -17,11 +17,11 @@ The human-readable name of the person who owns the address book. A first name is
 _Avoid_: Account name, book title, email alias
 
 **Book member**:
-A person the owner shares the address book with, such as a partner. A member signs in with their own account and can read and change contacts, review replies and send address requests; the book's settings stay the owner's. An owner adds a member by email, and the membership attaches to that person's account on their first sign-in.
+A person the owner shares the address book with, such as a partner. A member signs in with their own account and can read and change contacts, review replies and send address requests; the book's settings stay the owner's. An admin adds a member by email, and the membership attaches to that person's account when they next sign in.
 _Avoid_: Collaborator, co-owner, shared user
 
 **Sender names**:
-The full names shown as "From …" on the recipient page, such as "Sean Oliver and Tina He". Set per address book; when blank, the owner name is shown instead.
+The full names shown as "From …" on the recipient page, such as "Mei Lin and Daniel Park". Set per address book; when blank, the owner name is shown instead.
 _Avoid_: Signature, display name
 
 **Invite page**:
