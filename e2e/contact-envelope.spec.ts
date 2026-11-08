@@ -190,3 +190,19 @@ test("going back to the list returns to where it was scrolled", async () => {
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(before);
 });
+
+test("with no list remembered, the list opens at the top", async () => {
+  const context = await page.context().browser()!.newContext({
+    storageState: await page.context().storageState(),
+    viewport: { width: 390, height: 844 },
+  });
+  const tab = await context.newPage();
+  await tab.goto(`/dashboard/contacts/${filledId}`);
+  await tab.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  expect(await tab.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+  await tab.getByRole("link", { name: "Contacts", exact: true }).first().click();
+  await expect(tab).toHaveURL(/\/dashboard$/);
+  await expect(tab.getByRole("link", { name: "Scroll Filler 25" })).toBeAttached();
+  await expect.poll(() => tab.evaluate(() => window.scrollY)).toBe(0);
+  await context.close();
+});

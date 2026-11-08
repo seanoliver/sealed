@@ -34,7 +34,7 @@ import {
   pruneDraft,
 } from "@/components/envelope-names";
 import { envelopeRows } from "@/components/envelope-rows";
-import { contactsListUrl, markListRestore } from "@/components/contacts-list-memory";
+import { contactsListReturn } from "@/components/contacts-list-memory";
 import { cn } from "@/lib/utils";
 import { type ContactFormValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
@@ -92,8 +92,8 @@ export function ContactEditor({
   const dirty = changed.size > 0;
 
   function goToContacts() {
-    markListRestore();
-    router.push(contactsListUrl(), { scroll: false });
+    const { url, restore } = contactsListReturn();
+    router.push(url, { scroll: !restore });
   }
 
   function onBack(event: MouseEvent<HTMLAnchorElement>) {

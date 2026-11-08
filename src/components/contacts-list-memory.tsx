@@ -50,10 +50,9 @@ export function ContactsListMemory({ query }: { query: string }) {
   return null;
 }
 
-export function contactsListUrl(): string {
-  return read()?.url ?? LIST_PATH;
-}
-
-export function markListRestore() {
+export function contactsListReturn(): { url: string; restore: boolean } {
+  const saved = read();
+  if (!saved) return { url: LIST_PATH, restore: false };
   write(RESTORE_KEY, "1");
+  return { url: saved.url, restore: true };
 }
