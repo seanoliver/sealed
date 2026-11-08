@@ -118,7 +118,7 @@ test("a bad postcode from the save button opens its line", async () => {
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.locator("#postal_code")).toBeVisible();
-  await expect(page.getByText(/ZIP/).first()).toBeVisible();
+  await expect(page.getByText("A US ZIP code is five digits, like 95014.")).toBeVisible();
 });
 
 test("opened in a new tab from the list, the link still goes to the list", async () => {
@@ -205,4 +205,25 @@ test("with no list remembered, the list opens at the top", async () => {
   await expect(tab.getByRole("link", { name: "Scroll Filler 25" })).toBeAttached();
   await expect.poll(() => tab.evaluate(() => window.scrollY)).toBe(0);
   await context.close();
+});
+
+test("Discard changes leaves without saving", async () => {
+  await page.goto(`/dashboard/contacts/${filledId}`);
+  const notes = await page.locator("#notes").inputValue();
+  await page.locator("#notes").fill("Throw this away");
+  await back().click();
+  await page.getByRole("dialog", { name: "Leave without saving?" }).getByRole("button", { name: "Discard changes" }).click();
+  await expect(page).toHaveURL(/\/dashboard(\?|$)/);
+  await page.goto(`/dashboard/contacts/${filledId}`);
+  await expect(page.locator("#notes")).toHaveValue(notes);
+});
+
+test("a modified click on Contacts skips the prompt", async () => {
+  await page.goto(`/dashboard/contacts/${filledId}`);
+  await page.locator("#notes").fill("Still editing");
+  const opened = page.context().waitForEvent("page");
+  await back().click({ modifiers: ["ControlOrMeta"] });
+  await (await opened).close();
+  await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`/dashboard/contacts/${filledId}$`));
 });
