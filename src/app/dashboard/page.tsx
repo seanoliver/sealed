@@ -14,6 +14,7 @@ import {
   submittedPeople,
   type SubmittedPerson,
 } from "@/lib/validation/submission";
+import { ContactsListMemory } from "@/components/contacts-list-memory";
 import { ContactsTable } from "./contacts-table";
 
 // Covers requestAddresses: its Resend time budget plus bookkeeping.
@@ -124,6 +125,7 @@ export default async function DashboardPage({
         </p>
       ) : null}
 
+      <ContactsListMemory query={query} />
       <Form action="/dashboard" className="mt-6 flex gap-2">
         <label htmlFor="q" className="sr-only">
           Search contacts

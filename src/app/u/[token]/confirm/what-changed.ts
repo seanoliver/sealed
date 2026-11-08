@@ -1,5 +1,5 @@
 import { formatPerson } from "@/lib/names";
-import { type HouseholdDraft, type Person } from "./envelope-names";
+import { type HouseholdDraft, type Person } from "@/components/envelope-names";
 
 export type ReplySnapshot = {
   household: HouseholdDraft;

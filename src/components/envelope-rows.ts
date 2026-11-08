@@ -7,7 +7,7 @@ export type Row =
 
 export type OpenAddress = { tokens: FormatField[]; at: number; slot: boolean };
 
-type RowsPreview = Pick<AddressPreview, "envelope" | "name" | "slots">;
+type RowsPreview = Pick<AddressPreview, "envelope" | "name" | "slots"> & Partial<Pick<AddressPreview, "partial">>;
 
 /** The envelope's rows in print order. An open address line always has a row, even once it prints nothing. */
 export function envelopeRows(preview: RowsPreview, open: OpenAddress | null = null): Row[] {
@@ -16,6 +16,7 @@ export function envelopeRows(preview: RowsPreview, open: OpenAddress | null = nu
     : preview.name
       ? [{ kind: "line", text: preview.name, tokens: ["N"], at: 0, uppercased: false }]
       : [];
+  if (!preview.envelope) rows.push(...(preview.partial ?? []).map((line) => ({ kind: "line" as const, ...line })));
   if (!rows.some((row) => row.tokens.includes("N"))) rows.unshift({ kind: "slot", tokens: ["N"], at: 0 });
   for (const slot of preview.slots) rows.push({ kind: "slot", ...slot });
   if (open && openRowIndex(rows, open) === -1) rows.push({ kind: "slot", tokens: open.tokens, at: open.at });

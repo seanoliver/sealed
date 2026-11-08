@@ -142,7 +142,7 @@ function roleErrors(
   return { first: errors[`kids.${index}.first`], last: errors[`kids.${index}.last`] };
 }
 
-export type Recipient = "primary" | "partner";
+export type Recipient = "primary" | "partner" | "owner";
 
 function isRecipient(role: Role, recipient: Recipient): boolean {
   return role.kind === recipient;
@@ -150,6 +150,7 @@ function isRecipient(role: Role, recipient: Recipient): boolean {
 
 function rolePrefix(role: Role, crowded: boolean, recipient: Recipient): string {
   if (role.kind === "kid") return `Child ${role.index + 1}'s `;
+  if (recipient === "owner") return role.kind === "partner" ? "Partner's " : "";
   if (isRecipient(role, recipient)) return crowded ? "Your " : "";
   // Only a partner's link reaches here for the first person, so it is labelled even when alone.
   return role.kind === "partner" ? "Second person's " : "First person's ";
@@ -158,7 +159,7 @@ function rolePrefix(role: Role, crowded: boolean, recipient: Recipient): string 
 // The server writes only the replier's own email, so removing anyone else's chip would leave their email under another name.
 export function isRemovable(role: Role, recipient: Recipient): boolean {
   if (role.kind === "primary") return false;
-  if (role.kind === "partner") return recipient === "primary";
+  if (role.kind === "partner") return recipient !== "partner";
   return true;
 }
 
@@ -169,7 +170,6 @@ type NamesEditorProps = {
   draft: HouseholdDraft;
   onChange: (draft: HouseholdDraft) => void;
   enabled: Pick<EnabledFields, "partner_name" | "kids_names">;
-  /** Who the link was sent to: a partner's link opens on the second person. */
   recipient: Recipient;
   editing: number | null;
   onEdit: (key: number | null) => void;

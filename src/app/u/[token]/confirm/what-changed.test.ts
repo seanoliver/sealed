@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftFromValues, type HouseholdDraft } from "./envelope-names";
+import { draftFromValues, type HouseholdDraft } from "@/components/envelope-names";
 import { whatChanged, type ReplySnapshot } from "./what-changed";
 
 const before: ReplySnapshot = {
