@@ -120,3 +120,40 @@ test("a bad postcode from the save button opens its line", async () => {
   await expect(page.locator("#postal_code")).toBeVisible();
   await expect(page.getByText(/ZIP/).first()).toBeVisible();
 });
+
+test("opened in a new tab from the list, the link still goes to the list", async () => {
+  const context = await page.context().browser()!.newContext({
+    storageState: await page.context().storageState(),
+    viewport: { width: 390, height: 844 },
+  });
+  const tab = await context.newPage();
+  await tab.goto(`/dashboard/contacts/${filledId}`, { referer: new URL("/dashboard", page.url()).href });
+  await tab.getByRole("link", { name: "Contacts", exact: true }).first().click();
+  await expect(tab).toHaveURL(/\/dashboard$/);
+  await context.close();
+});
+
+test("a stored field the country doesn't print can still be cleared from the street line", async () => {
+  const gbId = await seedContact({
+    bookId,
+    fullName: "Ada Byron",
+    addressLine1: "10 Downing Street",
+    city: "London",
+    stateRegion: "Middlesex",
+    postalCode: "SW1A 2AA",
+    countryCode: "GB",
+  });
+  await page.goto(`/dashboard/contacts/${gbId}`);
+  await page.getByRole("button", { name: /Edit street address/i }).click();
+  await page.locator("#state_region").fill("");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+  expect(await getContactAddress(gbId)).toMatchObject({ state_region: null });
+});
+
+test("editing the partner's personal email doesn't mark the names line", async () => {
+  await page.goto(`/dashboard/contacts/${filledId}`);
+  await page.locator("#partner_personal_email").fill("daniel@example.test");
+  await expect(page.getByText("1 change")).toBeInViewport();
+});

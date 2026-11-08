@@ -39,15 +39,8 @@ export function NavigationTracker() {
   return null;
 }
 
-/** True when the page before this one was `path`, so going back returns there. Call it from an event handler. */
 export function cameFromPath(path: string): boolean {
-  if (previousPath !== null) return previousPath === path;
-  try {
-    const referrer = new URL(document.referrer);
-    return referrer.origin === window.location.origin && referrer.pathname === path;
-  } catch {
-    return false;
-  }
+  return previousPath === path;
 }
 
 export function useCameFromSealed(): boolean {

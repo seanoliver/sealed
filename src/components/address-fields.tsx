@@ -401,6 +401,10 @@ export function AddressFields({
     rows.flatMap((row) => row.fields.filter(visible).map((field) => field.name)),
   );
 
+  // Extra fields print on the street's line, so opening that line must show them.
+  const focused = (field: AddressField) =>
+    focus === null || focus.has(field) || (focus.has("address_line1") && extraFields.includes(field));
+
   const required = (spec: AddressFieldSpec) =>
     spec.required || (requireStreet && spec.name === "address_line1");
 
@@ -503,7 +507,7 @@ export function AddressFields({
         const specs = row.fields.filter(visible);
         if (specs.length === 0) return null;
         const hasPostcode = specs.some((spec) => spec.name === "postal_code");
-        const inFocus = focus === null || specs.some((spec) => focus.has(spec.name));
+        const inFocus = specs.some((spec) => focused(spec.name));
         return (
           <div
             key={specs.map((spec) => spec.name).join("+")}
@@ -523,7 +527,7 @@ export function AddressFields({
                 <div
                   key={spec.name}
                   className="flex min-w-0 flex-col gap-1.5"
-                  hidden={focus !== null && !focus.has(spec.name)}
+                  hidden={!focused(spec.name)}
                 >
                   {label(spec)}
                   {control(spec)}

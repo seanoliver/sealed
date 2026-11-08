@@ -49,7 +49,7 @@ const TOKEN_FIELDS: Record<FormatField, AddressField[]> = {
   Z: ["postal_code"],
 };
 
-const NAME_KEY = /^(first_name|last_name|partner_(?!email)|kid_|kids_section)/;
+const NAME_KEY = /^(first_name|last_name|partner_(first_name|last_name|section)|kid_|kids_section)/;
 const IGNORED_KEYS = new Set(["cf-turnstile-response", "seen_at", "id", "version"]);
 
 export function openFields(open: Open & { kind: "address" | "country" }): FormField[] {
