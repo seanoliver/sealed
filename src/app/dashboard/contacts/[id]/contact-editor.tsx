@@ -34,7 +34,7 @@ import {
   pruneDraft,
 } from "@/components/envelope-names";
 import { envelopeRows } from "@/components/envelope-rows";
-import { cameFromPath } from "@/components/navigation-history";
+import { contactsListUrl, markListRestore } from "@/components/contacts-list-memory";
 import { cn } from "@/lib/utils";
 import { type ContactFormValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
@@ -92,9 +92,8 @@ export function ContactEditor({
   const dirty = changed.size > 0;
 
   function goToContacts() {
-    // History keeps the list's search and scroll position; a fresh navigation would lose both.
-    if (cameFromPath(CONTACTS_PATH)) router.back();
-    else router.push(CONTACTS_PATH);
+    markListRestore();
+    router.push(contactsListUrl(), { scroll: false });
   }
 
   function onBack(event: MouseEvent<HTMLAnchorElement>) {

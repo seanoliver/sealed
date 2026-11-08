@@ -52,10 +52,10 @@ test("the way back stays on screen on a phone and keeps the list's search", asyn
   await expect(page).toHaveURL(/\/dashboard\?q=Mei$/);
 });
 
-test("opened directly, the link goes to the contacts list", async () => {
+test("opened directly, the link goes to the last list search", async () => {
   await page.goto(`/dashboard/contacts/${filledId}`);
   await back().click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(/\/dashboard\?q=Mei$/);
 });
 
 test("a line opens in place and Save writes it with the rest of the form", async () => {
@@ -156,4 +156,37 @@ test("editing the partner's personal email doesn't mark the names line", async (
   await page.goto(`/dashboard/contacts/${filledId}`);
   await page.locator("#partner_personal_email").fill("daniel@example.test");
   await expect(page.getByText("1 change")).toBeInViewport();
+});
+
+test("from an email link, Contacts still goes to the list after a swipe back", async () => {
+  const context = await page.context().browser()!.newContext({
+    storageState: await page.context().storageState(),
+    viewport: { width: 390, height: 844 },
+  });
+  const tab = await context.newPage();
+  await tab.goto(`/dashboard/contacts/${filledId}`);
+  await tab.getByRole("link", { name: "Contacts", exact: true }).first().click();
+  await expect(tab).toHaveURL(/\/dashboard$/);
+  await tab.goBack();
+  await expect(tab).toHaveURL(new RegExp(`/dashboard/contacts/${filledId}$`));
+  await tab.getByRole("link", { name: "Contacts", exact: true }).first().click();
+  await expect(tab).toHaveURL(/\/dashboard$/);
+  await context.close();
+});
+
+test("going back to the list returns to where it was scrolled", async () => {
+  for (let i = 0; i < 30; i++) {
+    await seedContact({ bookId, fullName: `Scroll Filler ${String(i).padStart(2, "0")}` });
+  }
+  await page.goto("/dashboard");
+  const target = page.getByRole("link", { name: "Scroll Filler 25" }).first();
+  await target.scrollIntoViewIfNeeded();
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBeGreaterThan(200);
+  await target.click();
+  await expect(page).toHaveURL(/\/dashboard\/contacts\//);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole("link", { name: "Contacts", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(before);
 });

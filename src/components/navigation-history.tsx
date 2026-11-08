@@ -4,7 +4,6 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 
 let navigatedInApp = false;
-let previousPath: string | null = null;
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void) {
@@ -25,22 +24,15 @@ function cameFromSealed(): boolean {
 export function NavigationTracker() {
   const pathname = usePathname();
   const first = useRef(true);
-  const last = useRef(pathname);
   useEffect(() => {
     if (first.current) {
       first.current = false;
       return;
     }
     navigatedInApp = true;
-    previousPath = last.current;
-    last.current = pathname;
     listeners.forEach((listener) => listener());
   }, [pathname]);
   return null;
-}
-
-export function cameFromPath(path: string): boolean {
-  return previousPath === path;
 }
 
 export function useCameFromSealed(): boolean {
