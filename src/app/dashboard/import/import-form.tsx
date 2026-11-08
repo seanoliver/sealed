@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition, type ChangeEvent } from "react";
 import { countryName } from "@/lib/address";
+import { duplicateRows, type MatchableNames } from "@/lib/household-match";
 import { parseContactsCsv, type CsvRowError, type ImportRow } from "@/lib/csv/import";
 import { importContacts } from "./actions";
 
@@ -22,6 +23,7 @@ type Preview = {
   warnings: CsvRowError[];
   /** In-file duplicate emails removed client-side (first occurrence kept). */
   duplicates: number;
+  nameMatches: number[];
 };
 
 type Done = { imported: number; skipped: number };
@@ -52,12 +54,29 @@ function dedupeByEmail(rows: ImportRow[]): {
   return { ready, duplicates };
 }
 
+const rowNames = (row: ImportRow): MatchableNames => ({
+  fullName: row.full_name,
+  partnerName: row.partner_name ?? null,
+  firstName: null,
+  lastName: null,
+  partnerFirstName: null,
+  partnerLastName: null,
+});
+
+const householdName = (row: ImportRow) =>
+  row.partner_name ? `${row.full_name} & ${row.partner_name}` : row.full_name;
+
 const thClasses =
   "px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 const tdClasses = "px-4 py-2.5 text-sm text-foreground/80";
 
-export function ImportForm() {
+export function ImportForm({
+  bookNames,
+}: {
+  bookNames: readonly (MatchableNames & { id: string })[];
+}) {
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [leaveOut, setLeaveOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Done | null>(null);
   const [pending, startTransition] = useTransition();
@@ -67,6 +86,7 @@ export function ImportForm() {
     setPreview(null);
     setError(null);
     setDone(null);
+    setLeaveOut(false);
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
       setError(
@@ -77,12 +97,21 @@ export function ImportForm() {
     const text = await file.text();
     const { valid, errors, warnings } = parseContactsCsv(text);
     const { ready, duplicates } = dedupeByEmail(valid);
-    setPreview({ ready, errors, warnings, duplicates });
+    const nameMatches = duplicateRows(ready.map(rowNames), bookNames);
+    setPreview({ ready, errors, warnings, duplicates, nameMatches });
   }
 
+  const importing = preview
+    ? leaveOut
+      ? preview.ready.filter((_, index) => !preview.nameMatches.includes(index))
+      : preview.ready
+    : [];
+
   function onConfirm() {
-    if (!preview || preview.ready.length === 0) return;
-    const { ready, duplicates } = preview;
+    if (!preview || importing.length === 0) return;
+    const { duplicates } = preview;
+    const left = leaveOut ? preview.nameMatches.length : 0;
+    const ready = importing;
     startTransition(async () => {
       // Transport failures (oversized action payload → 413, network drop)
       // REJECT the action promise rather than returning { error } — catch
@@ -103,7 +132,7 @@ export function ImportForm() {
         imported: result.imported,
         // Server skips = emails already in the book; add the in-file
         // duplicates removed before sending so the tally covers the file.
-        skipped: result.skipped + duplicates,
+        skipped: result.skipped + duplicates + left,
       });
     });
   }
@@ -216,6 +245,54 @@ export function ImportForm() {
 
           {preview.ready.length > 0 ? (
             <>
+              {preview.nameMatches.length > 0 ? (
+                <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm">
+                  <p className="text-sm font-medium text-foreground">
+                    {preview.nameMatches.length}{" "}
+                    {preview.nameMatches.length === 1 ? "row matches" : "rows match"} people already
+                    in your book or earlier in this file
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Such as {householdName(preview.ready[preview.nameMatches[0]])}.
+                  </p>
+                  <fieldset className="mt-1 flex flex-col gap-2">
+                    <legend className="mb-1.5 text-sm font-medium text-foreground">
+                      What should happen to {preview.nameMatches.length === 1 ? "this row" : "these rows"}?
+                    </legend>
+                    {[
+                      {
+                        out: false,
+                        title: preview.nameMatches.length === 1 ? "Import it" : "Import them",
+                        detail: `Review ${preview.nameMatches.length === 1 ? "it" : "them"} on the Review page afterwards.`,
+                      },
+                      {
+                        out: true,
+                        title: preview.nameMatches.length === 1 ? "Leave it out" : "Leave them out",
+                        detail: `The other ${preview.ready.length - preview.nameMatches.length} still import.`,
+                      },
+                    ].map(({ out, title, detail }) => (
+                      <label
+                        key={title}
+                        className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm ${
+                          leaveOut === out ? "border-primary ring-1 ring-primary" : "border-border"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="name-matches"
+                          checked={leaveOut === out}
+                          onChange={() => setLeaveOut(out)}
+                          className="mt-0.5 accent-primary"
+                        />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="font-medium text-foreground">{title}</span>
+                          <span className="text-muted-foreground">{detail}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                </div>
+              ) : null}
               <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm ">
                 <table
                   className="w-full min-w-[36rem]"
@@ -272,12 +349,12 @@ export function ImportForm() {
               <button
                 type="button"
                 onClick={onConfirm}
-                disabled={pending}
+                disabled={pending || importing.length === 0}
                 className="h-10 self-start rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 "
               >
                 {pending
                   ? "Importing…"
-                  : `Import ${preview.ready.length} ${preview.ready.length === 1 ? "contact" : "contacts"}`}
+                  : `Import ${importing.length} ${importing.length === 1 ? "contact" : "contacts"}`}
               </button>
             </>
           ) : null}

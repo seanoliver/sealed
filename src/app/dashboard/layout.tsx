@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SealedWordmark } from "@/components/sealed-mark";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
+import { countDetectedDuplicates } from "@/lib/queries/duplicates";
 import { countPendingSubmissions } from "@/lib/queries/submissions";
 import { OWNER_NAV_LINKS } from "./nav-links";
 import { CountPill, OwnerMenu } from "./owner-menu";
@@ -14,7 +15,11 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
   const claims = await requireUser();
   const book = await getOwnBook(claims);
   if (!book) redirect("/onboarding");
-  const reviewCount = await countPendingSubmissions(claims, book.id);
+  const [submissionCount, duplicateCount] = await Promise.all([
+    countPendingSubmissions(claims, book.id),
+    countDetectedDuplicates(claims),
+  ]);
+  const reviewCount = submissionCount + duplicateCount;
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-background">

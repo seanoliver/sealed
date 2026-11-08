@@ -29,7 +29,9 @@ import {
   type SendStatus,
 } from "@/lib/queries/contacts";
 import { listCsvRows } from "@/lib/queries/export";
+import { listDismissedPairs } from "@/lib/queries/duplicates";
 import { listPendingSubmissions } from "@/lib/queries/submissions";
+import { detectDuplicates } from "@/lib/household-match";
 import { type Recipient } from "@/lib/recipients";
 import {
   parseSubmissionForDisplay,
@@ -439,6 +441,14 @@ export async function findDuplicates(
       holders.set(key, entry);
     }
   });
+  const dismissed = await listDismissedPairs(claims);
+  const indexOf = new Map(rows.map((row, index) => [row.id, index]));
+  for (const { a, b, match } of detectDuplicates(rows, { dismissed })) {
+    holders.set(`names:${a}:${b}`, {
+      reason: match === "same_people" ? "same people by name" : "one person in common by name",
+      indices: [indexOf.get(a) ?? 0, indexOf.get(b) ?? 0],
+    });
+  }
 
   const parent = rows.map((_, index) => index);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));

@@ -168,7 +168,7 @@ export async function createContact(
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/contacts/${inserted.id}`);
-  redirect("/dashboard");
+  redirect(`/dashboard?added=${inserted.id}`);
 }
 
 export async function updateContact(

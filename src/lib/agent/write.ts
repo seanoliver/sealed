@@ -1,5 +1,9 @@
 import "server-only";
 import { z } from "zod";
+import { logDbError } from "@/lib/log";
+import { householdLine, pickStoredNames } from "@/lib/names";
+import { matchInBook, parseBook } from "@/lib/household-match";
+import { listBookNames } from "@/lib/queries/duplicates";
 import {
   createContactAs,
   DETAIL_FIELDS,
@@ -18,7 +22,7 @@ import { countryCodeFor } from "@/lib/address";
 import { type SessionClaims } from "@/lib/auth";
 import { validateHousehold } from "@/lib/contacts-sheet";
 
-export type AgentContext = { claims: SessionClaims; tokenId: string };
+export type AgentContext = { claims: SessionClaims; tokenId: string; canRead?: boolean };
 
 export const agentActor = (ctx: AgentContext): AgentActor => ({
   source: "agent",
@@ -173,7 +177,25 @@ export async function createContact(
     agentActor(ctx),
   );
   if (!result.ok) throw new ToolError(result.error);
-  return { id: result.value.id, event_id: result.value.eventId ?? null };
+  const created = { id: result.value.id, event_id: result.value.eventId ?? null };
+  // Names and ids here are a read: a write-only token must not get them.
+  if (!ctx.canRead) return created;
+  // The contact is saved: a failed check must not read as a failed create and invite a retry.
+  const names = await listBookNames(ctx.claims).catch((err: unknown) => {
+    logDbError("[dd] [createContact] duplicate check failed", err);
+    return null;
+  });
+  const self = names?.find((row) => row.id === created.id);
+  const others = names?.filter((row) => row.id !== created.id) ?? [];
+  const byId = new Map(others.map((row) => [row.id, row]));
+  const detected_duplicates =
+    names && self
+      ? matchInBook(self, parseBook(others)).flatMap(({ id, match }) => {
+          const other = byId.get(id);
+          return other ? [{ id, name: householdLine(pickStoredNames(other)), match }] : [];
+        })
+      : null;
+  return { ...created, detected_duplicates };
 }
 
 export const requestDeleteInput = z.object({

@@ -112,7 +112,7 @@ test("search, back/forward and in-app links never reload the document", async ()
   await nav.getByRole("link", { name: "Review" }).click();
   await expect(page).toHaveURL(/\/dashboard\/review$/);
   await expect(
-    page.getByRole("heading", { name: "Review submissions" }),
+    page.getByRole("heading", { name: "Review", exact: true }),
   ).toBeVisible();
   await expectNoFullReload();
 
