@@ -30,6 +30,14 @@ describe("redactAnalyticsUrl", () => {
     expect(redactAnalyticsUrl(`${SITE}/`)).toBe(`${SITE}/`);
   });
 
+  it("keeps public book pages with long link names", () => {
+    const slug43 = "sean-and-tina-oliver-family-holiday-cards-1";
+    const slug63 = "a".repeat(63);
+    expect(slug43).toHaveLength(43);
+    expect(redactAnalyticsUrl(`${SITE}/b/${slug43}`)).toBe(`${SITE}/b/${slug43}`);
+    expect(redactAnalyticsUrl(`${SITE}/b/${slug63}/thanks`)).toBe(`${SITE}/b/${slug63}/thanks`);
+  });
+
   it.each([
     ["an extra segment", `/u/${TOKEN}/confirm/x`],
     ["an unknown segment", `/u/${TOKEN}/zzz`],
@@ -43,6 +51,7 @@ describe("redactAnalyticsUrl", () => {
     ["an encoded slash", `/u%2F${TOKEN}`],
     ["a token without its prefix", `/${TOKEN}`],
     ["a token under another path", `/x/u/${TOKEN}`],
+    ["a token as a book link", `/b/${TOKEN}`],
     ["a short token", "/u/abc123"],
     ["a token with an encoded character", `/x/${TOKEN.slice(0, 21)}%${TOKEN.charCodeAt(21).toString(16)}${TOKEN.slice(22)}`],
   ])("returns null for %s", (_, path) => {

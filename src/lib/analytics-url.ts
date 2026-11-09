@@ -1,7 +1,14 @@
-import { TOKEN_SHAPE } from "@/lib/tokens";
+import { BOOK_LINK_SHAPE } from "@/lib/book-link";
+import { TOKEN_SHAPE } from "@/lib/token-shape";
 
 const RECIPIENT_ROUTE = new RegExp(`^/u/(thanks|${TOKEN_SHAPE.source.slice(1, -1)}(/confirm)?)/?$`);
 const TOKEN_LIKE = /[A-Za-z0-9_-]{43}/;
+const BOOK_PAGE = /^\/b\/([^/]+)(\/thanks)?\/?$/;
+
+function isBookPage(pathname: string): boolean {
+  const slug = BOOK_PAGE.exec(pathname)?.[1];
+  return slug !== undefined && BOOK_LINK_SHAPE.test(slug);
+}
 
 /**
  * Redacts the token on the three recipient routes and drops the query and fragment. Returns
@@ -20,7 +27,9 @@ export function redactAnalyticsUrl(raw: string): string | null {
   }
   const recipient = /^\/u\//i.test(decoded);
   if (recipient && !RECIPIENT_ROUTE.test(url.pathname)) return null;
-  if (!recipient && (TOKEN_LIKE.test(decoded) || TOKEN_LIKE.test(url.pathname))) return null;
+  if (!recipient && !isBookPage(url.pathname) && (TOKEN_LIKE.test(decoded) || TOKEN_LIKE.test(url.pathname))) {
+    return null;
+  }
   url.pathname = url.pathname.replace(/^\/u\/(?!thanks(?:\/|$))[^/]+/, "/u/[token]");
   return url.toString();
 }
