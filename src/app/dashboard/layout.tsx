@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SealedWordmark } from "@/components/sealed-mark";
+import { SiteFooter } from "@/components/site-footer";
 import { requireUser } from "@/lib/auth";
 import { getOwnBook } from "@/lib/queries/books";
 import { countDetectedDuplicates } from "@/lib/queries/duplicates";
@@ -44,6 +45,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
         </nav>
       </header>
       {children}
+      <SiteFooter />
     </div>
   );
 }

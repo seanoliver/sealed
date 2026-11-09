@@ -72,7 +72,11 @@ test("recipient pages and the homepage link to the about page", async ({ page })
   for (const path of [`/u/${token}`, `/u/${token}/confirm`]) {
     await page.goto(path);
     await expect(page.getByRole("link", { name: "Sealed", exact: true })).toHaveAttribute("href", "/about");
-    await expect(page.getByText("A small project by Sean Oliver")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sean Oliver" })).toHaveAttribute("href", "https://seanoliver.dev/");
+  }
+  for (const path of ["/", "/about"]) {
+    await page.goto(path);
+    await expect(page.getByRole("link", { name: "Sean Oliver" })).toHaveAttribute("href", "https://seanoliver.dev/");
   }
   await page.goto("/");
   await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");

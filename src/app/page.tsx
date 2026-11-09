@@ -107,7 +107,7 @@ export default async function Home({
         </div>
       </div>
     </main>
-    <SiteFooter lead="A small project by Sean Oliver" />
+    <SiteFooter />
     </>
   );
 }

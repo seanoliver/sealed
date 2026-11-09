@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SealedWordmark } from "@/components/sealed-mark";
+import { SiteFooter } from "@/components/site-footer";
 import { BackLink } from "./back-link";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ const SECTIONS = [
 
 export default function AboutPage() {
   return (
+    <>
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-4 py-10">
       <div className="flex items-center justify-between">
         <SealedWordmark />
@@ -70,5 +72,7 @@ export default function AboutPage() {
         </section>
       </div>
     </main>
+    <SiteFooter showAbout={false} />
+    </>
   );
 }
