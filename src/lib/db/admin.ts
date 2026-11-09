@@ -62,12 +62,9 @@ function connectionSurvives(err: unknown): boolean {
   return false;
 }
 
-/**
- * Checks out a client and releases it in this request's async context, which
- * is where attachDatabasePool registers the keep-alive. pg-pool's own query()
- * and drizzle's transaction() release from a socket callback or skip release
- * when BEGIN fails, so every query and transaction goes through here.
- */
+// Release in the caller's request, where attachDatabasePool registers its keep-alive. pg-pool's
+// query() releases from a socket callback and drizzle's transaction() skips release when BEGIN
+// fails, so every query and transaction goes through here.
 export async function withClient<T>(from: Pool, fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await from.connect();
   let broken: Error | undefined;
