@@ -366,7 +366,7 @@ test("a recipient confirms the envelope in one tap", async ({ browser }) => {
   ).toBeVisible();
   await expect(page.getByText("Tap any line to fix it")).toBeVisible();
   await expect(page.getByRole("link", { name: "Sealed" })).toHaveAttribute("href", "/about");
-  await expect(page.getByText("A small project by Sean Oliver")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sean Oliver" })).toHaveAttribute("href", "https://seanoliver.dev/");
   await expect(page.getByText("Why am I getting this?")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Use the full form instead" })).toHaveCount(0);
   const envelope = page.locator("address");
