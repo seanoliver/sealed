@@ -16,7 +16,7 @@ if (!url) throw new Error("DATABASE_URL is not set");
 
 const client = postgres(url, {
   prepare: false,
-  max: 10,
+  max: process.env.VERCEL ? 1 : 10,
   // Serverless: warm instances must not hold connections forever.
   idle_timeout: 20, // seconds
   max_lifetime: 60 * 30, // seconds
