@@ -13,6 +13,7 @@ import { bookAccessibleBy } from "@/lib/queries/books";
 // they operate on come exclusively from the RLS-scoped select below — the
 // RLS query IS the authorization.
 import { dbAdmin } from "@/lib/db/admin";
+import { adminTransaction } from "@/lib/db/tx-limits";
 import { books, contacts, emailSends, updateTokens } from "@/lib/db/schema";
 import { loadBookSender, type BookSender } from "@/lib/email/sender";
 import { isEmailDryRun, sendAddressRequests } from "@/lib/email/resend";
@@ -215,7 +216,7 @@ export async function requestAddresses(
   const failedContactIds = [...new Set(failed.map((p) => p.target.row.id))];
 
   try {
-    await dbAdmin.transaction(async (tx) => {
+    await adminTransaction(async (tx) => {
       if (delivered.length > 0) {
         await tx.insert(emailSends).values(
           delivered.map(({ target, resendId }) => ({

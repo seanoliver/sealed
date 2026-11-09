@@ -3,6 +3,7 @@ import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import * as schema from "./schema";
 import { dbAdmin } from "./admin";
+import { TX_LIMITS } from "./tx-limits";
 
 export type RlsTx = Parameters<Parameters<PostgresJsDatabase<typeof schema>["transaction"]>[0]>[0];
 
@@ -25,7 +26,8 @@ export function makeWithRls(db: PostgresJsDatabase<typeof schema>) {
       await tx.execute(sql`
         select set_config('request.jwt.claims', ${JSON.stringify({ ...claims, role: "authenticated" })}, true),
                set_config('request.jwt.claim.sub', ${claims.sub}, true),
-               set_config('role', 'authenticated', true)`);
+               set_config('role', 'authenticated', true),
+               ${TX_LIMITS}`);
       try {
         return await fn(tx);
       } finally {
