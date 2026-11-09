@@ -19,7 +19,7 @@ Pages served by an instance that already held a connection kept working, so the 
 
 ## Root cause
 
-`src/lib/db/admin.ts` created one postgres.js client per function instance with `max: 10`. The Supavisor pooler caps **client** connections at 200 (Postgres itself had 16 server connections at the time). The burst spread across enough Vercel instances that 10 connections per instance passed 200. A suspended instance can't run its `idle_timeout` timer, so its connections stay open at the pooler until the instance is reclaimed. That's why the failure outlasted the burst.
+`src/lib/db/admin.ts` created one postgres.js client per function instance with `max: 10`. The Supavisor pooler caps **client** connections at 200 (Postgres itself had 16 server connections at the time). The project runs on Fluid compute (checked 2026-11-09), so one instance serves many requests at once and opened up to 10 connections. The burst spread across enough instances that their connections passed 200. A suspended instance can't run its `idle_timeout` timer, so its connections stay open at the pooler until the instance is reclaimed. That's why the failure outlasted the burst.
 
 ## Reproduction
 
@@ -27,7 +27,7 @@ Send about 300 address requests to `@resend.dev` addresses from the test book th
 
 ## Fix
 
-`max: 1` on Vercel (`process.env.VERCEL`) in `src/lib/db/admin.ts`, so each instance holds at most one pooler connection. Local dev and tests keep 10, because `approve-race.test.ts` needs two concurrent transactions. No code path nests a `dbAdmin` query inside a `withRls` transaction (checked 2026-11-09), so one connection per instance can't deadlock a request against itself.
+`max: 1` in `src/lib/db/admin.ts`, everywhere (Vercel, local dev and tests), so each instance holds at most one pooler connection. With one connection, a `dbAdmin` or `withRls` call nested inside a transaction callback waits forever for itself. None exists today (checked 2026-11-09), and because tests now run on the same one-connection pool, a future nested call hangs the suite instead of production. `approve-race.test.ts` builds its own 2-connection client, because it races two transactions on purpose.
 
 ## Verification
 
@@ -35,7 +35,7 @@ Pending: deploy, then re-run the volume test (re-send to the 254 test contacts) 
 
 ## Recurrence guardrail
 
-The volume run in #80 is the check for this. Re-run it after any change to the database client or the webhook route.
+`src/lib/db/admin-pool.test.ts` fails if the pool holds more than one connection. The volume run in #80 is the end-to-end check: re-run it after any change to the database client or the webhook route.
 
 ## Follow-ups
 
