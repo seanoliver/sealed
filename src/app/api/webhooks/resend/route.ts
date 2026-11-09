@@ -42,8 +42,20 @@ const OVERWRITES: Record<WebhookStatus, string[]> = {
  */
 const ResendEvent = z.object({
   type: z.string(),
+  created_at: z.string().optional(),
   data: z.object({ email_id: z.string() }),
 });
+
+/**
+ * requestAddresses records a send only after Resend accepts the batch, so an
+ * early event can arrive first. Resend retries a non-2xx after 5s and 5min.
+ */
+const AWAIT_SEND_RECORD_MS = 10 * 60 * 1000;
+
+function isRecent(createdAt: string | undefined, now = Date.now()): boolean {
+  const at = createdAt ? Date.parse(createdAt) : NaN;
+  return Number.isFinite(at) && now - at < AWAIT_SEND_RECORD_MS;
+}
 
 export async function POST(req: Request) {
   try {
@@ -106,10 +118,8 @@ export async function POST(req: Request) {
       return new Response("ok");
     }
 
-    // Precedence-guarded update (see OVERWRITES). Unknown resend_id → 0 rows
-    // updated, which is fine: dry-run ids and other environments' events
-    // land here too.
-    await dbAdmin
+    // Precedence-guarded update (see OVERWRITES).
+    const updated = await dbAdmin
       .update(emailSends)
       .set({ status, lastEventAt: sql`now()` })
       .where(
@@ -117,8 +127,21 @@ export async function POST(req: Request) {
           eq(emailSends.resendId, event.data.email_id),
           inArray(emailSends.status, OVERWRITES[status]),
         ),
-      );
+      )
+      .returning({ id: emailSends.id });
+    if (updated.length > 0) return new Response("ok");
 
+    // 0 rows: either precedence kept a later status (ack), or the send isn't
+    // recorded yet. A recent event for an unrecorded send gets a retryable
+    // 503; an old one is from a failed send or another environment (ack).
+    const [known] = await dbAdmin
+      .select({ id: emailSends.id })
+      .from(emailSends)
+      .where(eq(emailSends.resendId, event.data.email_id))
+      .limit(1);
+    if (!known && isRecent(event.created_at)) {
+      return new Response("send not recorded yet", { status: 503 });
+    }
     return new Response("ok");
   } catch (err) {
     // Never throw unhandled; log only the error type — never the payload.
