@@ -1,4 +1,5 @@
 import "server-only";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { assertServerEnv } from "@/lib/env";
@@ -16,7 +17,7 @@ if (!url) throw new Error("DATABASE_URL is not set");
 
 const client = postgres(url, {
   prepare: false,
-  max: 10,
+  max: 1,
   // Serverless: warm instances must not hold connections forever.
   idle_timeout: 20, // seconds
   max_lifetime: 60 * 30, // seconds
@@ -31,3 +32,17 @@ const client = postgres(url, {
  * goes through withRls in `@/lib/db`.
  */
 export const dbAdmin = drizzle(client, { schema });
+
+/** Transaction-scoped: COMMIT or ROLLBACK restores the session defaults. */
+export const TX_LIMITS = sql`set_config('statement_timeout', '10s', true),
+               set_config('idle_in_transaction_session_timeout', '10s', true)`;
+
+type AdminTx = Parameters<Parameters<typeof dbAdmin.transaction>[0]>[0];
+
+/** dbAdmin.transaction with the same limits withRls applies; lint bans the bare call. */
+export function adminTransaction<T>(fn: (tx: AdminTx) => Promise<T>): Promise<T> {
+  return dbAdmin.transaction(async (tx) => {
+    await tx.execute(sql`select ${TX_LIMITS}`);
+    return fn(tx);
+  });
+}

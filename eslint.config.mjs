@@ -30,6 +30,19 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/lib/db/admin.ts", "src/**/*.test.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.object.name='dbAdmin'][callee.property.name='transaction']",
+          message: "Use adminTransaction from @/lib/db/admin, which applies the transaction limits withRls uses.",
+        },
+      ],
+    },
+  },
+  {
     files: [
       "src/lib/db/**",
       "src/app/api/webhooks/**",
