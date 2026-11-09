@@ -296,9 +296,9 @@ describe("confirmTokenAddress", () => {
 
   it("sends nothing for a token with an unknown recipient", async () => {
     const token = await seed();
-    vi.spyOn(dbAdmin, "execute").mockResolvedValueOnce([
-      { contact_id: C, email: "cf-owner@test.dev", recipient: "someone" },
-    ] as never);
+    vi.spyOn(dbAdmin, "execute").mockResolvedValueOnce({
+      rows: [{ contact_id: C, email: "cf-owner@test.dev", recipient: "someone" }],
+    } as never);
     await confirmTokenAddress(token, {}, new FormData());
     await flushAfter();
     expect(sendNotification).not.toHaveBeenCalled();

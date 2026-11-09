@@ -1,8 +1,8 @@
 import "server-only";
 import { attachDatabasePool } from "@vercel/functions";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 import { assertServerEnv } from "@/lib/env";
 import * as schema from "./schema";
 
@@ -16,18 +16,29 @@ assertServerEnv();
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
 
-// pg lets a URL's sslmode override the ssl option, and reads sslmode=require
-// as full certificate verification. Encrypt, no CA check.
-const connection = new URL(url);
-const sslmode = connection.searchParams.get("sslmode");
-connection.searchParams.delete("sslmode");
+const NO_VERIFY_MODES = new Set(["require", "prefer", "allow"]);
 
-const pool = new Pool({
-  connectionString: connection.toString(),
-  ssl: sslmode && sslmode !== "disable" ? { rejectUnauthorized: false } : undefined,
-  max: 5,
-  idleTimeoutMillis: 5_000,
-});
+/**
+ * pg lets a URL's sslmode override the ssl option, and reads sslmode=require
+ * as full certificate verification. require/prefer/allow encrypt without a CA
+ * check, verify-ca/verify-full keep Node's verification, disable or none is plain.
+ */
+export function poolConfig(databaseUrl: string): PoolConfig {
+  const connection = new URL(databaseUrl);
+  const sslmode = connection.searchParams.get("sslmode");
+  connection.searchParams.delete("sslmode");
+  return {
+    connectionString: connection.toString(),
+    ssl: !sslmode || sslmode === "disable" ? undefined : NO_VERIFY_MODES.has(sslmode) ? { rejectUnauthorized: false } : {},
+    max: 2,
+    idleTimeoutMillis: 1_000,
+    connectionTimeoutMillis: 5_000,
+    keepAlive: true,
+    maxLifetimeSeconds: 30 * 60,
+  };
+}
+
+const pool = new Pool(poolConfig(url));
 
 // Without a listener, an idle client's network error crashes the process.
 pool.on("error", (err) => {
@@ -37,6 +48,53 @@ pool.on("error", (err) => {
 // Keeps a Vercel instance alive until idle connections close, so a frozen
 // instance can't hold pooler slots (docs/bugs/2026-11-09-webhook-burst-exhausts-pooler.md).
 attachDatabasePool(pool);
+
+/** A server error (SQLSTATE) below FATAL leaves the connection usable; anything else may not. */
+function connectionSurvives(err: unknown): boolean {
+  let cur: unknown = err;
+  while (cur instanceof Error) {
+    const e = cur as Error & { code?: unknown; severity?: unknown };
+    if (typeof e.code === "string" && /^[0-9A-Z]{5}$/.test(e.code) && typeof e.severity === "string") {
+      return e.severity !== "FATAL" && e.severity !== "PANIC";
+    }
+    cur = cur.cause;
+  }
+  return false;
+}
+
+/**
+ * Checks out a client and releases it in this request's async context, which
+ * is where attachDatabasePool registers the keep-alive. pg-pool's own query()
+ * and drizzle's transaction() release from a socket callback or skip release
+ * when BEGIN fails, so every query and transaction goes through here.
+ */
+export async function withClient<T>(from: Pool, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await from.connect();
+  let broken: Error | undefined;
+  const onError = (err: Error) => {
+    broken = err;
+  };
+  client.on("error", onError);
+  try {
+    return await fn(client);
+  } catch (err) {
+    if (!connectionSurvives(err)) broken ??= err instanceof Error ? err : new Error(String(err));
+    throw err;
+  } finally {
+    client.removeListener("error", onError);
+    client.release(broken);
+  }
+}
+
+pool.query = ((text: never, values?: never) =>
+  withClient(pool, (client) => client.query(text, values))) as typeof pool.query;
+
+export function transactionOn<T>(
+  from: Pool,
+  fn: (tx: Parameters<Parameters<NodePgDatabase<typeof schema>["transaction"]>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  return withClient(from, (client) => drizzle(client, { schema }).transaction(fn));
+}
 
 /**
  * Admin connection — BYPASSES RLS (connection role owns the tables).
@@ -56,7 +114,7 @@ type AdminTx = Parameters<Parameters<typeof dbAdmin.transaction>[0]>[0];
 
 /** dbAdmin.transaction with the same limits withRls applies; lint bans the bare call. */
 export function adminTransaction<T>(fn: (tx: AdminTx) => Promise<T>): Promise<T> {
-  return dbAdmin.transaction(async (tx) => {
+  return transactionOn(pool, async (tx) => {
     await tx.execute(sql`select ${TX_LIMITS}`);
     return fn(tx);
   });

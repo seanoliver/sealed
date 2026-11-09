@@ -338,16 +338,16 @@ describe("requestAddresses", () => {
 
     send.mockReset();
     answer();
-    const transaction = dbAdmin.transaction.bind(dbAdmin);
-    vi.spyOn(dbAdmin, "transaction").mockImplementation((...args) =>
-      send.mock.calls.length > 0
+    const connect = dbAdmin.$client.connect.bind(dbAdmin.$client);
+    const failing = vi.spyOn(dbAdmin.$client, "connect").mockImplementation((() =>
+      send.mock.calls.length > 0 && new Error().stack?.includes("transactionOn")
         ? Promise.reject(new Error("db down"))
-        : transaction(...args),
-    );
+        : connect()) as typeof connect);
     await expect(requestAddresses({ contactIds: [A] })).resolves.toMatchObject({
       sent: 1,
       failed: 0,
     });
+    failing.mockRestore();
     expect(await isLive(A, first)).toBe(true);
     expect(await isLive(A, sentLinks()["ana@ra.test"])).toBe(true);
   });

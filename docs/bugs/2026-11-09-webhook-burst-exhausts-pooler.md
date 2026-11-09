@@ -29,7 +29,11 @@ Send about 300 address requests to `@resend.dev` addresses from the test book th
 
 ## Fix
 
-`src/lib/db/admin.ts` uses `pg`'s `Pool` (through `drizzle-orm/node-postgres`) with `idleTimeoutMillis: 5000` and `max: 5`, and registers it with `attachDatabasePool` from `@vercel/functions`. That hook keeps an instance alive until its idle connections close, so an instance no longer freezes while holding a pooler slot. postgres.js has no equivalent hook, which is why the driver changed. The pool also gets an `error` listener, because `pg` crashes the process on an unhandled idle-client error, and it keeps postgres.js's TLS behavior (encrypt, no CA check) by turning `sslmode` into an explicit `ssl` option.
+`src/lib/db/admin.ts` uses `pg`'s `Pool` (through `drizzle-orm/node-postgres`) registered with `attachDatabasePool` from `@vercel/functions`. That hook keeps an instance alive until its idle connections close, so an instance no longer freezes while holding a pooler slot. postgres.js has no equivalent hook, which is why the driver changed. The pool holds at most 2 connections, closes them after 1s idle, and gives up connecting after 5s.
+
+`attachDatabasePool` registers the keep-alive with whichever request is current when a connection is released. pg-pool's own `query()` releases from a socket callback, which belongs to the request that opened the connection, and drizzle's `transaction()` skips the release if `BEGIN` fails. So every query and transaction goes through `withClient`, which checks out a client, listens for its errors while it is out, and releases it in the caller's request. A client that hit a connection-level or FATAL error is destroyed instead of returned to the pool.
+
+`poolConfig` turns the URL's `sslmode` into an explicit `ssl` option, because `pg` lets `sslmode` override it and reads `require` as full certificate verification. `require`, `prefer` and `allow` encrypt without a CA check, as postgres.js did.
 
 Raw `execute` calls return `{ rows }` under `pg` instead of an array, and `pg` errors carry `constraint` instead of `constraint_name` (`src/lib/db/errors.ts`, `src/lib/log.ts`).
 
@@ -41,7 +45,7 @@ Pending: deploy, then re-run the volume test (re-send to the 254 test contacts) 
 
 ## Recurrence guardrail
 
-`src/lib/db/admin-pool.test.ts` fails if the pool's idle timeout or size changes. `src/lib/db/tx-limits.test.ts` covers the transaction limits, and `src/lib/db/admin-lint.test.ts` covers the lint rule. The volume run in #80 is the end-to-end check: re-run it after any change to the database client, the driver, or the webhook route.
+`src/lib/db/admin-pool.test.ts` fails if the keep-alive goes to the wrong request, if a connection killed mid-transaction crashes the process or breaks the pool, if the idle-client error listener goes, or if the `sslmode` mapping or pool settings change. `src/lib/db/tx-limits.test.ts` covers the transaction limits, and `src/lib/db/admin-lint.test.ts` covers the lint rule. The volume run in #80 is the end-to-end check: re-run it after any change to the database client, the driver, or the webhook route.
 
 ## Follow-ups
 

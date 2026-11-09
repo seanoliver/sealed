@@ -26,6 +26,7 @@ describe("logDbError", () => {
     logDbError("[t]", uniqueViolation(), { includeMessage: false });
     const logged = error.mock.calls.flat().join(" ");
     expect(logged).toContain("23505");
+    expect(logged).toContain("books_slug_key");
     expect(logged).not.toContain("duplicate key value");
   });
 });

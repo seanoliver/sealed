@@ -132,7 +132,11 @@ describe("/api/mcp", () => {
   });
 
   it("hides unexpected failures behind a generic tool error", async () => {
-    vi.spyOn(dbAdmin, "transaction").mockRejectedValue(new Error("relation exploded"));
+    const connect = dbAdmin.$client.connect.bind(dbAdmin.$client);
+    vi.spyOn(dbAdmin.$client, "connect").mockImplementation((() =>
+      new Error().stack?.includes("transactionOn")
+        ? Promise.reject(new Error("relation exploded"))
+        : connect()) as typeof connect);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const call = await body(

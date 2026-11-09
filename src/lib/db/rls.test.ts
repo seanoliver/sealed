@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { makeWithRls, withRls } from "./index";
 import { dbAdmin } from "./admin";
@@ -75,7 +74,7 @@ describe("withRls", () => {
     // max: 1 forces the probe onto the same physical connection.
     const single = new Pool({ connectionString: process.env.DATABASE_URL!, max: 1 });
     try {
-      const withRlsSingle = makeWithRls(drizzle(single, { schema }));
+      const withRlsSingle = makeWithRls(single);
       const rows = await withRlsSingle({ sub: U1 }, (tx) => tx.select().from(contacts));
       expect(rows.length).toBeGreaterThan(0); // successful, committed
       const { rows: [probe] } = await single.query<{ role: string; claims: string | null }>(`

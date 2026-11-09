@@ -1,8 +1,9 @@
 import "server-only";
 import { type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { type Pool } from "pg";
 import { sql } from "drizzle-orm";
 import * as schema from "./schema";
-import { dbAdmin, TX_LIMITS } from "./admin";
+import { dbAdmin, transactionOn, TX_LIMITS } from "./admin";
 
 export type RlsTx = Parameters<Parameters<NodePgDatabase<typeof schema>["transaction"]>[0]>[0];
 
@@ -11,7 +12,7 @@ export type RlsTx = Parameters<Parameters<NodePgDatabase<typeof schema>["transac
  * prove nothing leaks onto the connection after commit). Application code
  * uses the `withRls` export below.
  */
-export function makeWithRls(db: NodePgDatabase<typeof schema>) {
+export function makeWithRls(pool: Pool) {
   return async function withRls<T>(
     claims: { sub: string; [k: string]: unknown },
     fn: (tx: RlsTx) => Promise<T>,
@@ -19,7 +20,7 @@ export function makeWithRls(db: NodePgDatabase<typeof schema>) {
     if (!claims.sub) {
       throw new Error("withRls: claims.sub must be a non-empty user id");
     }
-    return db.transaction(async (tx) => {
+    return transactionOn(pool, async (tx) => {
       // Single round trip; set_config('role', ..., is_local => true) is
       // equivalent to SET LOCAL ROLE.
       await tx.execute(sql`
@@ -50,4 +51,4 @@ export function makeWithRls(db: NodePgDatabase<typeof schema>) {
  * `role` dropped to `authenticated`, so every query inside is RLS-enforced.
  * This is the ONLY sanctioned path for owner-facing data access.
  */
-export const withRls = makeWithRls(dbAdmin);
+export const withRls = makeWithRls(dbAdmin.$client);
