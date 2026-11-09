@@ -20,7 +20,7 @@ Post a signed `email.delivered` event for a `resend_id` that has no `email_sends
 
 ## Fix
 
-`src/app/api/webhooks/resend/route.ts`: when the precedence-guarded update matches no row, the route checks whether a send with that `resend_id` exists. If none exists and the event's `created_at` is under 10 minutes old, it answers 503, and Resend retries after 5 seconds and again after 5 minutes, by which time the row is there. An event blocked only by precedence (a late "delivered" after "opened"), an event older than 10 minutes, or one with no `created_at` still gets 200, so events from failed sends or other environments are never retried for long.
+`src/app/api/webhooks/resend/route.ts` runs the precedence-guarded update and a check for whether a send with that `resend_id` exists in one SQL statement, so both see the same snapshot and a send recorded between two separate queries can't be missed. When the update matches no row: if no send exists and the event's `created_at` is under 10 minutes old, it answers 503, and Resend retries after 5 seconds and again after 5 minutes, by which time the row is there. An event blocked only by precedence (a late "delivered" after "opened"), an event older than 10 minutes, or one with no `created_at` still gets 200, so events from failed sends or other environments are never retried for long.
 
 ## Verification
 
