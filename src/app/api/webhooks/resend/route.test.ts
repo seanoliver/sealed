@@ -34,9 +34,11 @@ function post(payload: string, headers: Record<string, string>): Promise<Respons
   return POST(new Request(URL_, { method: "POST", headers, body: payload }));
 }
 
-function eventPayload(type: string, emailId: string = RESEND_ID): string {
-  return JSON.stringify({ type, created_at: new Date().toISOString(), data: { email_id: emailId } });
+function eventPayload(type: string, emailId: string = RESEND_ID, createdAt: Date = new Date()): string {
+  return JSON.stringify({ type, created_at: createdAt.toISOString(), data: { email_id: emailId } });
 }
+
+const ELEVEN_MINUTES_AGO = () => new Date(Date.now() - 11 * 60 * 1000);
 
 async function sendRow(): Promise<{ status: string; lastEventAt: Date | null }> {
   const { rows } = await dbAdmin.execute<{ status: string; last_event_at: Date | null }>(sql`
@@ -195,10 +197,44 @@ describe("POST /api/webhooks/resend", () => {
     }
   });
 
-  it("acks an unknown email_id with 200 (0 rows updated)", async () => {
-    const payload = eventPayload("email.delivered", "re_no_such_send_ever");
+  it("acks an old event for an unknown email_id with 200", async () => {
+    const payload = eventPayload("email.delivered", "re_no_such_send_ever", ELEVEN_MINUTES_AGO());
     const res = await post(payload, signedHeaders(payload));
     expect(res.status).toBe(200);
     expect((await sendRow()).status).toBe("sent");
+  });
+
+  it("acks an event with no created_at for an unknown email_id with 200", async () => {
+    const payload = JSON.stringify({ type: "email.delivered", data: { email_id: "re_no_such_send_ever" } });
+    const res = await post(payload, signedHeaders(payload));
+    expect(res.status).toBe(200);
+  });
+
+  it("asks Resend to retry a recent event that arrives before its send is recorded", async () => {
+    const EARLY = "re_test_webhook_early";
+    const S2 = "30000000-0000-0000-0000-00000000e002";
+    await dbAdmin.execute(sql`delete from public.email_sends where id = ${S2}`);
+    try {
+      const payload = eventPayload("email.delivered", EARLY);
+      expect((await post(payload, signedHeaders(payload))).status).toBe(503);
+
+      await dbAdmin.execute(sql`
+        insert into public.email_sends (id, contact_id, book_id, resend_id, status)
+        values (${S2}, ${C1}, ${B1}, ${EARLY}, 'sent')`);
+      expect((await post(payload, signedHeaders(payload))).status).toBe(200);
+      const { rows } = await dbAdmin.execute<{ status: string }>(sql`
+        select status from public.email_sends where id = ${S2}`);
+      expect(rows[0].status).toBe("delivered");
+    } finally {
+      await dbAdmin.execute(sql`delete from public.email_sends where id = ${S2}`);
+    }
+  });
+
+  it("acks a recent event that precedence ignores, without asking for a retry", async () => {
+    await resetRowTo("opened");
+    const payload = eventPayload("email.delivered");
+    const res = await post(payload, signedHeaders(payload));
+    expect(res.status).toBe(200);
+    expect((await sendRow()).status).toBe("opened");
   });
 });
