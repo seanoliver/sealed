@@ -55,7 +55,7 @@ function keepLegacyNames(data: TokenData, posted: HouseholdValues): boolean {
 
 async function tokenData(token: string): Promise<TokenData | null> {
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select private.get_contact_for_token(${token}) as data`,
     );
     const parsed = tokenDataSchema.safeParse(rows[0]?.data ?? null);
@@ -194,7 +194,7 @@ async function applyTokenUpdate(
   //    leak the other person's answer.
   let outcome: unknown = null;
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select private.apply_token_reply(${token}, ${JSON.stringify(payload)}::jsonb,
             ${readSeenAt(formData)}::timestamptz) as outcome`,
     );

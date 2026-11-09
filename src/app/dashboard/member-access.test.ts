@@ -123,7 +123,7 @@ describe("a linked member working in the owner's book", () => {
       error: "Something went wrong. Please try again.",
     });
     const tokensAfter = await dbAdmin.execute(sql`select count(*)::int as n from public.update_tokens where contact_id = ${CONTACT}`);
-    expect(tokensAfter[0].n).toBe(tokensBefore[0].n);
+    expect(tokensAfter.rows[0].n).toBe(tokensBefore.rows[0].n);
     expect(send).not.toHaveBeenCalled();
     senderFailure.fail = false;
     vi.mocked(console.error).mockRestore();

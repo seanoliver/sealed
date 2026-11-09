@@ -242,7 +242,7 @@ describe("owner edits of the partner's email", () => {
     expect(await stored()).toMatchObject({ countryCode: "US", legacyCountry: null });
     const before = await version();
     const events = async () =>
-      (await dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`))[0].n;
+      (await dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`)).rows[0].n;
     const eventsBefore = await events();
     await expect(updateContact({}, await editForm({ country_code: "US" }))).resolves.toMatchObject({ saved: true });
     expect(await version()).toBe(before);

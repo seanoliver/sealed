@@ -338,16 +338,16 @@ describe("requestAddresses", () => {
 
     send.mockReset();
     answer();
-    const transaction = dbAdmin.transaction.bind(dbAdmin);
-    vi.spyOn(dbAdmin, "transaction").mockImplementation((...args) =>
-      send.mock.calls.length > 0
+    const connect = dbAdmin.$client.connect.bind(dbAdmin.$client);
+    const failing = vi.spyOn(dbAdmin.$client, "connect").mockImplementation((() =>
+      send.mock.calls.length > 0 && new Error().stack?.includes("transactionOn")
         ? Promise.reject(new Error("db down"))
-        : transaction(...args),
-    );
+        : connect()) as typeof connect);
     await expect(requestAddresses({ contactIds: [A] })).resolves.toMatchObject({
       sent: 1,
       failed: 0,
     });
+    failing.mockRestore();
     expect(await isLive(A, first)).toBe(true);
     expect(await isLive(A, sentLinks()["ana@ra.test"])).toBe(true);
   });
@@ -434,7 +434,7 @@ describe("requestAddresses", () => {
   });
 
   it("caps a request at 1000 emails, counting couples twice", async () => {
-    const rows = await dbAdmin.execute(sql`
+    const { rows } = await dbAdmin.execute(sql`
       insert into public.contacts (book_id, full_name, email, partner_email)
       select ${B}, 'Couple ' || n, 'a' || n || '@cap.test', 'b' || n || '@cap.test'
       from generate_series(1, 501) n
@@ -444,7 +444,7 @@ describe("requestAddresses", () => {
       error: "That's more than 1000 emails. Select fewer contacts.",
     });
     expect(send).not.toHaveBeenCalled();
-    const [{ count }] = await dbAdmin.execute(sql`
+    const { rows: [{ count }] } = await dbAdmin.execute(sql`
       select count(*)::int as count from public.update_tokens t
       join public.contacts c on c.id = t.contact_id where c.book_id = ${B}`);
     expect(count).toBe(0);
@@ -452,7 +452,7 @@ describe("requestAddresses", () => {
 
   it("sends exactly 1000 emails", async () => {
     answer();
-    const rows = await dbAdmin.execute(sql`
+    const { rows } = await dbAdmin.execute(sql`
       insert into public.contacts (book_id, full_name, email, partner_email)
       select ${B}, 'Couple ' || n, 'a' || n || '@cap.test', 'b' || n || '@cap.test'
       from generate_series(1, 500) n

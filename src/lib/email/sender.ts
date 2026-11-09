@@ -9,7 +9,7 @@ export interface BookSender {
 }
 
 export async function loadBookSender(bookId: string, ownerId: string): Promise<BookSender> {
-  const rows = await dbAdmin.execute<{ display_name: string | null; email: string | null; is_owner: boolean }>(sql`
+  const { rows } = await dbAdmin.execute<{ display_name: string | null; email: string | null; is_owner: boolean }>(sql`
     select p.display_name, u.email, true as is_owner
       from public.profiles p join auth.users u on u.id = p.id
      where p.id = ${ownerId}

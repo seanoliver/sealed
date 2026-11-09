@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Waitlist", robots: { index: false } 
 
 export default async function WaitlistPage() {
   await requireAdmin();
-  const rows = await dbAdmin.execute<{
+  const { rows } = await dbAdmin.execute<{
     email: string;
     status: WaitlistStatus;
     source: WaitlistSource;

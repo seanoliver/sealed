@@ -20,7 +20,7 @@ export async function linkPendingMembership(claims: SessionClaims): Promise<bool
   try {
     // Not claims.email, which a token can carry stale. The confirmed check only
     // protects while hosted Auth keeps mailer_autoconfirm off (runbook).
-    const linked = await dbAdmin.execute<{ id: string }>(sql`
+    const { rows: linked } = await dbAdmin.execute<{ id: string }>(sql`
       with linked as (
         update public.book_members m
            set user_id = u.id, linked_at = now()

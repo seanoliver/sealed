@@ -24,7 +24,7 @@ describe("approveEmail", () => {
   beforeEach(() => {
     vi.stubEnv("APP_URL", "https://app.example");
     vi.mocked(requireAdmin).mockResolvedValue({ sub: "admin" });
-    vi.mocked(dbAdmin.execute).mockResolvedValue([{ approved: true }] as never);
+    vi.mocked(dbAdmin.execute).mockResolvedValue({ rows: [{ approved: true }] } as never);
     vi.mocked(sendNotification).mockResolvedValue(true);
     generateLink.mockResolvedValue({
       data: { properties: { hashed_token: "hash123", verification_type: "signup" } },
@@ -72,7 +72,7 @@ describe("approveEmail", () => {
   });
 
   it("resends for an email that was already approved", async () => {
-    vi.mocked(dbAdmin.execute).mockResolvedValueOnce([{ approved: false }] as never);
+    vi.mocked(dbAdmin.execute).mockResolvedValueOnce({ rows: [{ approved: false }] } as never);
     await expect(approveEmail({}, form("old@example.test"))).resolves.toEqual({
       message: "old@example.test was already approved. Invitation sent.",
     });
@@ -89,7 +89,7 @@ describe("approveEmail", () => {
 
   it("still reports success when recording the sent invitation fails", async () => {
     vi.mocked(dbAdmin.execute)
-      .mockResolvedValueOnce([{ approved: true }] as never)
+      .mockResolvedValueOnce({ rows: [{ approved: true }] } as never)
       .mockRejectedValueOnce(new Error("boom"));
     await expect(approveEmail({}, form("new@example.test"))).resolves.toEqual({
       message: "Approved new@example.test. Invitation sent.",

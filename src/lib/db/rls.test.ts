@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { Pool } from "pg";
 import { makeWithRls, withRls } from "./index";
 import { dbAdmin } from "./admin";
 import * as schema from "./schema";
@@ -73,14 +72,14 @@ describe("withRls", () => {
     // pooled connection for the NEXT caller. (A failure-path probe proves
     // nothing — ROLLBACK reverts even a plain session-scoped SET.)
     // max: 1 forces the probe onto the same physical connection.
-    const single = postgres(process.env.DATABASE_URL!, { prepare: false, max: 1 });
+    const single = new Pool({ connectionString: process.env.DATABASE_URL!, max: 1 });
     try {
-      const withRlsSingle = makeWithRls(drizzle(single, { schema }));
+      const withRlsSingle = makeWithRls(single);
       const rows = await withRlsSingle({ sub: U1 }, (tx) => tx.select().from(contacts));
       expect(rows.length).toBeGreaterThan(0); // successful, committed
-      const [probe] = await single<{ role: string; claims: string | null }[]>`
+      const { rows: [probe] } = await single.query<{ role: string; claims: string | null }>(`
         select current_user as role,
-               current_setting('request.jwt.claims', true) as claims`;
+               current_setting('request.jwt.claims', true) as claims`);
       // The connection role is `postgres` in local dev and a restricted
       // `app_server` role in a hardened deployment (docs/SECURITY.md,
       // "Database role") — either way, what matters is that the DROPPED

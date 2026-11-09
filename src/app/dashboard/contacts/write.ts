@@ -306,7 +306,7 @@ export async function insertAgentEvent(
   { contactId, diff, tokenId, previewId }: EventInput & { tokenId: string; previewId?: string },
 ): Promise<string> {
   // Only the granted columns: a drizzle insert would also list id and created_at.
-  const [event] = await tx.execute<{ id: string }>(sql`
+  const { rows: [event] } = await tx.execute<{ id: string }>(sql`
     insert into public.contact_events
       (contact_id, source, diff, agent_token_id, agent_preview_id, contact_updated_at)
     values (${contactId}, 'agent', ${JSON.stringify(diff)}::jsonb, ${tokenId}, ${previewId ?? null},
@@ -460,7 +460,7 @@ export async function patchContactAs(
         // One open email change per contact and token. The new one replaces it and
         // keeps an old change only for a field this call didn't mention that is
         // still what the old change saw, so a field set back to its value is withdrawn.
-        const open = await tx.execute<{ id: string; changes: EmailChange }>(sql`
+        const { rows: open } = await tx.execute<{ id: string; changes: EmailChange }>(sql`
           select id, items->0->'changes' as changes from public.agent_previews
           where agent_token_id = ${actor.tokenId} and kind = 'email' and items->0->>'id' = ${id}
             and requested_at is not null and applied_at is null and discarded_at is null
@@ -490,7 +490,7 @@ export async function patchContactAs(
         }
         if (Object.keys(changes).length > 0) {
           const items = [{ id, name: householdLine(pickStoredNames(existing)), changes }];
-          const [queued] = await tx.execute<{ id: string }>(sql`
+          const { rows: [queued] } = await tx.execute<{ id: string }>(sql`
             insert into public.agent_previews
               (user_id, agent_token_id, kind, items, requested_at, expires_at)
             values (${claims.sub}, ${actor.tokenId}, 'email', ${JSON.stringify(items)}::jsonb, now(),

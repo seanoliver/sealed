@@ -21,7 +21,7 @@ export type TokenOwner = {
 
 export async function ownerForToken(token: string): Promise<TokenOwner | null> {
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select c.id as contact_id, u.email as email, t.recipient as recipient,
                  t.used_at is not null as replied_before
           from public.update_tokens t
@@ -137,7 +137,7 @@ export async function notifyOwner({
 /** A token that was valid and has been used, as opposed to unknown or expired. */
 export async function isSpentToken(token: string): Promise<boolean> {
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select 1 from public.update_tokens
           where token_hash = extensions.digest(${token}, 'sha256') and used_at is not null`,
     );

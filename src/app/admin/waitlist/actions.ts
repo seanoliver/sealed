@@ -41,7 +41,7 @@ export async function approveEmail(
 
   let newlyApproved = false;
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select private.approve_waitlist_email(${email}) as approved`,
     );
     newlyApproved = rows[0]?.approved === true;

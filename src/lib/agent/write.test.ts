@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { type ServerContext } from "@modelcontextprotocol/server";
 import { dbAdmin } from "@/lib/db/admin";
 import * as schema from "@/lib/db/schema";
@@ -78,8 +78,7 @@ async function requestEmail(id: string, email: string) {
   return result.pending_email_change!.request_id;
 }
 
-// Not dbAdmin: the app pool holds one connection, so act() would wait for this edit to commit.
-const editorPool = postgres(process.env.DATABASE_URL!, { prepare: false, max: 1 });
+const editorPool = new Pool({ connectionString: process.env.DATABASE_URL!, max: 1 });
 const editor = drizzle(editorPool, { schema });
 
 async function duringConcurrentEdit<T>(

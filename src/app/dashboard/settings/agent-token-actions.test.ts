@@ -42,7 +42,7 @@ describe("agent token actions", () => {
     } as never);
     if (!("token" in created)) throw new Error(created.error);
     expect((await verifyAgentToken(created.token))?.claims.sub).toBe(U);
-    const [{ n }] = await dbAdmin.execute<{ n: number }>(
+    const { rows: [{ n }] } = await dbAdmin.execute<{ n: number }>(
       sql`select count(*)::int as n from public.agent_tokens where user_id = ${OTHER}`,
     );
     expect(n).toBe(0);

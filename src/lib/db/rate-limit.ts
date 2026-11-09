@@ -13,7 +13,7 @@ export async function checkRateLimit(
   max: number,
   windowSeconds: number,
 ): Promise<boolean> {
-  const rows = await dbAdmin.execute(
+  const { rows } = await dbAdmin.execute(
     sql`select private.check_rate_limit(${key}, ${max}, ${windowSeconds}) as ok`,
   );
   return rows[0]?.ok === true;

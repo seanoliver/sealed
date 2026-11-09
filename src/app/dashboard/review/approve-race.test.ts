@@ -1,10 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { Pool } from "pg";
 import { makeWithRls } from "@/lib/db";
-import * as schema from "@/lib/db/schema";
 import { dbAdmin } from "@/lib/db/admin";
 import { isUniqueViolation } from "@/lib/db/errors";
 import { contacts, submissions } from "@/lib/db/schema";
@@ -32,9 +30,8 @@ const C_DUP = "20000000-0000-0000-0000-00000000c001";
 const S_RACE = "30000000-0000-0000-0000-00000000c001";
 const S_DUP = "30000000-0000-0000-0000-00000000c002";
 
-// The app pool holds one connection; two racing transactions need two.
-const racePool = postgres(process.env.DATABASE_URL!, { prepare: false, max: 2 });
-const withRls = makeWithRls(drizzle(racePool, { schema }));
+const racePool = new Pool({ connectionString: process.env.DATABASE_URL!, max: 2 });
+const withRls = makeWithRls(racePool);
 
 /** One-shot barrier so two transactions can rendezvous mid-flight. */
 function makeBarrier() {
