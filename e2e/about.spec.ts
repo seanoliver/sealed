@@ -78,8 +78,16 @@ test("recipient pages and the homepage link to the about page", async ({ page })
     await page.goto(path);
     await expect(page.getByRole("link", { name: "Sean Oliver" })).toHaveAttribute("href", "https://seanoliver.dev/");
   }
+  await expect(page.getByRole("link", { name: "What is this?" })).toHaveCount(0);
   await page.goto("/");
   await expect(page.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
+});
+
+test("the public book page credits the maker and links to the about page", async ({ page }) => {
+  await page.goto(`/b/${slug}`);
+  const footer = page.locator("footer");
+  await expect(footer.getByRole("link", { name: "Sean Oliver" })).toHaveAttribute("href", "https://seanoliver.dev/");
+  await expect(footer.getByRole("link", { name: "What is this?" })).toHaveAttribute("href", "/about");
 });
 
 test("a visitor from another site gets no Back button", async ({ page }) => {

@@ -170,6 +170,14 @@ test("empty review queue shows no dot and no count", async () => {
   await page.keyboard.press("Escape");
 });
 
+test("the dashboard footer credits the maker", async () => {
+  await page.goto("/dashboard");
+  await expect(page.locator("footer").getByRole("link", { name: "Sean Oliver" })).toHaveAttribute(
+    "href",
+    "https://seanoliver.dev/",
+  );
+});
+
 test("desktop keeps the single row of links with no menu button", async () => {
   await seedPermalinkSubmission({ bookId, payload: { full_name: "Maya Chen", city: "Portland" } });
   await page.setViewportSize(DESKTOP);
