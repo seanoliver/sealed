@@ -32,7 +32,7 @@ export function poolConfig(databaseUrl: string): PoolConfig {
     ssl: !sslmode || sslmode === "disable" ? undefined : NO_VERIFY_MODES.has(sslmode) ? { rejectUnauthorized: false } : {},
     max: 2,
     idleTimeoutMillis: 1_000,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 15_000,
     keepAlive: true,
     maxLifetimeSeconds: 30 * 60,
   };

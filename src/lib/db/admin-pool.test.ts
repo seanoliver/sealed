@@ -18,11 +18,13 @@ describe("dbAdmin pool", () => {
     delete (globalThis as Record<symbol, unknown>)[CONTEXT];
   });
 
-  it("holds few connections, closes them after 1s idle, and gives up connecting after 5s", () => {
+  it("holds few connections, closes them after 1s idle, and waits up to 15s for one", () => {
     expect(dbAdmin.$client.options).toMatchObject({
       max: 2,
       idleTimeoutMillis: 1_000,
-      connectionTimeoutMillis: 5_000,
+      connectionTimeoutMillis: 15_000,
+      keepAlive: true,
+      maxLifetimeSeconds: 1_800,
     });
   });
 
@@ -45,6 +47,7 @@ describe("dbAdmin pool", () => {
   it.each([
     ["postgresql://u:p@db.test:6543/postgres?sslmode=require", { rejectUnauthorized: false }],
     ["postgresql://u:p@db.test:6543/postgres?sslmode=prefer", { rejectUnauthorized: false }],
+    ["postgresql://u:p@db.test:6543/postgres?sslmode=allow", { rejectUnauthorized: false }],
     ["postgresql://u:p@db.test:6543/postgres?sslmode=verify-full", {}],
     ["postgresql://u:p@db.test:6543/postgres?sslmode=disable", undefined],
     ["postgresql://u:p@db.test:6543/postgres", undefined],
@@ -64,12 +67,33 @@ describe("dbAdmin pool", () => {
     error.mockRestore();
   });
 
+  it("keeps a connection after a recoverable SQL error in a transaction", async () => {
+    const released: unknown[] = [];
+    const onRelease = (err: unknown) => released.push(err);
+    dbAdmin.$client.on("release", onRelease);
+    try {
+      await expect(
+        adminTransaction(async (tx) => {
+          await tx.execute(sql`select 1 / 0`);
+        }),
+      ).rejects.toThrow();
+    } finally {
+      dbAdmin.$client.removeListener("release", onRelease);
+    }
+    expect(released).toEqual([undefined]);
+  });
+
   it("drops a connection the server closes mid-transaction and keeps serving queries", async () => {
+    const released: unknown[] = [];
+    const onRelease = (err: unknown) => released.push(err);
+    dbAdmin.$client.on("release", onRelease);
     await expect(
       adminTransaction(async (tx) => {
         await tx.execute(sql`select pg_terminate_backend(pg_backend_pid())`);
       }),
     ).rejects.toThrow();
+    dbAdmin.$client.removeListener("release", onRelease);
+    expect(released[0]).toBeInstanceOf(Error);
     const { rows } = await dbAdmin.execute<{ ok: number }>(sql`select 1 as ok`);
     expect(rows[0].ok).toBe(1);
   });

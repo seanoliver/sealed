@@ -29,7 +29,7 @@ Send about 300 address requests to `@resend.dev` addresses from the test book th
 
 ## Fix
 
-`src/lib/db/admin.ts` uses `pg`'s `Pool` (through `drizzle-orm/node-postgres`) registered with `attachDatabasePool` from `@vercel/functions`. That hook keeps an instance alive until its idle connections close, so an instance no longer freezes while holding a pooler slot. postgres.js has no equivalent hook, which is why the driver changed. The pool holds at most 2 connections, closes them after 1s idle, and gives up connecting after 5s.
+`src/lib/db/admin.ts` uses `pg`'s `Pool` (through `drizzle-orm/node-postgres`) registered with `attachDatabasePool` from `@vercel/functions`. That hook keeps an instance alive until its idle connections close, so an instance no longer freezes while holding a pooler slot. postgres.js has no equivalent hook, which is why the driver changed. The pool holds at most 2 connections and closes them after 1s idle. A request that can't get a connection within 15s fails; that covers both opening one and waiting for a busy one, and stays above the 10s statement limit so a legitimate wait never times out.
 
 `attachDatabasePool` registers the keep-alive with whichever request is current when a connection is released. pg-pool's own `query()` releases from a socket callback, which belongs to the request that opened the connection, and drizzle's `transaction()` skips the release if `BEGIN` fails. So every query and transaction goes through `withClient`, which checks out a client, listens for its errors while it is out, and releases it in the caller's request. A client that hit a connection-level or FATAL error is destroyed instead of returned to the pool.
 
