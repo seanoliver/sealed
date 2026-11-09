@@ -23,4 +23,10 @@ describe("redactAnalyticsUrl", () => {
     );
     expect(redactAnalyticsUrl("https://sealed.page/u/thanks")).toBe("https://sealed.page/u/thanks");
   });
+
+  it("redacts a token that only starts with \"thanks\"", () => {
+    expect(redactAnalyticsUrl("https://sealed.page/u/thanksQ9xabc/confirm")).toBe(
+      "https://sealed.page/u/[token]/confirm",
+    );
+  });
 });
