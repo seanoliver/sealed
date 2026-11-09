@@ -12,8 +12,7 @@ import { bookAccessibleBy } from "@/lib/queries/books";
 // email_sends bookkeeping go through the admin connection. The contact ids
 // they operate on come exclusively from the RLS-scoped select below — the
 // RLS query IS the authorization.
-import { dbAdmin } from "@/lib/db/admin";
-import { adminTransaction } from "@/lib/db/tx-limits";
+import { adminTransaction, dbAdmin } from "@/lib/db/admin";
 import { books, contacts, emailSends, updateTokens } from "@/lib/db/schema";
 import { loadBookSender, type BookSender } from "@/lib/email/sender";
 import { isEmailDryRun, sendAddressRequests } from "@/lib/email/resend";

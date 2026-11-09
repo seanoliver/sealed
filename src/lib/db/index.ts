@@ -2,8 +2,7 @@ import "server-only";
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import * as schema from "./schema";
-import { dbAdmin } from "./admin";
-import { TX_LIMITS } from "./tx-limits";
+import { dbAdmin, TX_LIMITS } from "./admin";
 
 export type RlsTx = Parameters<Parameters<PostgresJsDatabase<typeof schema>["transaction"]>[0]>[0];
 

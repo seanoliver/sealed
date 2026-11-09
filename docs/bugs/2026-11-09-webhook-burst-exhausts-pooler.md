@@ -27,9 +27,9 @@ Send about 300 address requests to `@resend.dev` addresses from the test book th
 
 ## Fix
 
-`max: 1` in `src/lib/db/admin.ts`, everywhere (Vercel, local dev and tests), so each instance holds at most one pooler connection. With one connection, a `dbAdmin` or `withRls` call nested inside a transaction callback waits forever for itself. None exists today (checked 2026-11-09), and because tests now run on the same one-connection pool, a future nested call hangs the suite instead of production. `approve-race.test.ts` builds its own 2-connection client, because it races two transactions on purpose, and `duringConcurrentEdit` in `src/lib/agent/write.test.ts` edits through its own client so the row-lock tests still run the edit and the agent action at the same time.
+`max: 1` in `src/lib/db/admin.ts`, everywhere (Vercel, local dev and tests), so each instance holds at most one pooler connection. With one connection, a `dbAdmin` or `withRls` call nested inside a transaction callback waits for its own connection until the idle-in-transaction limit below kills the outer transaction. None exists today (checked 2026-11-09), and because tests now run on the same one-connection pool, a future nested call fails the suite instead of stalling production. `approve-race.test.ts` builds its own 2-connection client, because it races two transactions on purpose, and `duringConcurrentEdit` in `src/lib/agent/write.test.ts` edits through its own client so the row-lock tests still run the edit and the agent action at the same time.
 
-Because every request on an instance now shares one connection, one slow or stuck transaction would hold up all of them. `withRls` and `adminTransaction` (`src/lib/db/tx-limits.ts`) set `statement_timeout` and `idle_in_transaction_session_timeout` to 10s for the transaction only, so it fails and frees the connection. A lint rule bans calling `dbAdmin.transaction` directly.
+Because every request on an instance now shares one connection, one slow or stuck transaction would hold up all of them. `withRls` and `adminTransaction` (`src/lib/db/admin.ts`) set `statement_timeout` and `idle_in_transaction_session_timeout` to 10s for the transaction only, so it fails and frees the connection. A lint rule bans calling `dbAdmin.transaction` directly.
 
 ## Verification
 
@@ -37,7 +37,7 @@ Pending: deploy, then re-run the volume test (re-send to the 254 test contacts) 
 
 ## Recurrence guardrail
 
-`src/lib/db/admin-pool.test.ts` fails if the pool holds more than one connection, and `src/lib/db/tx-limits.test.ts` fails if a transaction loses its limits or they leak past commit. The volume run in #80 is the end-to-end check: re-run it after any change to the database client or the webhook route.
+`src/lib/db/admin-pool.test.ts` fails if the pool holds more than one connection, and `src/lib/db/tx-limits.test.ts` fails if a transaction loses its limits, if they leak past commit, or if the pool can't recover from a cancelled statement. `src/lib/db/admin-lint.test.ts` fails if the lint rule stops catching a bare `dbAdmin.transaction`. The volume run in #80 is the end-to-end check: re-run it after any change to the database client or the webhook route.
 
 ## Follow-ups
 
