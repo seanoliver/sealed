@@ -4,7 +4,7 @@ import { logDbError } from "./log";
 function uniqueViolation(): Error {
   return Object.assign(new Error('duplicate key value violates unique constraint "books_slug_key"'), {
     code: "23505",
-    constraint_name: "books_slug_key",
+    constraint: "books_slug_key",
   });
 }
 

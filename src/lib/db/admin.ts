@@ -1,7 +1,8 @@
 import "server-only";
+import { attachDatabasePool } from "@vercel/functions";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { assertServerEnv } from "@/lib/env";
 import * as schema from "./schema";
 
@@ -10,18 +11,32 @@ import * as schema from "./schema";
 // vars fails at first touch with a clear list instead of deep in a request.
 assertServerEnv();
 
-// Explicit guard (and type narrowing): postgres.js silently falls back to
+// Explicit guard (and type narrowing): pg silently falls back to
 // localhost:5432 when the connection string is undefined — fail loudly.
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
 
-const client = postgres(url, {
-  prepare: false,
-  max: 1,
-  // Serverless: warm instances must not hold connections forever.
-  idle_timeout: 20, // seconds
-  max_lifetime: 60 * 30, // seconds
+// pg lets a URL's sslmode override the ssl option, and reads sslmode=require
+// as full certificate verification. Encrypt, no CA check.
+const connection = new URL(url);
+const sslmode = connection.searchParams.get("sslmode");
+connection.searchParams.delete("sslmode");
+
+const pool = new Pool({
+  connectionString: connection.toString(),
+  ssl: sslmode && sslmode !== "disable" ? { rejectUnauthorized: false } : undefined,
+  max: 5,
+  idleTimeoutMillis: 5_000,
 });
+
+// Without a listener, an idle client's network error crashes the process.
+pool.on("error", (err) => {
+  console.error(`[db] [pool] idle client error: ${(err as { code?: string }).code ?? err.name}`);
+});
+
+// Keeps a Vercel instance alive until idle connections close, so a frozen
+// instance can't hold pooler slots (docs/bugs/2026-11-09-webhook-burst-exhausts-pooler.md).
+attachDatabasePool(pool);
 
 /**
  * Admin connection — BYPASSES RLS (connection role owns the tables).
@@ -31,7 +46,7 @@ const client = postgres(url, {
  * (see no-restricted-imports in eslint.config.mjs) — owner-facing access
  * goes through withRls in `@/lib/db`.
  */
-export const dbAdmin = drizzle(client, { schema });
+export const dbAdmin = drizzle(pool, { schema });
 
 /** Transaction-scoped: COMMIT or ROLLBACK restores the session defaults. */
 export const TX_LIMITS = sql`set_config('statement_timeout', '10s', true),

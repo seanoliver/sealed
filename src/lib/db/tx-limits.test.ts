@@ -6,12 +6,9 @@ import { adminTransaction, dbAdmin } from "./admin";
 const U = "00000000-0000-0000-0000-00000000d001";
 
 async function readLimits(db: { execute: typeof dbAdmin.execute }) {
-  const rows = (await db.execute(sql`
+  const { rows } = await db.execute<{ statement: string; idle: string }>(sql`
     select current_setting('statement_timeout') as statement,
-           current_setting('idle_in_transaction_session_timeout') as idle`)) as unknown as {
-    statement: string;
-    idle: string;
-  }[];
+           current_setting('idle_in_transaction_session_timeout') as idle`);
   return rows[0];
 }
 
@@ -40,7 +37,7 @@ describe("transaction limits", () => {
       const cause = (e as { cause?: { code?: string } }).cause;
       return cause?.code === "57014";
     });
-    const [row] = (await dbAdmin.execute(sql`select 1 as ok`)) as unknown as { ok: number }[];
+    const { rows: [row] } = await dbAdmin.execute<{ ok: number }>(sql`select 1 as ok`);
     expect(row.ok).toBe(1);
   });
 

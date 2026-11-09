@@ -120,7 +120,7 @@ type VerifiedRow = {
 
 export async function verifyAgentToken(token: string | undefined): Promise<AgentPrincipal | null> {
   if (token === undefined || !AGENT_TOKEN_SHAPE.test(token)) return null;
-  const [row] = await dbAdmin.execute<VerifiedRow>(
+  const { rows: [row] } = await dbAdmin.execute<VerifiedRow>(
     sql`select * from private.verify_agent_token(${hashAgentToken(token)})`,
   );
   if (!row) return null;

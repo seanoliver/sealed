@@ -1,31 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
 import { dbAdmin } from "./admin";
 
 describe("dbAdmin pool", () => {
-  it("holds one connection, so a query waits for an open transaction", async () => {
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let inside!: () => void;
-    const entered = new Promise<void>((resolve) => {
-      inside = resolve;
-    });
+  it("closes idle connections after 5s", () => {
+    expect(dbAdmin.$client.options.idleTimeoutMillis).toBe(5_000);
+  });
 
-    const tx = dbAdmin.transaction(async (t) => {
-      await t.execute(sql`select 1`);
-      inside();
-      await held;
-    });
-    await entered;
-
-    const outside = dbAdmin.execute(sql`select 1`).then(() => "ran" as const);
-    const timer = new Promise<"waited">((resolve) => setTimeout(() => resolve("waited"), 300));
-    expect(await Promise.race([outside, timer])).toBe("waited");
-
-    release();
-    await tx;
-    expect(await outside).toBe("ran");
+  it("caps each instance at 5 connections", () => {
+    expect(dbAdmin.$client.options.max).toBe(5);
   });
 });

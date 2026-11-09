@@ -353,7 +353,7 @@ describe("confirmTokenAddress", () => {
       recipient: "partner",
       expiresAt: new Date(Date.now() + 86_400_000),
     });
-    const [{ seen }] = await dbAdmin.execute(
+    const { rows: [{ seen }] } = await dbAdmin.execute(
       sql`select private.get_contact_for_token(${partner}) ->> 'updated_at' as seen`,
     );
     await dbAdmin.execute(
@@ -371,7 +371,7 @@ describe("confirmTokenAddress", () => {
       .from(contactEvents)
       .where(eq(contactEvents.contactId, C));
     expect(events.map((e) => e.recipient).sort()).toEqual(["partner", "primary"]);
-    const queued = await dbAdmin.execute(
+    const { rows: queued } = await dbAdmin.execute(
       sql`select 1 from public.submissions where matched_contact_id = ${C}`,
     );
     expect(queued).toHaveLength(0);

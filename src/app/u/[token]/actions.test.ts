@@ -209,7 +209,7 @@ describe("submitTokenUpdate", () => {
     const token = await seed(contact);
     const openedAt = (
       await dbAdmin.execute(sql`select to_jsonb(updated_at) #>> '{}' as t from public.contacts where id = ${C}`)
-    )[0].t as string;
+    ).rows[0].t as string;
     const stale = prefilledForm(contact, { city: "Oslo" });
     stale.set("seen_at", openedAt);
     const fresh = prefilledForm(contact, { city: "Bergen" });
@@ -225,7 +225,7 @@ describe("submitTokenUpdate", () => {
     const execute = dbAdmin.execute.bind(dbAdmin);
     vi.spyOn(dbAdmin, "execute").mockImplementation(((query: Parameters<typeof execute>[0]) =>
       JSON.stringify(query).includes("apply_token_reply")
-        ? Promise.resolve([{ outcome: "queued_again" }])
+        ? Promise.resolve({ rows: [{ outcome: "queued_again" }] })
         : execute(query)) as typeof execute);
     await expect(saveTokenUpdate(token, {}, prefilledForm(contact))).resolves.toEqual({ saved: true });
     await flushAfter();
@@ -478,7 +478,7 @@ describe("submitTokenUpdate", () => {
   it("skips the email when the owner has no email address", async () => {
     const contact = { fullName: "Ana Reyes" };
     const token = await seed(contact);
-    vi.spyOn(dbAdmin, "execute").mockResolvedValueOnce([{ contact_id: C, email: "" }] as never);
+    vi.spyOn(dbAdmin, "execute").mockResolvedValueOnce({ rows: [{ contact_id: C, email: "" }] } as never);
     await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).rejects.toThrow("REDIRECT");
     await flushAfter();
     expect(sendNotification).not.toHaveBeenCalled();
@@ -490,7 +490,7 @@ describe("submitTokenUpdate", () => {
     const execute = dbAdmin.execute.bind(dbAdmin);
     vi.spyOn(dbAdmin, "execute")
       .mockImplementationOnce(execute)
-      .mockResolvedValueOnce([{ ok: false }] as never);
+      .mockResolvedValueOnce({ rows: [{ ok: false }] } as never);
     await expect(submitTokenUpdate(token, {}, prefilledForm(contact))).resolves.toMatchObject({
       error: INVALID_LINK_MESSAGE,
     });
@@ -559,7 +559,7 @@ describe("submitTokenUpdate", () => {
     }
 
     async function seenAt(token: string): Promise<string> {
-      const rows = await dbAdmin.execute(
+      const { rows } = await dbAdmin.execute(
         sql`select private.get_contact_for_token(${token}) ->> 'updated_at' as seen`,
       );
       return String(rows[0].seen);
@@ -594,7 +594,7 @@ describe("submitTokenUpdate", () => {
       const queued = await dbAdmin.execute(sql`
         select payload ->> 'city' as city from public.submissions
         where matched_contact_id = ${C} and status = 'pending'`);
-      expect(queued.map((row) => row.city)).toEqual(["Lima"]);
+      expect(queued.rows.map((row) => row.city)).toEqual(["Lima"]);
       await flushAfter();
       expect(sendNotification).toHaveBeenCalledTimes(1);
       expect(sendNotification).toHaveBeenCalledWith(

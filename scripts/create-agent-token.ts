@@ -16,7 +16,7 @@ async function main() {
     throw new Error("Usage: --email <owner email> --name <token name> [--scopes read,write] [--expires-days N]");
   }
 
-  const [user] = await dbAdmin.execute<{ id: string }>(
+  const { rows: [user] } = await dbAdmin.execute<{ id: string }>(
     sql`select id from auth.users where lower(email) = lower(${values.email})`,
   );
   if (!user) throw new Error(`No user with email ${values.email}`);

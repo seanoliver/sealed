@@ -1,17 +1,17 @@
 import "server-only";
-import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import * as schema from "./schema";
 import { dbAdmin, TX_LIMITS } from "./admin";
 
-export type RlsTx = Parameters<Parameters<PostgresJsDatabase<typeof schema>["transaction"]>[0]>[0];
+export type RlsTx = Parameters<Parameters<NodePgDatabase<typeof schema>["transaction"]>[0]>[0];
 
 /**
  * Factory exported for tests (the suite probes a dedicated max-1 pool to
  * prove nothing leaks onto the connection after commit). Application code
  * uses the `withRls` export below.
  */
-export function makeWithRls(db: PostgresJsDatabase<typeof schema>) {
+export function makeWithRls(db: NodePgDatabase<typeof schema>) {
   return async function withRls<T>(
     claims: { sub: string; [k: string]: unknown },
     fn: (tx: RlsTx) => Promise<T>,

@@ -68,7 +68,7 @@ describe("submitToBook", () => {
     })) {
       form.set(key, value);
     }
-    const execute = vi.spyOn(dbAdmin, "execute").mockResolvedValue([{ ok: true }] as never);
+    const execute = vi.spyOn(dbAdmin, "execute").mockResolvedValue({ rows: [{ ok: true }] } as never);
     await submitToBook("sb-test-book", {}, form).catch(() => {});
     expect(JSON.stringify(execute.mock.calls)).toContain("jane@acme.test");
     expect(JSON.stringify(execute.mock.calls)).not.toContain("attacker.test");

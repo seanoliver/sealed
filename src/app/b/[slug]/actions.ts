@@ -38,7 +38,7 @@ const TOO_MANY = "Too many requests — please try again later.";
  */
 async function notifyOwner(slug: string): Promise<void> {
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select u.email as email
           from public.books b
           join auth.users u on u.id = b.owner_id
@@ -175,7 +175,7 @@ export async function submitToBook(
   //    the email matched an existing contact.
   let accepted = false;
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select private.submit_to_book(${slug}, ${JSON.stringify(payload)}::jsonb) as ok`,
     );
     accepted = rows[0]?.ok === true;

@@ -5,9 +5,9 @@ import "server-only";
  *
  * Never log a DB error object (or its drizzle wrapper) directly:
  * DrizzleQueryError's message embeds the full query with params, and
- * PostgresError's `detail` can embed row values (addresses, emails, ...).
+ * pg DatabaseError's `detail` can embed row values (addresses, emails, ...).
  * This helper logs only the tag, the Postgres error `code`,
- * `constraint_name` when present, and the underlying Postgres error's
+ * `constraint` when present, and the underlying Postgres error's
  * message (which names relations/constraints, not values).
  *
  * Caveat: class-22 (data exception) Postgres messages CAN embed input
@@ -28,15 +28,15 @@ export function logDbError(
   let constraint: string | undefined;
   let message: string | undefined;
 
-  // Walk the `cause` chain (drizzle wraps the real PostgresError) and take
+  // Walk the `cause` chain (drizzle wraps the real pg DatabaseError) and take
   // the deepest error carrying a Postgres error code.
   let cur: unknown = err;
   while (cur instanceof Error) {
-    const e = cur as Error & { code?: unknown; constraint_name?: unknown };
+    const e = cur as Error & { code?: unknown; constraint?: unknown };
     if (typeof e.code === "string") {
       code = e.code;
       constraint =
-        typeof e.constraint_name === "string" ? e.constraint_name : undefined;
+        typeof e.constraint === "string" ? e.constraint : undefined;
       message = includeMessage ? e.message : undefined;
     }
     cur = cur.cause;

@@ -48,7 +48,7 @@ export async function loadTokenPage(
   //    three render the identical generic page (no differentiation).
   let data: unknown = null;
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       // The token itself is a bind parameter and is never logged.
       sql`select private.get_contact_for_token(${token}) as data`,
     );

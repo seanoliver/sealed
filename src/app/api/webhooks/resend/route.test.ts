@@ -39,7 +39,7 @@ function eventPayload(type: string, emailId: string = RESEND_ID): string {
 }
 
 async function sendRow(): Promise<{ status: string; lastEventAt: Date | null }> {
-  const rows = await dbAdmin.execute<{ status: string; last_event_at: Date | null }>(sql`
+  const { rows } = await dbAdmin.execute<{ status: string; last_event_at: Date | null }>(sql`
     select status, last_event_at from public.email_sends where id = ${S1}`);
   expect(rows).toHaveLength(1);
   return { status: rows[0].status, lastEventAt: rows[0].last_event_at };

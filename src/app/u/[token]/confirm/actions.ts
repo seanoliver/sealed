@@ -50,7 +50,7 @@ export async function confirmTokenAddress(
   const owner = await ownerForToken(token);
   let applied = false;
   try {
-    const rows = await dbAdmin.execute(
+    const { rows } = await dbAdmin.execute(
       sql`select private.apply_token_reply(${token}, '{}'::jsonb,
             ${readSeenAt(formData)}::timestamptz) as outcome`,
     );

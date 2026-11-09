@@ -168,8 +168,8 @@ describe("/api/mcp", () => {
       (tool: { annotations?: { readOnlyHint?: boolean } }) => tool.annotations?.readOnlyHint !== true,
     );
     expect(writeTools.map((tool: { name: string }) => tool.name).sort()).toEqual(WRITE_TOOLS);
-    const events = () =>
-      dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`);
+    const events = async () =>
+      (await dbAdmin.execute(sql`select count(*)::int as n from public.contact_events where contact_id = ${C}`)).rows;
     const before = await events();
     for (const tool of writeTools) {
       const response = await rpc(readToken, "tools/call", { name: tool.name, arguments: {} });
@@ -189,7 +189,7 @@ describe("/api/mcp", () => {
     expect(call.result.isError).toBeFalsy();
     const result = JSON.parse(call.result.content[0].text);
     expect(result).toMatchObject({ changed: true, after: { city: "Shelbyville" } });
-    const [event] = await dbAdmin.execute<{ source: string; name: string }>(sql`
+    const { rows: [event] } = await dbAdmin.execute<{ source: string; name: string }>(sql`
       select e.source, t.name from public.contact_events e
       join public.agent_tokens t on t.id = e.agent_token_id where e.id = ${result.event_id}`);
     expect(event).toEqual({ source: "agent", name: "write" });
@@ -214,7 +214,7 @@ describe("/api/mcp", () => {
         message: expect.stringContaining("waiting for the owner"),
       },
     });
-    const [row] = await dbAdmin.execute<{ country_code: string | null; email: string }>(
+    const { rows: [row] } = await dbAdmin.execute<{ country_code: string | null; email: string }>(
       sql`select country_code, email from public.contacts where id = ${C2}`,
     );
     expect(row).toEqual({ country_code: "NG", email: "ben@mcp.test" });
@@ -238,7 +238,7 @@ describe("/api/mcp", () => {
       count: 1,
       message: "Waiting for the owner to approve on the Agents page.",
     });
-    const [still] = await dbAdmin.execute(sql`select id from public.contacts where id = ${C2}`);
+    const { rows: [still] } = await dbAdmin.execute(sql`select id from public.contacts where id = ${C2}`);
     expect(still).toBeDefined();
   });
 
