@@ -29,4 +29,14 @@ describe("redactAnalyticsUrl", () => {
       "https://sealed.page/u/[token]/confirm",
     );
   });
+
+  it.each([
+    "https://sealed.page/u/abc123/confirm/x",
+    "https://sealed.page/u/abc123/zzz",
+    "https://sealed.page/U/abc123",
+    "https://sealed.page//u/abc123",
+    "https://sealed.page/u/thanks/abc123",
+  ])("returns null for %s, which is not a recipient route", (raw) => {
+    expect(redactAnalyticsUrl(raw)).toBeNull();
+  });
 });
