@@ -27,7 +27,7 @@ Send about 300 address requests to `@resend.dev` addresses from the test book th
 
 ## Fix
 
-`max: 1` in `src/lib/db/admin.ts`, everywhere (Vercel, local dev and tests), so each instance holds at most one pooler connection. With one connection, a `dbAdmin` or `withRls` call nested inside a transaction callback waits forever for itself. None exists today (checked 2026-11-09), and because tests now run on the same one-connection pool, a future nested call hangs the suite instead of production. `approve-race.test.ts` builds its own 2-connection client, because it races two transactions on purpose.
+`max: 1` in `src/lib/db/admin.ts`, everywhere (Vercel, local dev and tests), so each instance holds at most one pooler connection. With one connection, a `dbAdmin` or `withRls` call nested inside a transaction callback waits forever for itself. None exists today (checked 2026-11-09), and because tests now run on the same one-connection pool, a future nested call hangs the suite instead of production. `approve-race.test.ts` builds its own 2-connection client, because it races two transactions on purpose, and `duringConcurrentEdit` in `src/lib/agent/write.test.ts` edits through its own client so the row-lock tests still run the edit and the agent action at the same time.
 
 ## Verification
 

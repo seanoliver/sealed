@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { type ServerContext } from "@modelcontextprotocol/server";
 import { dbAdmin } from "@/lib/db/admin";
+import * as schema from "@/lib/db/schema";
 import { agentPreviews, contactEvents, contacts } from "@/lib/db/schema";
 import { listAgentChanges, summarizeDiff, undoAgentChange } from "./changes";
 import { agentContext } from "./mcp";
@@ -75,13 +78,17 @@ async function requestEmail(id: string, email: string) {
   return result.pending_email_change!.request_id;
 }
 
+// Not dbAdmin: the app pool holds one connection, so act() would wait for this edit to commit.
+const editorPool = postgres(process.env.DATABASE_URL!, { prepare: false, max: 1 });
+const editor = drizzle(editorPool, { schema });
+
 async function duringConcurrentEdit<T>(
   contactId: string,
   act: () => Promise<T>,
   edit: Partial<typeof contacts.$inferInsert> = { notes: "edited meanwhile" },
 ): Promise<T> {
   let running: Promise<T> | undefined;
-  await dbAdmin.transaction(async (tx) => {
+  await editor.transaction(async (tx) => {
     await tx.update(contacts).set(edit).where(eq(contacts.id, contactId));
     running = act();
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -118,6 +125,7 @@ describe("agent write tools", () => {
   afterAll(async () => {
     await dbAdmin.execute(sql`delete from public.books where id in (${B}, ${OTHER_B})`);
     await dbAdmin.execute(sql`delete from public.agent_tokens where user_id = ${U}`);
+    await editorPool.end();
   });
 
   it("refuses a write tool's context to a read-only token", () => {
