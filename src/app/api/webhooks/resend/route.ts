@@ -1,11 +1,10 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { Webhook } from "svix";
 import { z } from "zod";
 // Sanctioned dbAdmin call site (see eslint.config.mjs): webhook status
 // updates key on resend_id, which no RLS policy exposes — there is no
 // user session here, only a svix signature.
 import { dbAdmin } from "@/lib/db/admin";
-import { emailSends } from "@/lib/db/schema";
 
 /**
  * Statuses a webhook event can move a send TO. "sent" is only ever the
@@ -42,8 +41,20 @@ const OVERWRITES: Record<WebhookStatus, string[]> = {
  */
 const ResendEvent = z.object({
   type: z.string(),
+  created_at: z.string().optional(),
   data: z.object({ email_id: z.string() }),
 });
+
+/**
+ * requestAddresses records a send only after Resend accepts the batch, so an
+ * early event can arrive first. Resend retries a non-2xx after 5s and 5min.
+ */
+const AWAIT_SEND_RECORD_MS = 10 * 60 * 1000;
+
+function isRecent(createdAt: string | undefined, now = Date.now()): boolean {
+  const at = createdAt ? Date.parse(createdAt) : NaN;
+  return Number.isFinite(at) && now - at < AWAIT_SEND_RECORD_MS;
+}
 
 export async function POST(req: Request) {
   try {
@@ -106,19 +117,27 @@ export async function POST(req: Request) {
       return new Response("ok");
     }
 
-    // Precedence-guarded update (see OVERWRITES). Unknown resend_id → 0 rows
-    // updated, which is fine: dry-run ids and other environments' events
-    // land here too.
-    await dbAdmin
-      .update(emailSends)
-      .set({ status, lastEventAt: sql`now()` })
-      .where(
-        and(
-          eq(emailSends.resendId, event.data.email_id),
-          inArray(emailSends.status, OVERWRITES[status]),
-        ),
-      );
+    // Precedence-guarded update and existence check in one statement, so a
+    // send recorded between two separate queries can't make us ack too early.
+    const { rows } = await dbAdmin.execute<{ updated: number; known: boolean }>(sql`
+      with updated as (
+        update public.email_sends
+           set status = ${status}, last_event_at = now()
+         where resend_id = ${event.data.email_id}
+           and status in (${sql.join(OVERWRITES[status].map((s) => sql`${s}`), sql`, `)})
+        returning id
+      )
+      select (select count(*)::int from updated) as updated,
+             exists (select 1 from public.email_sends where resend_id = ${event.data.email_id}) as known`);
+    const [{ updated, known }] = rows;
+    if (updated > 0) return new Response("ok");
 
+    // 0 rows: either precedence kept a later status (ack), or the send isn't
+    // recorded yet. A recent event for an unrecorded send gets a retryable
+    // 503; an old one is from a failed send or another environment (ack).
+    if (!known && isRecent(event.created_at)) {
+      return new Response("send not recorded yet", { status: 503 });
+    }
     return new Response("ok");
   } catch (err) {
     // Never throw unhandled; log only the error type — never the payload.
