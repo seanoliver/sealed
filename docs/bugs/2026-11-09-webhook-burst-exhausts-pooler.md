@@ -1,10 +1,10 @@
 # A Resend webhook burst exhausts the database pooler
 
 **Date:** 2026-11-09
-**Status:** Mitigated (pending a re-run of the volume test on the pg driver)
+**Status:** Mitigated (the minutes-long outage is fixed; a 2-second burst of webhook 500s remains, cause unconfirmed)
 **Severity:** Critical
-**Last verified:** not yet; verify with the volume run after deploy
-**Related:** Issue #80 (Oct 31 launch: import, address emails, recipient updates), PR #161 (first attempt), issue #163 (follow-ups)
+**Last verified:** `35658a1` on 2026-11-09 (volume run)
+**Related:** Issue #80 (Oct 31 launch: import, address emails, recipient updates), PR #161 (first attempt), PR #164 (the fix), issues #163 and #165 (follow-ups)
 
 ## Symptom
 
@@ -29,7 +29,7 @@ Send about 300 address requests to `@resend.dev` addresses from the test book th
 
 ## Fix
 
-`src/lib/db/admin.ts` uses `pg`'s `Pool` (through `drizzle-orm/node-postgres`) registered with `attachDatabasePool` from `@vercel/functions`. That hook keeps an instance alive until its idle connections close, so an instance no longer freezes while holding a pooler slot. postgres.js has no equivalent hook, which is why the driver changed. The pool holds at most 2 connections and closes them after 1s idle. A request that can't get a connection within 15s fails; that covers both opening one and waiting for a busy one, and stays above the 10s statement limit so a legitimate wait never times out.
+`src/lib/db/admin.ts` uses `pg`'s `Pool` (through `drizzle-orm/node-postgres`) registered with `attachDatabasePool` from `@vercel/functions`. That hook keeps an instance alive until its idle connections close, so an instance no longer freezes while holding a pooler slot. postgres.js has no equivalent hook, which is why the driver changed. The pool holds at most 2 connections and closes them after 1s idle. A request that can't get a connection within 15s fails; that covers both opening one and waiting for a busy one. 15s gives headroom over a typical hold, but under a burst, queued requests can still time out.
 
 `attachDatabasePool` registers the keep-alive with whichever request is current when a connection is released. pg-pool's own `query()` releases from a socket callback, which belongs to the request that opened the connection, and drizzle's `transaction()` skips the release if `BEGIN` fails. So every query and transaction goes through `withClient`, which checks out a client, listens for its errors while it is out, and releases it in the caller's request. A client that hit a connection-level or FATAL error is destroyed instead of returned to the pool.
 
@@ -41,7 +41,7 @@ From #161, `withRls` and `adminTransaction` still set `statement_timeout` and `i
 
 ## Verification
 
-Pending: deploy, then re-run the volume test (re-send to the 254 test contacts) and confirm that every row reaches a terminal status and that Vercel shows no `EMAXCONN`.
+Volume run on `35658a1`, 2026-11-09 at 7:28pm UTC: 294 emails to the 254 test contacts. `/admin/waitlist` loaded at 14, 37 and 62 seconds after the send, and no other route logged an error. 88 webhooks returned 500 between 7:28:50pm and 7:28:52pm UTC. The webhook route logs only `Error`, so their cause isn't recorded; `EMAXCONN` is the likely one. Resend retried them, and every row reached a final status within about 20 seconds of the send. The two earlier runs that day failed 132 and 146 webhooks, left 58 and 69 rows at "Sent", and kept new connections failing for 4 to 7 minutes.
 
 ## Recurrence guardrail
 
@@ -49,4 +49,4 @@ Pending: deploy, then re-run the volume test (re-send to the 254 test contacts) 
 
 ## Follow-ups
 
-Tracked in [#163](https://github.com/seanoliver/sealed/issues/163) (pooler fix follow-ups). If the volume run still fails on the `pg` driver, the next options are a larger compute size (Small allows 400 pooler clients) or no longer subscribing to `email.delivered`, which causes most of the burst.
+Tracked in [#163](https://github.com/seanoliver/sealed/issues/163) (pooler fix follow-ups) and [#165](https://github.com/seanoliver/sealed/issues/165) (pg pool follow-ups). The 2-second window of webhook 500s may mean a burst still briefly reaches the pooler cap. Logging the webhook error code (in #163) would confirm it, and #165 tracks measuring the peak and shortening the idle timeout.
