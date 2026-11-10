@@ -20,13 +20,13 @@ Post a signed `email.delivered` event for a `resend_id` that has no `email_sends
 
 ## Fix
 
-`src/app/api/webhooks/resend/route.ts` runs the precedence-guarded update and a check for whether a send with that `resend_id` exists in one SQL statement, so both see the same snapshot and a send recorded between two separate queries can't be missed. When the update matches no row: if no send exists and the event's `created_at` is under 10 minutes old, it answers 503, and Resend retries after 5 seconds and again after 5 minutes, by which time the row is there. An event blocked only by precedence (a late "delivered" after "opened"), an event older than 10 minutes, or one with no `created_at` still gets 200, so events from failed sends or other environments are never retried for long.
+`src/app/api/webhooks/resend/route.ts` runs the precedence-guarded update and a check for whether a send with that `resend_id` exists in one SQL statement, so both see the same snapshot and a send recorded between two separate queries can't be missed. When the update matches no row: if no send exists and the event's `created_at` is under 10 minutes old, it answers 503, and Resend retries after 5 seconds and again after 5 minutes, by which time the row is there. An event blocked only by precedence (a late "delivered" after "opened"), an event older than 10 minutes, or one with no `created_at` still gets 200, so events from failed sends, other environments, or emails Sealed never records (such as sign-in links) are retried for at most 10 minutes.
 
 ## Verification
 
 `src/app/api/webhooks/resend/route.test.ts`: a recent event for an unrecorded send gets 503 and lands once the row exists; an old or undated event for an unknown id gets 200; a precedence-blocked event gets 200. Removing the 503, the existence check, or the 10-minute window each fails a test.
 
-Volume run on `89a9041`, 2026-11-10 at 6:02am UTC: 290 emails to the 250 load-test contacts. All 250 reached a final status (240 Delivered, 5 Bounced, 5 Complained) within 20 seconds, with none left at "Sent", and Resend shows all 295 webhook events as delivered. The "delivered" event for a sign-in email also gets the 503, because sign-in emails have no `email_sends` row, so Resend retries it until the 10-minute window passes.
+Volume run on `89a9041`, 2026-11-10 at 6:02am UTC: 290 emails to the 250 load-test contacts. All 250 reached a final status (240 Delivered, 5 Bounced, 5 Complained) within 20 seconds, with none left at "Sent". Resend marked all 295 webhook events from the run (290 sends plus 5 complaints) as successful. The `email.delivered` event for a sign-in email sent just before the run kept retrying, because sign-in emails have no `email_sends` row; it gets the 503 until the 10-minute window passes.
 
 ## Recurrence guardrail
 
@@ -35,3 +35,5 @@ The tests above. Anything that changes when `requestAddresses` records a send sh
 ## Follow-ups
 
 Recording a pending send row before the batch call would remove the race instead of retrying around it, but the row is keyed on the id Resend returns.
+
+Sign-in emails also get the 503 for their first 10 minutes, which adds a few webhook calls per sign-in. Tracked in #171 (early webhook retry follow-ups).
