@@ -3,7 +3,7 @@
 **Date:** 2026-11-09
 **Status:** Mitigated (the minutes-long outage is fixed; a 2-second burst of webhook 500s remains, cause unconfirmed)
 **Severity:** Critical
-**Last verified:** `35658a1` on 2026-11-09 (volume run)
+**Last verified:** `89a9041` on 2026-11-10 (volume run)
 **Related:** Issue #80 (Oct 31 launch: import, address emails, recipient updates), PR #161 (first attempt), PR #164 (the fix), issues #163 and #165 (follow-ups)
 
 ## Symptom
@@ -42,6 +42,8 @@ From #161, `withRls` and `adminTransaction` still set `statement_timeout` and `i
 ## Verification
 
 Volume run on `35658a1`, 2026-11-09 at 7:28pm UTC: 294 emails to the 254 test contacts. `/admin/waitlist` loaded at 14, 37 and 62 seconds after the send, and no other route logged an error. 88 webhooks returned 500 between 7:28:50pm and 7:28:52pm UTC. The webhook route logs only `Error`, so their cause isn't recorded; `EMAXCONN` is the likely one. Resend retried them, and every row reached a final status within about 20 seconds of the send. The two earlier runs that day failed 132 and 146 webhooks, left 58 and 69 rows at "Sent", and kept new connections failing for 4 to 7 minutes.
+
+Volume run on `89a9041`, after #170 (retry a delivery webhook that arrives before its send is recorded), 2026-11-10 at 6:02am UTC: 290 emails to the 250 load-test contacts. `/admin/waitlist` loaded at 13, 40, 65 and 89 seconds after the send. Vercel logged 74 webhook 500s, the last at 6:02:43am UTC, still only as `Error`. Resend retried them, and every row reached a final status within 20 seconds.
 
 ## Recurrence guardrail
 

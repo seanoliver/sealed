@@ -3,7 +3,7 @@
 **Date:** 2026-11-09
 **Status:** Fixed
 **Severity:** Important
-**Last verified:** not yet; verify with the next volume run after deploy
+**Last verified:** `89a9041` on 2026-11-10 (volume run)
 **Related:** Issue #163 (pooler fix follow-ups), issue #80 (Oct 31 launch: import, address emails, recipient updates)
 
 ## Symptom
@@ -25,6 +25,8 @@ Post a signed `email.delivered` event for a `resend_id` that has no `email_sends
 ## Verification
 
 `src/app/api/webhooks/resend/route.test.ts`: a recent event for an unrecorded send gets 503 and lands once the row exists; an old or undated event for an unknown id gets 200; a precedence-blocked event gets 200. Removing the 503, the existence check, or the 10-minute window each fails a test.
+
+Volume run on `89a9041`, 2026-11-10 at 6:02am UTC: 290 emails to the 250 load-test contacts. All 250 reached a final status (240 Delivered, 5 Bounced, 5 Complained) within 20 seconds, with none left at "Sent", and Resend shows all 295 webhook events as delivered. The "delivered" event for a sign-in email also gets the 503, because sign-in emails have no `email_sends` row, so Resend retries it until the 10-minute window passes.
 
 ## Recurrence guardrail
 
