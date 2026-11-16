@@ -138,11 +138,7 @@ function renderLine(parts: Part[], value: (field: FormatField) => string): strin
   return out.trim();
 }
 
-/**
- * Rows saved before postcodes were normalized on write still lack the space
- * ("CR06GP"). Saved postcodes are upper case; one still being typed keeps its
- * case so the editor can show what the post capitalizes.
- */
+// Skips a lower-case postcode: normalizing it would hide the editor's capitalization highlight.
 function savedPostcode(country: Country | null, postcode: string): string {
   if (country === null || postcode !== postcode.toUpperCase()) return postcode;
   return normalizePostcode(country.code, postcode);
@@ -179,10 +175,6 @@ export function formatEnvelope(
     S: /%S%C|%C%S/.test(fmt) && state.toLowerCase() === city.toLowerCase() ? "" : state,
     Z: savedPostcode(country, clean(address.postalCode)),
   };
-  // A stored value the format has no place for still prints, next to the street.
-  // A region is the exception: a country whose format has no %S doesn't use one
-  // on mail, so a UK county or Dutch province is left off rather than tacked
-  // onto the street line.
   const countryLine = (known?.name ?? legacy).toUpperCase();
   const seen = new Set(
     (["D", "C", "S", "Z"] as const)
