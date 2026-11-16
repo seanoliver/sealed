@@ -322,6 +322,36 @@ describe("envelopeLines", () => {
     ).toEqual(["Civic Centre, Yaren", "Yaren District", "NAURU"]);
   });
 
+  it("leaves out a region when the country's format has no region line", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "Flat 2, 14 Kestrel Lane", city: "Bristol", stateRegion: "LONDON", postalCode: "BS6 5QT", countryCode: "GB" },
+        US,
+      ),
+    ).toEqual(["Flat 2, 14 Kestrel Lane", "BRISTOL", "BS6 5QT", "UNITED KINGDOM"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "Keizersgracht 212", city: "Amsterdam", stateRegion: "FLEVOLAND", postalCode: "1016 DZ", countryCode: "NL" },
+        US,
+      ),
+    ).toEqual(["Keizersgracht 212", "1016 DZ Amsterdam", "NETHERLANDS"]);
+  });
+
+  it("spaces a postcode saved without its space", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "14 Kestrel Lane", city: "Bristol", postalCode: "BS65QT", countryCode: "GB" },
+        US,
+      ),
+    ).toEqual(["14 Kestrel Lane", "BRISTOL", "BS6 5QT", "UNITED KINGDOM"]);
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "Keizersgracht 212", city: "Amsterdam", postalCode: "1016DZ", countryCode: "NL" },
+        US,
+      ),
+    ).toEqual(["Keizersgracht 212", "1016 DZ Amsterdam", "NETHERLANDS"]);
+  });
+
   it("prints a slotless value once, and not when it names the country", () => {
     expect(
       envelopeLines(
