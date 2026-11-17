@@ -133,11 +133,12 @@ test("opened in a new tab from the list, the link still goes to the list", async
   await context.close();
 });
 
-test("a stored field the country doesn't print can still be cleared from the street line", async () => {
+test("a stored field the country doesn't print can still be cleared from the street line; a region is hidden and kept", async () => {
   const gbId = await seedContact({
     bookId,
     fullName: "Ada Byron",
     addressLine1: "10 Downing Street",
+    district: "Westminster",
     city: "London",
     stateRegion: "Middlesex",
     postalCode: "SW1A 2AA",
@@ -145,11 +146,12 @@ test("a stored field the country doesn't print can still be cleared from the str
   });
   await page.goto(`/dashboard/contacts/${gbId}`);
   await page.getByRole("button", { name: /Edit street address/i }).click();
-  await page.locator("#state_region").fill("");
+  await expect(page.locator("#state_region")).toHaveCount(0);
+  await page.locator("#district").fill("");
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved.");
-  expect(await getContactAddress(gbId)).toMatchObject({ state_region: null });
+  expect(await getContactAddress(gbId)).toMatchObject({ district: null, state_region: "Middlesex" });
 });
 
 test("editing the partner's personal email doesn't mark the names line", async () => {
