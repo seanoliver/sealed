@@ -337,6 +337,15 @@ describe("envelopeLines", () => {
     ).toEqual(["Keizersgracht 212", "1016 DZ Amsterdam", "NETHERLANDS"]);
   });
 
+  it("leaves a lower-case postcode as typed", () => {
+    expect(
+      envelopeLines(
+        { ...blank, addressLine1: "14 Kestrel Lane", city: "Bristol", postalCode: "bs65qt", countryCode: "GB" },
+        { ...US, asTyped: true },
+      ),
+    ).toEqual(["14 Kestrel Lane", "Bristol", "bs65qt", "UNITED KINGDOM"]);
+  });
+
   it("spaces a postcode saved without its space", () => {
     expect(
       envelopeLines(
