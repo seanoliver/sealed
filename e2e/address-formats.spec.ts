@@ -216,30 +216,19 @@ test("a China address in Chinese prints postcode first and name last, and saves 
   });
 });
 
-test("a stored value the country has no field for stays, and comes back after switching countries", async ({
+test("a stored region the country has no field for is hidden, left off the envelope, and kept", async ({
   browser,
 }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await stubTurnstile(page);
   await page.goto(`/u/${beaToken}`);
-  await expect(page.getByLabel("County")).toHaveValue("Somerset");
-  await expect(page.getByRole("region", { name: "Envelope preview" })).toContainText("Somerset");
+  await expect(page.getByLabel("County")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Envelope preview" })).not.toContainText("Somerset");
 
   await pickCountry(page, "NG");
+  await pickCountry(page, "GB");
   await expect(page.getByLabel("County")).toHaveCount(0);
-  await pickCountry(page, "GB");
-  await expect(page.getByLabel("County")).toHaveValue("Somerset");
-
-  await pickCountry(page, "CA");
-  await expect(page.getByLabel("Province")).toHaveValue("Somerset");
-  await page.getByLabel("Province").fill("Ontario");
-  await pickCountry(page, "GB");
-  await expect(page.getByLabel("County")).toHaveValue("Somerset");
-  await pickCountry(page, "US");
-  await expect(page.getByLabel("State")).toHaveValue("");
-  await pickCountry(page, "GB");
-  await expect(page.getByLabel("County")).toHaveValue("Somerset");
   await page.getByRole("button", { name: "Update my details" }).click();
   await expect(page).toHaveURL(/\/u\/thanks$/);
   await context.close();
