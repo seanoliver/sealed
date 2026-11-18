@@ -48,6 +48,14 @@ test.afterAll(async () => {
 
 const back = () => page.getByRole("link", { name: "Contacts", exact: true }).first();
 
+// Typing before the change counter is ready makes the typed value its baseline.
+const contactReady = () => expect(page.locator("form[data-changes-ready]")).toBeAttached();
+
+async function gotoContact(id: string) {
+  await page.goto(`/dashboard/contacts/${id}`);
+  await contactReady();
+}
+
 test("the way back stays on screen on a phone and keeps the list's search", async () => {
   await page.goto("/dashboard?q=Mei");
   await page.getByRole("link", { name: "Mei Lin" }).first().click();
@@ -60,13 +68,13 @@ test("the way back stays on screen on a phone and keeps the list's search", asyn
 });
 
 test("opened directly, the link goes to the last list search", async () => {
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await back().click();
   await expect(page).toHaveURL(/\/dashboard\?q=Mei$/);
 });
 
 test("a line opens in place and Save writes it with the rest of the form", async () => {
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await page.getByRole("button", { name: /Edit street address/i }).click();
   await page.locator("#address_line1").fill("500 Birch Avenue");
   await page.locator("#birthday").fill("1990-03-14");
@@ -80,7 +88,7 @@ test("a line opens in place and Save writes it with the rest of the form", async
 });
 
 test("a contact with no address gets dashed slots and still saves", async () => {
-  await page.goto(`/dashboard/contacts/${emptyId}`);
+  await gotoContact(emptyId);
   await expect(page.getByRole("button", { name: /^\+ Add street address/i })).toBeVisible();
   await page.locator("#notes").fill("Met at the reunion");
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -88,7 +96,7 @@ test("a contact with no address gets dashed slots and still saves", async () => 
 });
 
 test("a partial address stays visible with no street", async () => {
-  await page.goto(`/dashboard/contacts/${phoneOnlyId}`);
+  await gotoContact(phoneOnlyId);
   await page.getByRole("button", { name: /Add city/ }).click();
   await page.locator("#city").fill("Tulsa");
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -101,6 +109,7 @@ test("Back asks before losing changes, and can save first", async () => {
   await page.goto("/dashboard");
   await page.getByRole("link", { name: "Mei Lin" }).first().click();
   await expect(page).toHaveURL(new RegExp(`/dashboard/contacts/${filledId}$`));
+  await contactReady();
   await page.locator("#notes").fill("Keep this note");
   await expect(page.getByText("1 change")).toBeInViewport();
 
@@ -114,12 +123,12 @@ test("Back asks before losing changes, and can save first", async () => {
   await back().click();
   await dialog.getByRole("button", { name: "Save and go back" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await expect(page.locator("#notes")).toHaveValue("Keep this note");
 });
 
 test("a bad postcode from the save button opens its line", async () => {
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await page.getByRole("button", { name: /Edit ZIP code|Edit city/i }).click();
   await page.locator("#postal_code").fill("9721");
   await page.keyboard.press("Escape");
@@ -150,7 +159,7 @@ test("a stored field the country doesn't print can still be cleared from the str
     postalCode: "SW1A 2AA",
     countryCode: "GB",
   });
-  await page.goto(`/dashboard/contacts/${gbId}`);
+  await gotoContact(gbId);
   await page.getByRole("button", { name: /Edit street address/i }).click();
   await page.locator("#state_region").fill("");
   await page.getByRole("button", { name: "Done" }).click();
@@ -160,7 +169,7 @@ test("a stored field the country doesn't print can still be cleared from the str
 });
 
 test("editing the partner's personal email doesn't mark the names line", async () => {
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await page.locator("#partner_personal_email").fill("daniel@example.test");
   await expect(page.getByText("1 change")).toBeInViewport();
 });
@@ -215,18 +224,18 @@ test("with no list remembered, the list opens at the top", async () => {
 });
 
 test("Discard changes leaves without saving", async () => {
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   const notes = await page.locator("#notes").inputValue();
   await page.locator("#notes").fill("Throw this away");
   await back().click();
   await page.getByRole("dialog", { name: "Leave without saving?" }).getByRole("button", { name: "Discard changes" }).click();
   await expect(page).toHaveURL(/\/dashboard(\?|$)/);
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await expect(page.locator("#notes")).toHaveValue(notes);
 });
 
 test("a modified click on Contacts skips the prompt", async () => {
-  await page.goto(`/dashboard/contacts/${filledId}`);
+  await gotoContact(filledId);
   await page.locator("#notes").fill("Still editing");
   const opened = page.context().waitForEvent("page");
   await back().click({ modifiers: ["ControlOrMeta"] });
@@ -236,7 +245,7 @@ test("a modified click on Contacts skips the prompt", async () => {
 });
 
 test("adding a contact fills in the envelope and saves every field", async () => {
-  await page.goto("/dashboard/contacts/new");
+  await gotoContact("new");
   await expect(page.locator("#first_name")).toBeFocused();
   // Long enough for a smooth scroll to have moved the page.
   await page.waitForTimeout(1000);
