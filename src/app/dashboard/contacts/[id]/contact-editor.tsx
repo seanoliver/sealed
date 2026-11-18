@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { unstable_isUnrecognizedActionError, unstable_rethrow, useRouter } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { type ContactFormState } from "@/app/dashboard/contacts/actions";
 import {
@@ -36,11 +36,28 @@ import {
 import { envelopeRows } from "@/components/envelope-rows";
 import { contactsListReturn } from "@/components/contacts-list-memory";
 import { cn } from "@/lib/utils";
-import { type ContactFormValues } from "@/lib/validation/contact";
+import { CONTACT_FIELDS, type ContactFormValues } from "@/lib/validation/contact";
 import { type HouseholdValues } from "@/lib/validation/household";
 
 const CONTACTS_PATH = "/dashboard";
 const initialState: ContactFormState = {};
+const CONNECTION_DROPPED = "The connection dropped. Tap again.";
+const PAGE_OUT_OF_DATE = "This page is out of date. Copy anything you need, then reload.";
+const SAVE_FAILED = "Something went wrong. Please try again.";
+
+function saveFailedMessage(error: unknown): string {
+  if (unstable_isUnrecognizedActionError(error)) return PAGE_OUT_OF_DATE;
+  return error instanceof TypeError || !navigator.onLine ? CONNECTION_DROPPED : SAVE_FAILED;
+}
+
+function saveFailed(error: unknown, formData: FormData): ContactFormState {
+  return {
+    error: saveFailedMessage(error),
+    values: Object.fromEntries(
+      CONTACT_FIELDS.map((field) => [field, String(formData.get(field) ?? "")]),
+    ) as ContactFormValues,
+  };
+}
 const NOTHING_CHANGED: ReadonlySet<string> = new Set();
 const ENABLED_NAMES = { partner_name: true, kids_names: true };
 const DETAIL_KEYS = [
@@ -85,7 +102,22 @@ export function ContactEditor({
   const leaveDialog = useRef<HTMLDialogElement>(null);
   const leaveAfterSave = useRef(false);
 
-  const [state, formAction, pending] = useActionState(action, initialState);
+  const saveToken = useRef<string | null>(null);
+  const [state, formAction, pending] = useActionState(
+    async (previous: ContactFormState, formData: FormData) => {
+      try {
+        saveToken.current ??= typeof crypto.randomUUID === "function" ? crypto.randomUUID() : null;
+        if (saveToken.current) formData.set("save_token", saveToken.current);
+        const result = await action(previous, formData);
+        if (result.saved) saveToken.current = null;
+        return result;
+      } catch (error) {
+        unstable_rethrow(error);
+        return saveFailed(error, formData);
+      }
+    },
+    initialState,
+  );
   const formChanges = useFormChanges(formRef);
   const { rebase } = formChanges;
   const changed = creating ? NOTHING_CHANGED : formChanges.changed;

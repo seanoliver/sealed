@@ -320,6 +320,8 @@ export const updatedAtText = sql<string>`${contacts.updatedAt}::text`;
 
 export const DUPLICATE_EMAIL = "You already have a contact with this email";
 export const GENERIC_ERROR = "Something went wrong. Please try again.";
+export const CHANGED_SINCE_ADDED =
+  "This contact was added, then changed somewhere else. Open it from your contacts list to check it.";
 
 export type WriteResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -522,15 +524,24 @@ export async function patchContactAs(
   return { ok: true, value: { diff, eventId, emailRequest, emailWithdrawn } };
 }
 
+export async function releaseSaveToken(tx: RlsTx, id: string, bookId: string): Promise<void> {
+  await tx
+    .update(contacts)
+    .set({ lastSaveToken: null })
+    .where(and(eq(contacts.id, id), eq(contacts.bookId, bookId)));
+}
+
 export async function createContactAs(
   claims: SessionClaims,
   input: { details: ContactDetailsInput; household: HouseholdInput },
   actor: Actor,
+  { id }: { id?: string } = {},
 ): Promise<WriteResult<{ id: string; eventId?: string }>> {
   const row = { ...householdToRow(input.household), ...contactDetailsToRow(input.details) };
   const diff = { after: definedFields(rowToSnapshot(row)) };
   let inserted: { id: string; eventId?: string } | undefined;
   let conflict: string | undefined;
+  let replayed: { diff: ContactDiff | undefined } | undefined;
   try {
     inserted = await withRls(claims, async (tx) => {
       // Resolve the book inside the RLS tx — never trust a client bookId.
@@ -540,11 +551,39 @@ export async function createContactAs(
         .where(bookAccessibleBy(claims.sub))
         .limit(1);
       if (!book) return undefined;
+      if (id) {
+        const [existing] = await tx
+          .select()
+          .from(contacts)
+          .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)))
+          .limit(1)
+          .for("update");
+        if (existing) {
+          if (existing.lastSaveToken !== id) {
+            conflict = CHANGED_SINCE_ADDED;
+            return undefined;
+          }
+          const replayDiff = changedFields(rowToSnapshot(existing), rowToSnapshot({ ...existing, ...row }));
+          if (replayDiff) {
+            conflict =
+              (await personalEmailConflict(tx, { bookId: book.id, contactId: id, after: replayDiff.after })) ??
+              undefined;
+            if (conflict) return undefined;
+            await releaseSaveToken(tx, id, book.id);
+            await tx
+              .update(contacts)
+              .set({ ...row, lastSaveToken: id })
+              .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
+          }
+          replayed = { diff: replayDiff };
+          return { id: existing.id };
+        }
+      }
       conflict = (await personalEmailConflict(tx, { bookId: book.id, after: diff.after })) ?? undefined;
       if (conflict) return undefined;
       const [created] = await tx
         .insert(contacts)
-        .values({ bookId: book.id, ...row })
+        .values({ ...(id ? { id, lastSaveToken: id } : {}), bookId: book.id, ...row })
         .returning({ id: contacts.id });
       if (actor.source !== "agent") return created;
       const eventId = await insertAgentEvent(tx, { contactId: created.id, diff, tokenId: actor.tokenId });
@@ -554,11 +593,18 @@ export async function createContactAs(
     if (isUniqueViolation(err, "contacts_book_email_unique")) {
       return { ok: false, error: DUPLICATE_EMAIL };
     }
+    if (isUniqueViolation(err, "contacts_pkey")) return { ok: false, error: GENERIC_ERROR };
     logDbError("[ct] [createContactAs] insert failed", err);
     return { ok: false, error: GENERIC_ERROR };
   }
   if (conflict) return { ok: false, error: conflict };
   if (!inserted) return { ok: false, error: "Set up your address book first." };
+  if (replayed) {
+    const eventId = replayed.diff
+      ? await recordContactEvent({ contactId: inserted.id, diff: replayed.diff }, "owner")
+      : undefined;
+    return { ok: true, value: { id: inserted.id, eventId } };
+  }
   const eventId =
     actor.source === "agent"
       ? inserted.eventId

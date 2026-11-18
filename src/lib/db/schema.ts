@@ -63,6 +63,7 @@ export const contacts = pgTable("contacts", {
   countryCode: text("country_code"),
   legacyCountry: text("country"),
   notes: text("notes"),
+  lastSaveToken: uuid("last_save_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

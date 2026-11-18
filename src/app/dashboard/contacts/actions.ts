@@ -43,6 +43,7 @@ import {
   updatedAtText,
   invitesStillGoTo,
   personalEmailConflict,
+  releaseSaveToken,
 } from "./write";
 
 export type ContactFormState = {
@@ -65,6 +66,11 @@ export type PatchContactResult = { error?: string };
 const uuidSchema = z.uuid();
 
 const CHANGED_SINCE_OPENED = "This contact changed since you opened it. Reload to see the latest.";
+
+function readSaveToken(formData: FormData): string | undefined {
+  const token = String(formData.get("save_token") ?? "");
+  return uuidSchema.safeParse(token).success ? token : undefined;
+}
 
 function readContactForm(formData: FormData): ContactFormValues {
   return Object.fromEntries(
@@ -162,6 +168,7 @@ export async function createContact(
     claims,
     { details: parsed.details, household: parsed.household },
     { source: "owner" },
+    { id: readSaveToken(formData) },
   );
   if (!created.ok) return { error: created.error, ...echo };
   const inserted = created.value;
@@ -187,6 +194,7 @@ export async function updateContact(
   }
 
   const version = String(formData.get("version") ?? "");
+  const saveToken = readSaveToken(formData);
   let before: ContactRow | undefined;
   let row: Partial<Row> | undefined;
   let invalid: ContactFormState | undefined;
@@ -207,7 +215,8 @@ export async function updateContact(
         .for("update");
       if (!locked) return undefined;
       const existing = locked.contact;
-      if (locked.version !== version) {
+      const ownRetry = saveToken !== undefined && existing.lastSaveToken === saveToken;
+      if (locked.version !== version && !ownRetry) {
         invalid = { error: CHANGED_SINCE_OPENED, ...echo };
         return existing;
       }
@@ -251,9 +260,10 @@ export async function updateContact(
           invalid = { error: conflict, ...echo };
           return existing;
         }
+        if (ownRetry) await releaseSaveToken(tx, id, book.id);
         await tx
           .update(contacts)
-          .set(row)
+          .set({ ...row, lastSaveToken: saveToken ?? null })
           .where(and(eq(contacts.id, id), eq(contacts.bookId, book.id)));
       }
       return existing;
