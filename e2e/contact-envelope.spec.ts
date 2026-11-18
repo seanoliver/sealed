@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import { cleanupUser, getContactAddress, getUserIdByEmail, seedBook, seedContact } from "./db";
+import {
+  cleanupUser,
+  getContactAddress,
+  getContactByFirstName,
+  getUserIdByEmail,
+  seedBook,
+  seedContact,
+} from "./db";
 import { signupAndLogin, uniqueEmail, uniqueSlug } from "./helpers";
 
 const ownerEmail = uniqueEmail("contact-envelope");
@@ -226,4 +233,43 @@ test("a modified click on Contacts skips the prompt", async () => {
   await (await opened).close();
   await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/dashboard/contacts/${filledId}$`));
+});
+
+test("adding a contact fills in the envelope and saves every field", async () => {
+  await page.goto("/dashboard/contacts/new");
+  await expect(page.locator("#first_name")).toBeFocused();
+  // Long enough for a smooth scroll to have moved the page.
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page.getByRole("button", { name: /^Country: United States/ })).toBeVisible();
+
+  await page.locator("#first_name").fill("Nora");
+  await page.locator("#last_name").fill("Quill");
+  await page.getByRole("button", { name: "Add a person" }).click();
+  await page.locator("#partner_first").fill("Eli");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add kids" }).click();
+  await page.locator("#kid_0_first").fill("Ivy");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.locator("#partner_email").fill("eli@example.test");
+  await page.locator("#birthday").fill("1988-07-02");
+  await page.locator("#notes").fill("Met at the lake");
+  await expect(page.getByText(/\d+ changes?|Unsaved changes/)).toHaveCount(0);
+
+  await back().click();
+  const dialog = page.getByRole("dialog", { name: "Leave without saving?" });
+  await expect(dialog).toContainText("This contact isn't added yet.");
+  await dialog.getByRole("button", { name: "Add and go back" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?added=/);
+
+  expect(await getContactByFirstName(bookId, "Nora")).toMatchObject({
+    full_name: "Nora Quill",
+    partner_name: "Eli Quill",
+    kids_names: "Ivy",
+    partner_email: "eli@example.test",
+    birthday: "1988-07-02",
+    notes: "Met at the lake",
+    country_code: "US",
+  });
 });

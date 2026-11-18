@@ -38,8 +38,7 @@ export default async function ContactDetailPage({
   return (
     <ContactEditor
       action={updateContact}
-      contactId={contact.id}
-      version={version}
+      existing={{ contactId: contact.id, version }}
       from={profile?.displayName ?? ""}
       senderCountry={book?.senderCountry ?? DEFAULT_SENDER_COUNTRY}
       legacyCountry={contact.countryCode ? null : contact.legacyCountry}

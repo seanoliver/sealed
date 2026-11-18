@@ -15,6 +15,7 @@ What could the owner's contact page reuse from the recipient's envelope editor, 
 - Line editing, ZIP checks, keyboard handling and the household draft do not depend on tokens or Turnstile. They moved to `src/components/envelope-card.tsx`.
 - The save flows differ. The recipient chooses between confirm and save and ends on a saved screen. The owner stays on the page and posts through `updateContact` with a version. Each page keeps its own form and action.
 - `NamesEditor` serves both, with `recipient="owner"` for owner wording and removal rules. Its hidden `HouseholdInputs` post the same keys as `HouseholdFields`, so `updateContact` did not change.
+- The dashboard's add page renders `ContactEditor` with no `existing` contact (2026-11-17). It posts to `createContact`, opens the names line on load, and marks no line as changed.
 - Without a street, `formatEnvelope` returns null. Owners can keep partial addresses, so `AddressPreview.partial` gives owner envelopes rows for those lines. Recipient envelopes ignore it.
 
 ## How it works
