@@ -41,6 +41,7 @@ import { type HouseholdValues } from "@/lib/validation/household";
 
 const CONTACTS_PATH = "/dashboard";
 const initialState: ContactFormState = {};
+const NOTHING_CHANGED: ReadonlySet<string> = new Set();
 const ENABLED_NAMES = { partner_name: true, kids_names: true };
 const DETAIL_KEYS = [
   "email",
@@ -53,30 +54,31 @@ const DETAIL_KEYS = [
 
 type ContactEditorProps = {
   action: (state: ContactFormState, formData: FormData) => Promise<ContactFormState>;
-  contactId: string;
-  version: string;
+  existing?: { contactId: string; version: string };
   from: string;
   defaults: ContactFormValues;
   household: HouseholdValues;
   senderCountry: string;
   legacyCountry: string | null;
   heading: ReactNode;
+  intro?: ReactNode;
   /** Page sections after the form, outside it so their own forms aren't nested. */
-  children: ReactNode;
+  children?: ReactNode;
 };
 
 export function ContactEditor({
   action,
-  contactId,
-  version,
+  existing,
   from,
   defaults,
   household,
   senderCountry,
   legacyCountry,
   heading,
+  intro,
   children,
 }: ContactEditorProps) {
+  const creating = existing === undefined;
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const addressRef = useRef<AddressFieldsHandle>(null);
@@ -84,12 +86,19 @@ export function ContactEditor({
   const leaveAfterSave = useRef(false);
 
   const [state, formAction, pending] = useActionState(action, initialState);
-  const { changed, rebase } = useFormChanges(formRef);
-  const editing = useEnvelopeEditing({ formRef, household, state });
+  const formChanges = useFormChanges(formRef);
+  const { rebase } = formChanges;
+  const changed = creating ? NOTHING_CHANGED : formChanges.changed;
+  const dirty = formChanges.changed.size > 0;
+  const editing = useEnvelopeEditing({
+    formRef,
+    household,
+    state,
+    startOpen: creating ? { kind: "names" } : null,
+  });
   const { open, draft, setOpen } = editing;
   // React 19 resets uncontrolled inputs after an action; the echoed values restore them.
   const v = state.values ?? defaults;
-  const dirty = changed.size > 0;
 
   function goToContacts() {
     const { url, restore } = contactsListReturn();
@@ -180,12 +189,12 @@ export function ContactEditor({
               disabled={pending}
               className={cn(
                 "h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 max-sm:order-last",
-                dirty ? "max-sm:ml-auto" : "max-sm:flex-1",
+                dirty && !creating ? "max-sm:ml-auto" : "max-sm:flex-1",
               )}
             >
-              {pending ? "Saving…" : "Save changes"}
+              {creating ? (pending ? "Adding…" : "Add contact") : pending ? "Saving…" : "Save changes"}
             </button>
-            {dirty ? (
+            {dirty && !creating ? (
               <span className="text-sm font-medium text-foreground">
                 {count > 0 ? `${count} change${count === 1 ? "" : "s"}` : "Unsaved changes"}
               </span>
@@ -227,10 +236,17 @@ export function ContactEditor({
         className="mt-4 flex scroll-mt-14 flex-col gap-5 rounded-xl border border-border bg-card p-4 shadow-sm sm:mt-2 sm:p-8"
       >
         {state.error ? <FormError message={state.error} /> : null}
-        <h1 className="font-serif text-2xl leading-tight text-foreground">{heading}</h1>
+        <div>
+          <h1 className="font-serif text-2xl leading-tight text-foreground">{heading}</h1>
+          {intro ? <p className="mt-1 text-sm text-pretty text-muted-foreground">{intro}</p> : null}
+        </div>
 
-        <input type="hidden" name="id" value={contactId} />
-        <input type="hidden" name="version" value={version} />
+        {existing ? (
+          <>
+            <input type="hidden" name="id" value={existing.contactId} />
+            <input type="hidden" name="version" value={existing.version} />
+          </>
+        ) : null}
 
         <AddressFields
           defaults={{
@@ -254,7 +270,7 @@ export function ContactEditor({
           preview={layout}
           focus={open?.kind === "address" || open?.kind === "country" ? new Set(openFields(open)) : null}
           handleRef={addressRef}
-          prefillCountry={false}
+          prefillCountry={creating}
           postcodeFirstIn="US"
         />
         <HouseholdInputs draft={pruneDraft(draft)} enabled={ENABLED_NAMES} />
@@ -270,7 +286,9 @@ export function ContactEditor({
         <h2 id="leave-title" className="font-serif text-lg leading-tight">
           Leave without saving?
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">Your changes to this contact aren&apos;t saved yet.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {creating ? "This contact isn't added yet." : "Your changes to this contact aren't saved yet."}
+        </p>
         <div className="mt-4 flex flex-col gap-2">
           <button
             type="button"
@@ -283,7 +301,7 @@ export function ContactEditor({
             }}
             className="h-11 rounded-lg bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/80"
           >
-            Save and go back
+            {creating ? "Add and go back" : "Save and go back"}
           </button>
           <button
             type="button"
