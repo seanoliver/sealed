@@ -232,9 +232,11 @@ test("a stored value the country has no field for stays and comes back after swi
 
   await pickCountry(page, "US");
   await expect(page.getByLabel("Suburb")).toHaveCount(0);
+  await expect(page.getByLabel("State")).toHaveValue("");
   await pickCountry(page, "GB");
   await expect(page.getByLabel("Suburb")).toHaveValue("Widcombe");
   await pickCountry(page, "CA");
+  await expect(page.getByLabel("Province")).toHaveValue("Somerset");
   await pickCountry(page, "GB");
   await expect(page.getByLabel("Suburb")).toHaveValue("Widcombe");
   await expect(page.getByLabel("County")).toHaveCount(0);
