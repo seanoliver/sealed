@@ -274,7 +274,10 @@ export function AddressFields({
   const layout = addressLayout(layoutCode);
   const [extraFields] = useState(() =>
     ADDRESS_FIELDS.filter(
-      (field) => !layout.fields.has(field) && initial.current[field].trim() !== "",
+      (field) =>
+        field !== "state_region" &&
+        !layout.fields.has(field) &&
+        initial.current[field].trim() !== "",
     ),
   );
 
