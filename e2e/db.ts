@@ -453,3 +453,9 @@ export async function getContactByFirstName(bookId: string, firstName: string) {
     from public.contacts where book_id = ${bookId} and first_name = ${firstName}`;
   return row;
 }
+
+export async function countContactsByFirstName(bookId: string, firstName: string): Promise<number> {
+  const [row] = await db`
+    select count(*)::int as n from public.contacts where book_id = ${bookId} and first_name = ${firstName}`;
+  return row.n as number;
+}

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupUser,
   getContactAddress,
+  countContactsByFirstName,
   getContactByFirstName,
   getUserIdByEmail,
   seedBook,
@@ -283,4 +284,149 @@ test("adding a contact fills in the envelope and saves every field", async () =>
     notes: "Met at the lake",
     country_code: "US",
   });
+});
+
+test("a save that fails on the network keeps the edits and says so", async () => {
+  const contactUrl = `**/dashboard/contacts/${filledId}`;
+  await gotoContact(filledId);
+  await page.locator("#notes").fill("Typed with no signal");
+  await page.route(contactUrl, (route) =>
+    route.request().method() === "POST" ? route.abort() : route.continue(),
+  );
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("The connection dropped. Tap again.")).toBeVisible();
+  await expect(page.locator("#notes")).toHaveValue("Typed with no signal");
+
+  await page.unroute(contactUrl);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+});
+
+test("adding a contact with no signal keeps the name, then adds it once back online", async () => {
+  const newUrl = "**/dashboard/contacts/new";
+  await gotoContact("new");
+  await page.locator("#first_name").fill("Otto");
+  await page.locator("#last_name").fill("Berg");
+  await page.getByRole("button", { name: "Add a person" }).click();
+  await page.locator("#partner_first").fill("Ivo");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.route(newUrl, (route) =>
+    route.request().method() === "POST" ? route.abort() : route.continue(),
+  );
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByText("The connection dropped. Tap again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Otto & Ivo Berg\. Edit names/ })).toBeVisible();
+
+  await page.unroute(newUrl);
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?added=/);
+  expect(await getContactByFirstName(bookId, "Otto")).toBeTruthy();
+});
+
+test("a save whose response is lost can be retried with a newer edit, without a false conflict", async () => {
+  const contactUrl = `**/dashboard/contacts/${filledId}`;
+  await gotoContact(filledId);
+  await page.locator("#notes").fill("Saved before the signal dropped");
+  await page.route(contactUrl, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("The connection dropped. Tap again.")).toBeVisible();
+
+  await page.unroute(contactUrl);
+  await page.locator("#notes").fill("Saved before the signal dropped, then edited");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+});
+
+test("an add whose response is lost adds the contact once, with the retry's newer values", async () => {
+  const newUrl = "**/dashboard/contacts/new";
+  await gotoContact("new");
+  await page.locator("#first_name").fill("Wren");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.route(newUrl, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page.getByText("The connection dropped. Tap again.")).toBeVisible();
+
+  await page.unroute(newUrl);
+  await page.locator("#notes").fill("Added on the second try");
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?added=/);
+  expect(await countContactsByFirstName(bookId, "Wren")).toBe(1);
+  expect(await getContactByFirstName(bookId, "Wren")).toMatchObject({ notes: "Added on the second try" });
+});
+
+test("a save on a page from before a deploy says to reload, and a server error says so", async () => {
+  const contactUrl = `**/dashboard/contacts/${filledId}`;
+  await gotoContact(filledId);
+  await page.locator("#notes").fill("Typed on an old tab");
+  await page.route(contactUrl, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 404, headers: { "x-nextjs-action-not-found": "1" }, body: "" })
+      : route.continue(),
+  );
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("This page is out of date. Copy anything you need, then reload.")).toBeVisible();
+  await expect(page.locator("#notes")).toHaveValue("Typed on an old tab");
+  await page.unroute(contactUrl);
+
+  await page.route(contactUrl, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" })
+      : route.continue(),
+  );
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Something went wrong. Please try again.")).toBeVisible();
+  await page.unroute(contactUrl);
+});
+
+test("each successful save starts a new save token", async () => {
+  const tokens: string[] = [];
+  const capture = (request: import("@playwright/test").Request) => {
+    const token = request.method() === "POST" ? /name="(?:_\d+_)?save_token"\r\n\r\n([0-9a-f-]{36})/.exec(request.postData() ?? "") : null;
+    if (token) tokens.push(token[1]);
+  };
+  page.on("request", capture);
+  await gotoContact(filledId);
+  await page.locator("#notes").fill("First save");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+  await page.locator("#notes").fill("Second save");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved.");
+  page.off("request", capture);
+  expect(tokens).toHaveLength(2);
+  expect(tokens[0]).not.toBe(tokens[1]);
+});
+
+test("saving still works in a browser without crypto.randomUUID, with no save token", async () => {
+  const context = await page.context().browser()!.newContext({
+    storageState: await page.context().storageState(),
+    viewport: { width: 390, height: 844 },
+  });
+  await context.addInitScript(() => {
+    delete (Crypto.prototype as { randomUUID?: unknown }).randomUUID;
+  });
+  const tab = await context.newPage();
+  try {
+    const bodies: string[] = [];
+    tab.on("request", (request) => {
+      if (request.method() === "POST") bodies.push(request.postData() ?? "");
+    });
+    await tab.goto(`/dashboard/contacts/${filledId}`);
+    await expect(tab.locator("form[data-changes-ready]")).toBeAttached();
+    await tab.locator("#notes").fill("Saved without a token");
+    await tab.getByRole("button", { name: "Save changes" }).click();
+    await expect(tab.getByRole("status")).toHaveText("Saved.");
+    expect(bodies.some((body) => body.includes("save_token"))).toBe(false);
+  } finally {
+    await context.close();
+  }
 });
