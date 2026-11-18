@@ -215,7 +215,10 @@ export function useFormChanges(formRef: RefObject<HTMLFormElement | null>) {
     form.addEventListener("input", measure);
     form.addEventListener("change", measure);
     form.addEventListener("click", measure);
+    // Tests wait for this before typing: input before it is part of the baseline.
+    form.dataset.changesReady = "";
     return () => {
+      delete form.dataset.changesReady;
       cancelAnimationFrame(frame);
       form.removeEventListener("input", measure);
       form.removeEventListener("change", measure);
