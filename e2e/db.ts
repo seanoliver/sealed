@@ -445,3 +445,11 @@ export async function getSenderCountry(bookId: string): Promise<string> {
   const rows = await db`select sender_country from public.books where id = ${bookId}`;
   return rows[0].sender_country;
 }
+
+export async function getContactByFirstName(bookId: string, firstName: string) {
+  const [row] = await db`
+    select full_name, partner_name, kids_names, partner_email::text, birthday::text,
+           notes, country_code
+    from public.contacts where book_id = ${bookId} and first_name = ${firstName}`;
+  return row;
+}

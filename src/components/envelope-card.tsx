@@ -215,7 +215,10 @@ export function useFormChanges(formRef: RefObject<HTMLFormElement | null>) {
     form.addEventListener("input", measure);
     form.addEventListener("change", measure);
     form.addEventListener("click", measure);
+    // Tests wait for this before typing: input before it is part of the baseline.
+    form.dataset.changesReady = "";
     return () => {
+      delete form.dataset.changesReady;
       cancelAnimationFrame(frame);
       form.removeEventListener("input", measure);
       form.removeEventListener("change", measure);
@@ -241,10 +244,12 @@ export function useEnvelopeEditing({
   formRef,
   household,
   state,
+  startOpen = null,
 }: {
   formRef: RefObject<HTMLFormElement | null>;
   household: HouseholdValues;
   state: { fieldErrors?: HouseholdFieldErrors };
+  startOpen?: Open | null;
 }) {
   const envelopeRef = useRef<HTMLDivElement>(null);
   const openRef = useRef<HTMLDivElement>(null);
@@ -252,9 +257,13 @@ export function useEnvelopeEditing({
   const returnTo = useRef<string | null>(null);
   const nextKey = useRef(household.kids.length + 2);
 
-  const [open, setOpen] = useState<Open | null>(null);
+  const [open, setOpen] = useState<Open | null>(startOpen);
+  // Scrolling to a line open since load would push the page heading off screen.
+  const openOnLoad = useRef(startOpen);
   const [draft, setDraft] = useState<HouseholdDraft>(() => draftFromValues(household));
-  const [editingPerson, setEditingPerson] = useState<number | null>(null);
+  const [editingPerson, setEditingPerson] = useState<number | null>(() =>
+    startOpen?.kind === "names" ? draft.primary.key : null,
+  );
 
   const [seenState, setSeenState] = useState(state);
   if (state !== seenState) {
@@ -282,7 +291,7 @@ export function useEnvelopeEditing({
         [...block.querySelectorAll<HTMLElement>(selector)].find(visible);
       (first("input:not([type=hidden])") ?? first("select, button"))?.focus({ preventScroll: true });
     }
-    envelopeRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (open !== openOnLoad.current) envelopeRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
     const viewport = window.visualViewport;
     if (!viewport) return;
     const keepVisible = () => {

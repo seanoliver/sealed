@@ -207,14 +207,16 @@ test("changing the slug requires acknowledging the link-break warning", async ()
   await page.goto("/dashboard");
 });
 
-test("adds a contact via the form", async () => {
+test("adds a contact on the envelope", async () => {
   await page.getByRole("link", { name: "Add contact" }).click();
-  await expect(page.getByRole("button", { name: "Add partner" })).toBeVisible();
+  await expect(page.locator("#first_name")).toBeFocused();
   await page.getByRole("button", { name: "Add contact" }).click();
   await expect(page.getByText("Add a first name.")).toBeVisible();
   await page.locator("#first_name").fill("Ada");
   await page.locator("#last_name").fill("Lovelace");
+  await page.getByRole("button", { name: "Done" }).click();
   await page.locator("#email").fill("ada@e2e.test");
+  await openCityLine(page);
   await page.locator("#city").fill("London");
   await page.getByRole("button", { name: "Add contact" }).click();
   await expect(page).toHaveURL(/\/dashboard\?added=/);

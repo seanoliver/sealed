@@ -1,35 +1,12 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
-import { type ContactFormState } from "@/app/dashboard/contacts/actions";
-import { AddressFields, type AddressFieldsHandle } from "@/components/address-fields";
-import { HouseholdFields } from "@/components/household-fields";
+import { useState } from "react";
 import { isWorkEmail, type EmailKind } from "@/lib/email-kind";
 import { type ContactFormValues } from "@/lib/validation/contact";
-import { type HouseholdValues } from "@/lib/validation/household";
-
-const initialState: ContactFormState = {};
 
 const inputClasses =
   "h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 ";
 const labelClasses = "text-sm font-medium text-foreground";
-// The envelope preview's 17rem column plus its gap, so these fields line up with the address.
-const column = "lg:mr-[18.5rem]";
-
-type ContactFormProps = {
-  action: (
-    state: ContactFormState,
-    formData: FormData,
-  ) => Promise<ContactFormState>;
-  defaults: ContactFormValues;
-  household: HouseholdValues;
-  /** Present on the edit page; posted as a hidden field. */
-  contactId?: string;
-  version?: string;
-  submitLabel: string;
-  senderCountry: string;
-  legacyCountry?: string | null;
-};
 
 type FieldProps = {
   name: keyof ContactFormValues;
@@ -210,108 +187,5 @@ export function NotesField({ value, className }: { value: string; className?: st
         className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25 "
       />
     </div>
-  );
-}
-
-export function ContactForm({
-  action,
-  defaults,
-  household,
-  contactId,
-  version,
-  submitLabel,
-  senderCountry,
-  legacyCountry,
-}: ContactFormProps) {
-  const [state, formAction, pending] = useActionState(action, initialState);
-  const address = useRef<AddressFieldsHandle>(null);
-  // React 19 resets uncontrolled inputs to defaultValue after a form action
-  // completes; on error the action echoes the submitted values back so the
-  // reset restores what the user typed instead of wiping the form.
-  const v = state.values ?? defaults;
-
-  return (
-    <form
-      action={formAction}
-      onSubmit={(event) => {
-        if (address.current?.validate() === false) event.preventDefault();
-      }}
-      className="mt-6 flex flex-col gap-5"
-    >
-      {state.error ? <FormError message={state.error} /> : null}
-      {state.saved ? (
-        <div
-          role="status"
-          className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
-        >
-          Saved.
-        </div>
-      ) : null}
-
-      {contactId ? <input type="hidden" name="id" value={contactId} /> : null}
-      {version ? <input type="hidden" name="version" value={version} /> : null}
-
-      <div className={`flex flex-col gap-5 ${column}`}>
-        <HouseholdFields
-          defaults={state.household ?? household}
-          enabled={{ partner_name: true, kids_names: true }}
-          errors={state.fieldErrors}
-          audience="owner"
-        />
-        <PersonEmailFields
-          fields={{ email: "email", personal: "personal_email", kind: "email_kind" }}
-          labels={{ email: "Email", personal: "Personal email" }}
-          values={v}
-          stored={defaults}
-        />
-        <PersonEmailFields
-          fields={{
-            email: "partner_email",
-            personal: "partner_personal_email",
-            kind: "partner_email_kind",
-          }}
-          labels={{ email: "Partner email", personal: "Partner's personal email" }}
-          values={v}
-          stored={defaults}
-          emailHint="Optional. The partner gets their own update link."
-          emailError={state.fieldErrors?.partner_email}
-        />
-        <Field name="birthday" label="Birthday" value={v.birthday} type="date" />
-      </div>
-
-      <AddressFields
-        defaults={{
-          address_line1: v.address_line1,
-          address_line2: v.address_line2,
-          district: v.district,
-          city: v.city,
-          state_region: v.state_region,
-          postal_code: v.postal_code,
-          country_code: v.country_code,
-        }}
-        legacyCountry={legacyCountry}
-        senderCountry={senderCountry}
-        audience={{ kind: "owner" }}
-        styles={{ input: inputClasses, label: labelClasses }}
-        errors={{
-          postal_code: state.fieldErrors?.postal_code,
-          country_code: state.fieldErrors?.country_code,
-        }}
-        preview="beside"
-        handleRef={address}
-        errorsKey={state}
-        prefillCountry={contactId === undefined}
-      />
-
-      <NotesField value={v.notes} className={column} />
-
-      <button
-        type="submit"
-        disabled={pending}
-        className={`h-10 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 ${column}`}
-      >
-        {pending ? "Saving…" : submitLabel}
-      </button>
-    </form>
   );
 }

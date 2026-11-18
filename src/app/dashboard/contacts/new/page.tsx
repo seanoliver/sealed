@@ -1,55 +1,46 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getOwnBook } from "@/lib/queries/books";
-import { ContactForm } from "@/components/contact-form";
+import { getOwnBook, getOwnProfile } from "@/lib/queries/books";
 import { BLANK_HOUSEHOLD_VALUES } from "@/lib/validation/household";
 import { createContact } from "../actions";
+import { ContactEditor } from "../[id]/contact-editor";
 
 export default async function NewContactPage() {
   const claims = await requireUser();
-  const book = await getOwnBook(claims);
+  const [book, profile] = await Promise.all([getOwnBook(claims), getOwnProfile(claims)]);
 
   // Onboarding: no book yet → set one up first.
   if (!book) redirect("/onboarding");
 
   return (
-    <main className="mx-auto w-full max-w-lg flex-1 px-4 py-10 lg:max-w-3xl">
-      <div className="rounded-xl border border-border bg-card p-8 shadow-sm ">
-        <h1 className="font-serif text-2xl leading-tight text-foreground">
-          Add a contact
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Only the name is required — you can fill in the rest later, or let
-          your friend do it.
-        </p>
-
-        <ContactForm
-          action={createContact}
-          submitLabel="Add contact"
-          senderCountry={book.senderCountry}
-          household={BLANK_HOUSEHOLD_VALUES}
-          defaults={{
-            full_name: "",
-            partner_name: "",
-            kids_names: "",
-            email: "",
-            partner_email: "",
-            personal_email: "",
-            partner_personal_email: "",
-            email_kind: "",
-            partner_email_kind: "",
-            birthday: "",
-            address_line1: "",
-            address_line2: "",
-            district: "",
-            city: "",
-            state_region: "",
-            postal_code: "",
-            country_code: "",
-            notes: "",
-          }}
-        />
-      </div>
-    </main>
+    <ContactEditor
+      action={createContact}
+      from={profile?.displayName ?? ""}
+      senderCountry={book.senderCountry}
+      legacyCountry={null}
+      household={BLANK_HOUSEHOLD_VALUES}
+      heading="Add a contact"
+      intro="Only the name is required. You can fill in the rest later, or send them an invite."
+      defaults={{
+        full_name: "",
+        partner_name: "",
+        kids_names: "",
+        email: "",
+        partner_email: "",
+        personal_email: "",
+        partner_personal_email: "",
+        email_kind: "",
+        partner_email_kind: "",
+        birthday: "",
+        address_line1: "",
+        address_line2: "",
+        district: "",
+        city: "",
+        state_region: "",
+        postal_code: "",
+        country_code: "",
+        notes: "",
+      }}
+    />
   );
 }
